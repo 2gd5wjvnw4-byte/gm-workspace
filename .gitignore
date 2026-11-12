@@ -1,0 +1,34 @@
+# Node / Vite
+node_modules/
+dist/
+dist-ssr/
+*.local
+coverage/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Editors / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Secrets
+.env*
+
+# Content: never commit PDFs or real module JSON
+*.pdf
+campaigns/
+private/*
+!private/.gitkeep
+samples/**/*.json
+!samples/silent-relay-a1.json
+
+# Local only
+gm-workspace-agy-kit.zip
+GATES.md

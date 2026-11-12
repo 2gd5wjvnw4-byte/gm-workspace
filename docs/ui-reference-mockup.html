@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GM Workspace cockpit</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=Cinzel:wght@600;700&amp;family=Alegreya+Sans:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#56D4E8}a:hover{color:#9BE7F3}
+button{font-family:inherit;cursor:pointer}
+@keyframes gmpulse{0%{box-shadow:0 0 0 0 var(--accent)}70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.gm-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+
+  <!-- TOP HUD -->
+  <header style="height: 64px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line)">
+    <div style="display: flex; flex-direction: column; min-width: 140px">
+      <span style="font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--muted)">GM WORKSPACE</span>
+      <button type="button" style="all: unset; cursor: pointer; font-family: var(--head); font-weight: 700; font-size: 15px; color: var(--text)">The Silent Relay · Act 1 ▾</button>
+    </div>
+    <div style="display: flex; gap: 6px">
+      <sc-for list="{{ trackers }}" as="t" hint-placeholder-count="3">
+        <div style="display: flex; align-items: center; gap: 3px; background: var(--p2); border: 1px solid var(--line); border-radius: 10px; padding: 3px">
+          <button type="button" onClick="{{ t.dec }}" aria-label="Decrease {{ t.label }}" style="width: 44px; height: 44px; border-radius: 8px; border: none; background: var(--p3); color: var(--text); font-size: 20px">−</button>
+          <div style="display: flex; flex-direction: column; align-items: center; min-width: 62px">
+            <span style="font-size: 11px; color: var(--muted)">{{ t.label }}</span>
+            <span style="font-family: var(--mono); font-size: 18px; font-weight: 600">{{ t.value }}</span>
+          </div>
+          <button type="button" onClick="{{ t.inc }}" aria-label="Increase {{ t.label }}" style="width: 44px; height: 44px; border-radius: 8px; border: none; background: var(--p3); color: var(--text); font-size: 20px">+</button>
+        </div>
+      </sc-for>
+    </div>
+    <div style="flex: 1; display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; height: 44px; min-width: 100px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="color: var(--muted)"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+      <label for="gm-search" class="gm-sr">Search the module</label>
+      <input id="gm-search" type="search" placeholder="Search…" style="all: unset; flex: 1; min-width: 0; color: var(--text); font-size: 14px">
+    </div>
+    <button type="button" style="height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--goldLine); background: var(--goldBg); color: var(--gold); font-size: 13px; font-weight: 600">Review 1</button>
+    <div style="display: flex; background: var(--p2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px" role="group" aria-label="Map view">
+      <sc-for list="{{ mapModes }}" as="m" hint-placeholder-count="4">
+        <button type="button" onClick="{{ m.pick }}" aria-pressed="{{ m.pressed }}" style="{{ m.style }}">{{ m.label }}</button>
+      </sc-for>
+    </div>
+    <button type="button" onClick="{{ toggleSolo }}" aria-pressed="{{ soloPressed }}" style="{{ soloStyle }}">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+      <span>{{ soloLabel }}</span>
+    </button>
+    <button type="button" onClick="{{ openPdf }}" style="height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--p2); color: var(--text); font-size: 13px; font-weight: 600">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"></path><path d="M4 19V5"></path></svg>
+      PDF
+    </button>
+  </header>
+
+  <div style="flex: 1; display: flex; min-height: 0">
+
+    <!-- LEFT ZONE -->
+    <aside style="width: 300px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow-y: auto">
+      <div style="padding: 12px 12px 8px; display: flex; gap: 4px">
+        <button type="button" onClick="{{ showList }}" aria-pressed="{{ listPressed }}" style="{{ listTabStyle }}">Scene List</button>
+        <button type="button" onClick="{{ showNodes }}" aria-pressed="{{ nodesPressed }}" style="{{ nodesTabStyle }}">Node Map</button>
+      </div>
+
+      <sc-if value="{{ navIsList }}" hint-placeholder-val="{{ true }}">
+        <div style="padding: 0 12px 12px; display: flex; flex-direction: column; gap: 4px">
+          <sc-for list="{{ sceneRows }}" as="r" hint-placeholder-count="5">
+            <sc-if value="{{ r.showGroup }}" hint-placeholder-val="{{ false }}">
+              <div style="font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); padding: 8px 4px 2px">{{ r.group }}</div>
+            </sc-if>
+            <button type="button" onClick="{{ r.go }}" disabled="{{ r.disabled }}" style="{{ r.style }}">
+              <span style="font-family: var(--mono); font-size: 12px; width: 44px; flex-shrink: 0">{{ r.code }}</span>
+              <span style="flex: 1; text-align: left">{{ r.title }}</span>
+              <span style="{{ r.chipStyle }}">{{ r.status }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ navIsNodes }}" hint-placeholder-val="{{ false }}">
+        <div onPointerDown="{{ nodePZ.down }}" onPointerMove="{{ nodePZ.move }}" onPointerUp="{{ nodePZ.up }}" onPointerCancel="{{ nodePZ.up }}" onPointerLeave="{{ nodePZ.up }}" style="margin: 0 12px 12px; height: 440px; position: relative; background: var(--mapBg); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; touch-action: none">
+          <div style="{{ nodeLayerStyle }}">
+            <sc-for list="{{ edges }}" as="e" hint-placeholder-count="4">
+              <div aria-hidden="true" style="{{ e.style }}"></div>
+            </sc-for>
+            <sc-for list="{{ nodes }}" as="n" hint-placeholder-count="5">
+              <button type="button" onClick="{{ n.go }}" disabled="{{ n.disabled }}" style="{{ n.style }}">
+                <span style="font-family: var(--mono); font-size: 11px; color: var(--muted)">{{ n.code }}</span>
+                <span style="font-size: 12px; font-weight: 600; line-height: 1.2">{{ n.title }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <div style="position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 4px">
+            <button type="button" onClick="{{ nodePZ.zin }}" aria-label="Zoom in" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--p2); color: var(--text); font-size: 20px">+</button>
+            <button type="button" onClick="{{ nodePZ.zout }}" aria-label="Zoom out" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--p2); color: var(--text); font-size: 20px">−</button>
+            <button type="button" onClick="{{ nodePZ.reset }}" aria-label="Fit to view" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--p2); color: var(--text); font-size: 11px; font-weight: 600">FIT</button>
+          </div>
+          <div style="position: absolute; left: 10px; bottom: 8px; font-size: 11px; color: var(--muted); background: var(--mapBg); padding: 2px 4px; border-radius: 4px">Pinch to zoom · drag to move · {{ nodeZoomText }}</div>
+        </div>
+      </sc-if>
+
+      <div style="border-top: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 8px">
+        <div style="font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted)">IN THIS SCENE</div>
+        <sc-if value="{{ noEntities }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size: 13px; color: var(--muted)">No one here. Yet.</div>
+        </sc-if>
+        <sc-for list="{{ sceneEntities }}" as="en" hint-placeholder-count="1">
+          <div style="background: var(--p2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px">
+            <button type="button" onClick="{{ en.inspect }}" style="all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px">
+              <span style="font-weight: 600; flex: 1">{{ en.name }}</span>
+              <span style="{{ en.dispStyle }}">{{ en.disp }}</span>
+            </button>
+            <div style="font-size: 12px; color: var(--muted)">{{ en.summary }}</div>
+            <sc-for list="{{ en.rows }}" as="row" hint-placeholder-count="1">
+              <div style="display: flex; align-items: center; gap: 6px">
+                <span style="font-size: 12px; color: var(--muted); width: 64px">{{ row.label }}</span>
+                <button type="button" onClick="{{ row.dec }}" aria-label="Decrease {{ row.label }}" style="width: 44px; height: 44px; border-radius: 8px; border: none; background: var(--p3); color: var(--text); font-size: 18px">−</button>
+                <span style="flex: 1; text-align: center; font-family: var(--mono); font-weight: 600">{{ row.text }}</span>
+                <button type="button" onClick="{{ row.inc }}" aria-label="Increase {{ row.label }}" style="width: 44px; height: 44px; border-radius: 8px; border: none; background: var(--p3); color: var(--text); font-size: 18px">+</button>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+        <div style="font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); margin-top: 4px">ROAMING</div>
+        <sc-for list="{{ roamers }}" as="ro" hint-placeholder-count="1">
+          <div style="display: flex; align-items: center; gap: 8px; background: var(--p2); border: 1px dashed var(--line2); border-radius: 12px; padding: 6px 6px 6px 10px">
+            <span style="flex: 1; font-size: 13px">{{ ro.name }}</span>
+            <button type="button" onClick="{{ ro.summon }}" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--redLine); background: var(--redBg); color: var(--red); font-size: 13px; font-weight: 600">Summon</button>
+          </div>
+        </sc-for>
+        <sc-if value="{{ noRoamers }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size: 12px; color: var(--muted)">All roaming threats are in this scene.</div>
+        </sc-if>
+      </div>
+    </aside>
+
+    <!-- CENTER ZONE -->
+    <main style="flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative">
+
+      <sc-if value="{{ mapVisible }}" hint-placeholder-val="{{ false }}">
+        <div onPointerDown="{{ imgPZ.down }}" onPointerMove="{{ imgPZ.move }}" onPointerUp="{{ imgPZ.up }}" onPointerCancel="{{ imgPZ.up }}" onPointerLeave="{{ imgPZ.up }}" style="{{ mapBoxStyle }}">
+          <div style="{{ imgLayerStyle }}">
+            <div style="position: absolute; inset: 0; background-color: var(--mapBg); background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 24px 24px"></div>
+            <div style="position: absolute; left: 4%; top: 30%; width: 18%; height: 40%; border: 2px solid var(--line2); border-radius: 6px"></div>
+            <div style="position: absolute; left: 30%; top: 12%; width: 22%; height: 34%; border: 2px solid var(--line2); border-radius: 6px"></div>
+            <div style="position: absolute; left: 30%; top: 56%; width: 22%; height: 34%; border: 2px solid var(--line2); border-radius: 6px"></div>
+            <div style="position: absolute; left: 60%; top: 42%; width: 36%; height: 16%; border: 2px solid var(--line2); border-radius: 6px"></div>
+            <sc-for list="{{ pins }}" as="p" hint-placeholder-count="4">
+              <button type="button" onClick="{{ p.go }}" aria-label="Go to {{ p.label }}" style="{{ p.style }}">{{ p.code }}</button>
+            </sc-for>
+          </div>
+          <div style="position: absolute; left: 10px; top: 8px; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--mapBg); padding: 2px 4px; border-radius: 4px">MAP IMAGE · {{ imgZoomText }}</div>
+          <div style="position: absolute; right: 8px; top: 8px; display: flex; gap: 4px">
+            <button type="button" onClick="{{ imgPZ.zin }}" aria-label="Zoom in" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--p2); color: var(--text); font-size: 20px">+</button>
+            <button type="button" onClick="{{ imgPZ.zout }}" aria-label="Zoom out" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--p2); color: var(--text); font-size: 20px">−</button>
+            <button type="button" onClick="{{ imgPZ.reset }}" aria-label="Fit to view" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--p2); color: var(--text); font-size: 11px; font-weight: 600">FIT</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showScene }}" hint-placeholder-val="{{ true }}">
+        <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 16px">
+
+          <div style="display: flex; align-items: flex-start; gap: 12px">
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                <span style="font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 600">{{ scene.id }} · #{{ scene.code }}</span>
+                <span style="font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--violet); border: 1px solid var(--violetLine); border-radius: 6px; padding: 2px 6px">{{ labels.name }}</span>
+                <sc-if value="{{ scene.review }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size: 11px; font-weight: 600; color: var(--gold); border: 1px solid var(--goldLine); border-radius: 6px; padding: 2px 6px">Needs review</span>
+                </sc-if>
+              </div>
+              <h1 style="margin: 0; font-family: var(--head); font-size: 30px; font-weight: 700; letter-spacing: -0.005em">{{ scene.title }}</h1>
+              <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <sc-for list="{{ scene.tags }}" as="tag" hint-placeholder-count="2">
+                  <span style="font-size: 12px; font-weight: 600; background: var(--tagBg); color: var(--tagText); border-radius: 6px; padding: 3px 8px">{{ tag }}</span>
+                </sc-for>
+              </div>
+            </div>
+            <button type="button" onClick="{{ openPdf }}" style="height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--p2); color: var(--text); font-size: 13px">Book p.{{ scene.page }}</button>
+          </div>
+
+          <sc-if value="{{ hasDelta }}" hint-placeholder-val="{{ false }}">
+            <div style="background: var(--deltaBg); border: 1px solid var(--gold); border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start">
+              <span style="font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--gold); padding-top: 2px">TABLE CHANGE</span>
+              <span style="color: var(--deltaText); flex: 1">{{ scene.delta }}</span>
+            </div>
+          </sc-if>
+
+          <div style="background: var(--panel); border: 1px solid var(--line); border-radius: 12px">
+            <button type="button" onClick="{{ toggleRead }}" aria-expanded="{{ readOpen }}" style="all: unset; cursor: pointer; display: flex; width: 100%; box-sizing: border-box; align-items: center; padding: 12px 14px; min-height: 44px">
+              <span style="font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); flex: 1">READ-ALOUD</span>
+              <span style="font-size: 12px; color: var(--muted)">{{ readHint }}</span>
+            </button>
+            <sc-if value="{{ readOpen }}" hint-placeholder-val="{{ true }}">
+              <p style="margin: 0; padding: 0 14px 14px; font-size: 16px; line-height: 1.55; font-style: italic; color: var(--readText)">{{ scene.read }}</p>
+            </sc-if>
+          </div>
+
+          <section style="display: flex; flex-direction: column; gap: 8px">
+            <h2 style="margin: 0; font-family: var(--mono); font-size: 12px; letter-spacing: .1em; color: var(--muted); font-weight: 600">TIER 1 · {{ labels.t1 }}</h2>
+            <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 15px">
+              <sc-for list="{{ scene.t1 }}" as="s" hint-placeholder-count="3">
+                <li>{{ s }}</li>
+              </sc-for>
+            </ul>
+          </section>
+
+          <section style="display: flex; flex-direction: column; gap: 8px">
+            <h2 style="margin: 0; font-family: var(--mono); font-size: 12px; letter-spacing: .1em; color: var(--muted); font-weight: 600">TIER 2 · {{ labels.t2 }}</h2>
+            <sc-for list="{{ tier2 }}" as="it" hint-placeholder-count="1">
+              <div style="background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px">
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <span style="{{ it.chipStyle }}">{{ it.kindLabel }}</span>
+                  <span style="font-weight: 600; font-size: 15px; flex: 1">{{ it.title }}</span>
+                  <button type="button" onClick="{{ it.toggle }}" style="{{ it.btnStyle }}">{{ it.btnLabel }}</button>
+                </div>
+                <div style="font-family: var(--mono); font-size: 13px; color: var(--blue)">Check: {{ it.checkText }}</div>
+                <sc-if value="{{ it.showResult }}" hint-placeholder-val="{{ true }}">
+                  <div style="font-size: 14px; color: var(--readText)">{{ it.result }}</div>
+                </sc-if>
+                <sc-if value="{{ it.hiddenResult }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size: 13px; color: var(--muted)">Result hidden. Roll, then tap Reveal.</div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </section>
+
+          <section style="display: flex; flex-direction: column; gap: 8px">
+            <h2 style="margin: 0; font-family: var(--mono); font-size: 12px; letter-spacing: .1em; color: var(--muted); font-weight: 600">TIER 3 · {{ labels.t3 }}</h2>
+            <sc-if value="{{ noTier3 }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size: 13px; color: var(--muted)">Nothing hidden here.</div>
+            </sc-if>
+            <sc-for list="{{ tier3 }}" as="it" hint-placeholder-count="1">
+              <div style="{{ it.cardStyle }}">
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <span style="{{ it.chipStyle }}">{{ it.kindLabel }}</span>
+                  <span style="font-weight: 600; font-size: 15px; flex: 1">{{ it.title }}</span>
+                  <button type="button" onClick="{{ it.toggle }}" style="{{ it.btnStyle }}">{{ it.btnLabel }}</button>
+                </div>
+                <div style="font-family: var(--mono); font-size: 13px; color: var(--blue)">Check: {{ it.checkText }}</div>
+                <sc-if value="{{ it.showResult }}" hint-placeholder-val="{{ true }}">
+                  <div style="font-size: 14px; color: var(--readText)">{{ it.result }}</div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </section>
+
+          <sc-if value="{{ hasEsc }}" hint-placeholder-val="{{ false }}">
+            <section style="display: flex; flex-direction: column; gap: 8px">
+              <h2 style="margin: 0; font-family: var(--mono); font-size: 12px; letter-spacing: .1em; color: var(--muted); font-weight: 600">ESCALATION</h2>
+              <sc-for list="{{ scene.esc }}" as="x" hint-placeholder-count="3">
+                <div style="display: flex; gap: 12px; padding: 8px 12px; background: var(--escBg); border: 1px solid var(--redLine); border-radius: 10px">
+                  <span style="font-family: var(--mono); font-size: 12px; color: var(--red); width: 64px; flex-shrink: 0; font-weight: 600">{{ x.at }}</span>
+                  <span style="font-size: 14px">{{ x.text }}</span>
+                </div>
+              </sc-for>
+            </section>
+          </sc-if>
+
+          <div style="background: var(--panel); border: 1px dashed var(--line2); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted)">
+            <span style="font-family: var(--mono); font-size: 11px; letter-spacing: .1em">GM TIP · </span>{{ scene.tips }}
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="flex-shrink: 0; border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+        <span style="font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); margin-right: 4px">{{ labels.exits }}</span>
+        <sc-for list="{{ exits }}" as="x" hint-placeholder-count="2">
+          <button type="button" onClick="{{ x.go }}" disabled="{{ x.disabled }}" style="{{ x.style }}">
+            <span style="font-family: var(--mono); font-size: 11px; opacity: .85">{{ x.type }}</span>
+            <span>{{ x.label }}</span>
+            <span style="font-size: 11px; opacity: .85">{{ x.state }}</span>
+          </button>
+        </sc-for>
+      </div>
+    </main>
+
+    <!-- RIGHT ZONE -->
+    <aside style="width: 300px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 18px">
+      <section style="display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); font-weight: 600">CLOCKS</h2>
+        <div style="display: flex; align-items: center; gap: 12px; background: var(--p2); border: 1px solid var(--line); border-radius: 12px; padding: 12px">
+          <button type="button" onClick="{{ clockInc }}" aria-label="Advance Reactor Meltdown clock" style="{{ ringStyle }}">
+            <span style="width: 58px; height: 58px; border-radius: 50%; background: var(--p2); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 600; font-size: 15px; color: var(--text)">{{ clockText }}</span>
+          </button>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px">
+            <span style="font-weight: 600">Reactor Meltdown</span>
+            <span style="font-size: 12px; color: var(--muted)">Full: the reactor explodes.</span>
+            <button type="button" onClick="{{ clockDec }}" style="align-self: flex-start; height: 44px; padding: 0 12px; border-radius: 8px; border: none; background: var(--p3); color: var(--text); font-size: 13px">Rewind</button>
+          </div>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); font-weight: 600">TIMELINE</h2>
+        <div style="{{ eventStyle }}">
+          <div style="display: flex; align-items: center; gap: 8px">
+            <span style="font-family: var(--mono); font-size: 12px; color: var(--gold); font-weight: 600; flex: 1">Day 3 · morning</span>
+            <button type="button" onClick="{{ toggleEvent }}" style="height: 44px; padding: 0 10px; border-radius: 8px; border: none; background: var(--p3); color: var(--text); font-size: 12px">{{ eventBtn }}</button>
+          </div>
+          <span style="font-size: 13px">{{ eventText }}</span>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); font-weight: 600">CLUE MATRIX</h2>
+        <sc-for list="{{ truths }}" as="tr" hint-placeholder-count="2">
+          <div style="background: var(--p2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; align-items: center; gap: 8px">
+              <span style="font-weight: 600; flex: 1; font-size: 14px">{{ tr.title }}</span>
+              <span style="{{ tr.chipStyle }}">{{ tr.status }}</span>
+            </div>
+            <span style="font-size: 13px; color: var(--readText)">{{ tr.answer }}</span>
+            <sc-for list="{{ tr.clues }}" as="c" hint-placeholder-count="2">
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
+                <span style="{{ c.dotStyle }}"></span>
+                <span style="flex: 1; color: var(--muted)">{{ c.label }}</span>
+                <span style="{{ c.textStyle }}">{{ c.state }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); font-weight: 600">SCRATCHPAD</h2>
+        <button type="button" style="height: 48px; border-radius: 10px; border: 1px solid var(--goldLine); background: var(--goldBg); color: var(--gold); font-weight: 600; font-size: 14px">Add note / override</button>
+        <button type="button" style="height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--p2); color: var(--text); font-size: 13px">Loose Notes (0)</button>
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); padding-top: 4px">
+          <span>Last backup: 2 days ago</span>
+          <button type="button" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--tealLine); background: var(--tealBg); color: var(--teal); font-size: 13px; font-weight: 600">Save Backup</button>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); font-weight: 600">THEME</h2>
+        <div style="display: flex; flex-direction: column; gap: 4px" role="group" aria-label="Theme">
+          <sc-for list="{{ themeBtns }}" as="tb" hint-placeholder-count="3">
+            <button type="button" onClick="{{ tb.pick }}" aria-pressed="{{ tb.pressed }}" style="{{ tb.style }}">
+              <span style="{{ tb.swatch }}"></span>
+              <span style="flex: 1; text-align: left">{{ tb.label }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- DRAWERS -->
+  <sc-if value="{{ pdfOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; top: 64px; right: 0; bottom: 0; width: 480px; background: var(--panel); border-left: 1px solid var(--line2); box-shadow: -16px 0 40px rgba(0,0,0,.35); display: flex; flex-direction: column; z-index: 20">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line)">
+        <span style="font-weight: 600; flex: 1">Source PDF · printed p.{{ scene.page }} (PDF p.{{ pdfPage }})</span>
+        <button type="button" onClick="{{ closeDrawer }}" style="height: 44px; padding: 0 14px; border-radius: 8px; border: none; background: var(--p3); color: var(--text)">Close</button>
+      </div>
+      <div style="flex: 1; padding: 16px; overflow-y: auto">
+        <div style="background: #EDE9E0; color: #2A2A2A; border-radius: 4px; height: 560px; padding: 28px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.2)">
+          <div style="font-family: Georgia, serif; font-size: 20px; font-weight: 700">{{ scene.code }}. {{ scene.title }}</div>
+          <div style="height: 10px; background: #CFC9BC; width: 92%"></div>
+          <div style="height: 10px; background: #CFC9BC; width: 86%"></div>
+          <div style="height: 10px; background: #CFC9BC; width: 90%"></div>
+          <div style="height: 180px; border: 2px dashed #A79F8F; margin: 10px 0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #5C5648">Map or diagram on this page</div>
+          <div style="height: 10px; background: #CFC9BC; width: 88%"></div>
+          <div style="height: 10px; background: #CFC9BC; width: 70%"></div>
+        </div>
+      </div>
+      <div style="padding: 12px; border-top: 1px solid var(--line); display: flex; gap: 8px">
+        <button type="button" style="flex: 1; height: 48px; border-radius: 10px; border: 1px solid var(--tealLine); background: var(--tealBg); color: var(--teal); font-weight: 600">Crop map from this page</button>
+        <button type="button" style="height: 48px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--p2); color: var(--text)">Go to page…</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ entityOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; top: 64px; right: 0; bottom: 0; width: 420px; background: var(--panel); border-left: 1px solid var(--line2); box-shadow: -16px 0 40px rgba(0,0,0,.35); display: flex; flex-direction: column; z-index: 20">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line)">
+        <span style="font-family: var(--head); font-weight: 700; font-size: 16px; flex: 1">{{ ins.name }}</span>
+        <span style="{{ ins.dispStyle }}">{{ ins.disp }}</span>
+        <button type="button" onClick="{{ closeDrawer }}" style="height: 44px; padding: 0 14px; border-radius: 8px; border: none; background: var(--p3); color: var(--text)">Close</button>
+      </div>
+      <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+        <div style="font-size: 13px; color: var(--muted)">{{ ins.type }} · book p.{{ ins.page }}</div>
+        <div style="font-family: var(--mono); font-size: 13px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px">{{ ins.stat }}</div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted)">VOICE</span>
+          <span>{{ ins.voice }}</span>
+          <span style="font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); margin-top: 6px">GOAL</span>
+          <span>{{ ins.goal }}</span>
+          <span style="font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); margin-top: 6px">SECRET</span>
+          <span style="{{ ins.secretStyle }}">{{ ins.secret }}</span>
+        </div>
+        <sc-for list="{{ ins.clues }}" as="c" hint-placeholder-count="1">
+          <div style="background: var(--tealBg); border: 1px solid var(--tealLine); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 11px; font-weight: 700; color: var(--teal)">CLUE</span>
+            <span style="font-size: 13px; color: var(--blue); font-family: var(--mono)">{{ c.check }}</span>
+            <sc-if value="{{ c.show }}" hint-placeholder-val="{{ true }}">
+              <span style="font-size: 14px">{{ c.text }}</span>
+            </sc-if>
+            <button type="button" onClick="{{ c.toggle }}" style="align-self: flex-start; height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--tealLine); background: var(--panel); color: var(--teal); font-weight: 600">{{ c.btn }}</button>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1366,"height":1024}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      theme: 'scifi',
+      sceneId: 'a1-s03',
+      solo: false,
+      nav: 'nodes',
+      mapMode: 'off',
+      trk: { stress: 2, o2: 12, day: 1 },
+      clock: 2,
+      revealed: { 'a1-s01-i1': true },
+      visited: { 'a1-s01': true, 'a1-s02': true, 'a1-s03': true },
+      hp: { 'e-okafor': [12], 'e-creature': [30], 'e-drones': [8, 8, 8] },
+      summoned: {},
+      readOpen: true,
+      drawer: null,
+      inspect: null,
+      view: { node: { x: 0, y: 0, k: 1 }, img: { x: 0, y: 0, k: 1 } }
+    };
+    this.pz = { node: { pts: {}, moved: 0 }, img: { pts: {}, moved: 0 } };
+    this.suppress = false;
+  }
+
+  go(id) {
+    if (this.suppress) return;
+    const v = Object.assign({}, this.state.visited);
+    v[id] = true;
+    this.setState({ sceneId: id, visited: v, readOpen: true, summoned: {} });
+  }
+
+  setView(key, nv) {
+    const view = Object.assign({}, this.state.view);
+    view[key] = nv;
+    this.setState({ view: view });
+  }
+
+  zoomAt(key, f, cx, cy) {
+    const v = this.state.view[key];
+    const k = Math.max(0.4, Math.min(3, v.k * f));
+    const r = k / v.k;
+    this.setView(key, { k: k, x: cx - (cx - v.x) * r, y: cy - (cy - v.y) * r });
+  }
+
+  makePZ(key, cw, ch) {
+    const P = this.pz[key];
+    return {
+      down: (e) => {
+        P.pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+        if (Object.keys(P.pts).length === 1) P.moved = 0;
+      },
+      move: (e) => {
+        const prev = P.pts[e.pointerId];
+        if (!prev) return;
+        const ids = Object.keys(P.pts);
+        const v = this.state.view[key];
+        if (ids.length === 1) {
+          const dx = e.clientX - prev.x; const dy = e.clientY - prev.y;
+          P.pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+          P.moved += Math.abs(dx) + Math.abs(dy);
+          if (P.moved > 6) this.setView(key, { k: v.k, x: v.x + dx, y: v.y + dy });
+        } else if (ids.length >= 2) {
+          const oid = ids[0] === String(e.pointerId) ? ids[1] : ids[0];
+          const o = P.pts[oid];
+          const d0 = Math.hypot(prev.x - o.x, prev.y - o.y) || 1;
+          const d1 = Math.hypot(e.clientX - o.x, e.clientY - o.y) || 1;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const mx = (e.clientX + o.x) / 2 - rect.left; const my = (e.clientY + o.y) / 2 - rect.top;
+          const pmx = (prev.x + o.x) / 2 - rect.left; const pmy = (prev.y + o.y) / 2 - rect.top;
+          const k = Math.max(0.4, Math.min(3, v.k * (d1 / d0)));
+          const r = k / v.k;
+          P.pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+          P.moved += 20;
+          this.setView(key, { k: k, x: mx - (pmx - v.x) * r, y: my - (pmy - v.y) * r });
+        }
+      },
+      up: (e) => {
+        if (!P.pts[e.pointerId]) return;
+        delete P.pts[e.pointerId];
+        if (P.moved > 6) {
+          this.suppress = true;
+          setTimeout(() => { this.suppress = false; }, 80);
+        }
+      },
+      zin: () => this.zoomAt(key, 1.25, cw / 2, ch / 2),
+      zout: () => this.zoomAt(key, 0.8, cw / 2, ch / 2),
+      reset: () => this.setView(key, { x: 0, y: 0, k: 1 })
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const THEMES = {
+      scifi: { label: 'Sci-Fi Dark', bg: '#0D1117', panel: '#151B23', p2: '#1C232D', p3: '#262F3B', line: '#2A3340', line2: '#3A4553', text: '#E6EDF3', muted: '#9AA7B4', faint: '#6B7785',
+        accent: '#56D4E8', accentBg: '#10262B', onAccent: '#0D1117', gold: '#F2B33D', goldBg: '#2A2213', goldLine: '#6B5320', deltaBg: '#3A2A0B', deltaText: '#FBE3B0',
+        red: '#F47C7C', redBg: '#2A1717', redLine: '#5A2E2E', escBg: '#1F1416', teal: '#45C9A9', tealBg: '#12251F', tealLine: '#2D5A50', blue: '#79B8FF',
+        violet: '#C8B2FF', violetBg: '#2A2240', violetLine: '#4B3F6B', readText: '#D5DEE7', mapBg: '#10161D', grid: '#1A222C', edge: '#3E5566', stripe: '#19202A',
+        tagBg: '#E6EDF3', tagText: '#0D1117', body: "'IBM Plex Sans', system-ui, sans-serif", head: "'IBM Plex Sans', system-ui, sans-serif", mono: "'IBM Plex Mono', ui-monospace, monospace" },
+      fantasy: { label: 'Fantasy Light', bg: '#EFE6D4', panel: '#FAF5EA', p2: '#F2E9D8', p3: '#E6D9C0', line: '#D8C8A8', line2: '#BFA982', text: '#2B2118', muted: '#6A5843', faint: '#9A8A72',
+        accent: '#9A4416', accentBg: '#F5E0D0', onAccent: '#FFFFFF', gold: '#835C00', goldBg: '#F7EACB', goldLine: '#C9A55A', deltaBg: '#F6E2B5', deltaText: '#4A3510',
+        red: '#A12F2F', redBg: '#F6DEDA', redLine: '#D9A39B', escBg: '#F8E6E2', teal: '#2C6A4D', tealBg: '#DFEDE2', tealLine: '#9CC4AA', blue: '#2A5B8A',
+        violet: '#69498F', violetBg: '#ECE3F4', violetLine: '#BFA9D6', readText: '#3B2F22', mapBg: '#F3EAD6', grid: '#E4D6BA', edge: '#A88F68', stripe: '#F0E6D2',
+        tagBg: '#3B2F22', tagText: '#FAF5EA', body: "'Alegreya Sans', system-ui, sans-serif", head: "'Cinzel', Georgia, serif", mono: "'Alegreya Sans', system-ui, sans-serif" },
+      fantasyDark: { label: 'Fantasy Dark', bg: '#15120E', panel: '#1E1A15', p2: '#27221B', p3: '#332C23', line: '#3A3228', line2: '#4E4436', text: '#EFE6D4', muted: '#B3A48C', faint: '#7D705D',
+        accent: '#E39A5B', accentBg: '#3A2516', onAccent: '#15120E', gold: '#E2B754', goldBg: '#2E2414', goldLine: '#6E5526', deltaBg: '#3B2B10', deltaText: '#F6E2B5',
+        red: '#EB8A7E', redBg: '#331B18', redLine: '#6A342D', escBg: '#2A1915', teal: '#7CC79E', tealBg: '#17291F', tealLine: '#33573F', blue: '#8FB8E6',
+        violet: '#C9B0E8', violetBg: '#2B2238', violetLine: '#54456B', readText: '#E2D7C2', mapBg: '#1A1612', grid: '#262019', edge: '#6E5E48', stripe: '#231E18',
+        tagBg: '#EFE6D4', tagText: '#15120E', body: "'Alegreya Sans', system-ui, sans-serif", head: "'Cinzel', Georgia, serif", mono: "'Alegreya Sans', system-ui, sans-serif" }
+    };
+    const T = THEMES[s.theme];
+    const VARS = ['bg', 'panel', 'p2', 'p3', 'line', 'line2', 'text', 'muted', 'faint', 'accent', 'accentBg', 'onAccent', 'gold', 'goldBg', 'goldLine', 'deltaBg', 'deltaText',
+      'red', 'redBg', 'redLine', 'escBg', 'teal', 'tealBg', 'tealLine', 'blue', 'violet', 'violetBg', 'violetLine', 'readText', 'mapBg', 'grid', 'edge', 'stripe', 'tagBg', 'tagText', 'head', 'mono'];
+    const rootStyle = VARS.map((k) => '--' + k + ': ' + T[k]).join('; ') +
+      '; width: 1366px; height: 1024px; box-sizing: border-box; display: flex; flex-direction: column; background: ' + T.bg + '; color: ' + T.text + '; font-family: ' + T.body + '; font-size: 14px; position: relative; overflow: hidden';
+
+    const KINDS = {
+      hazard: { label: 'Hazard', c: T.red }, clue: { label: 'Clue', c: T.teal }, loot: { label: 'Loot', c: T.gold },
+      tech: { label: 'Tech', c: T.blue }, social: { label: 'Social', c: T.violet }, other: { label: 'Other', c: T.muted }
+    };
+    const LABELS = {
+      physical_zone: { name: 'Physical Zone', t1: 'SENSORY', t2: 'INTERACTIVE', t3: 'HIDDEN THREATS & LOOT', exits: 'EXITS' },
+      open_hub: { name: 'Open Hub', t1: 'ATMOSPHERE', t2: 'POINTS OF INTEREST & HOOKS', t3: 'SECRETS', exits: 'GO TO' },
+      investigation: { name: 'Investigation', t1: 'SURFACE OBSERVATIONS', t2: 'LEADS & EVIDENCE', t3: 'DEEP FORENSICS & SECRETS', exits: 'FOLLOW LEADS' },
+      action_stage: { name: 'Action Stage', t1: 'THE STAGE', t2: 'TOOLS & COMPLICATIONS', t3: 'HIDDEN THREATS', exits: 'OUTCOMES' }
+    };
+    const SCENES = {
+      'a1-s01': { id: 'a1-s01', code: '1', title: 'Docking Ring', arch: 'physical_zone', group: 'OUTER RING', page: 6, tags: ['Dim Light', 'Zero-G'],
+        read: 'Your ship locks onto the ring with a dull clang. No lights. No welcome message. Only the slow tick of cooling metal.',
+        t1: ['Emergency strips glow red along the floor', 'Frost on the inner airlock window', 'A child’s drawing floats past'],
+        t2: [{ id: 'a1-s01-i1', label: 'Airlock control panel', check: 'Computers 40%', result: 'Manual override accepted. The hab airlock opens.', kind: 'tech' }],
+        t3: [{ id: 'a1-s01-h1', label: 'Torn vent cover above the airlock', check: 'Observation 30%', result: 'Claw marks inside the vent. Something left this way.', kind: 'hazard' }],
+        ents: [], tips: 'Let the silence work. One Fear save when they first see the vent.', esc: [], delta: 'Airlock override used. The inner airlock is open.', review: false },
+      'a1-s02': { id: 'a1-s02', code: '2', title: 'Hab Ring Concourse', arch: 'open_hub', group: 'HAB RING', page: 9, tags: ['Low Power'],
+        read: 'The concourse curves away in both directions. Meal trays sit half-eaten on the tables.',
+        t1: ['Half-eaten meals, about three days old', 'A looping announcement with a broken voice'],
+        t2: [{ id: 'a1-s02-i1', label: 'Station duty board', check: null, result: 'Shows 14 staff. Station Chief Okafor was on duty last.', kind: 'social' },
+             { id: 'a1-s02-i2', label: 'Crew quarters door', check: null, result: 'Locked from inside. Someone breathes behind it.', kind: 'other' }],
+        t3: [], ents: ['e-okafor'], tips: 'Okafor hides in the quarters. He comes out only if the crew is calm.', esc: [], delta: null, review: true },
+      'a1-s03': { id: 'a1-s03', code: '3', title: 'Operations Center', arch: 'investigation', group: 'HAB RING', page: 12, tags: ['Evidence', 'Sparking Consoles'],
+        read: 'Every screen in the room is cracked. Someone took a fire axe to the main console.',
+        t1: ['Burned plastic smell', 'Fire axe stuck in the main console'],
+        t2: [{ id: 'a1-s03-i1', label: 'Backup log terminal', check: 'Computers 40%', result: 'A Helix access code shut down reactor cooling three days ago.', kind: 'clue' }],
+        t3: [{ id: 'a1-s03-h1', label: 'Hidden signal loop', check: 'Hacking 25%', result: 'A hidden program sends a signal to the planet below. It is not a distress call.', kind: 'clue' }],
+        ents: [], tips: 'When they find the cooling log, start the Reactor Meltdown clock.', esc: [], delta: null, review: false },
+      'a1-s04': { id: 'a1-s04', code: '4', title: 'Reactor Spine Chase', arch: 'action_stage', group: 'CORE', page: 17, tags: ['Heat', 'Alarms', 'Timed'],
+        read: 'Red lights. A voice counts down. The spine stretches ahead, two hundred meters of hot steel.',
+        t1: ['Heat comes in waves from the floor', 'Alarm sirens drown out speech'],
+        t2: [{ id: 'a1-s04-i1', label: 'Coolant valve wheel', check: 'Strength 35%', result: 'Turn it to remove 1 segment from the Reactor Meltdown clock.', kind: 'tech' }],
+        t3: [{ id: 'a1-s04-h1', label: 'Creature in the ceiling', check: 'Observation 20%', result: 'It drops on the last person in line.', kind: 'hazard' }],
+        ents: ['e-drones', 'e-creature'], tips: 'Use range bands: Close, Near, Far. Move threats one band each round.',
+        esc: [{ at: 'Round 1', text: 'Maintenance drones block the far end.' }, { at: 'Round 3', text: 'A steam pipe bursts. Body save or 1d10 damage.' }, { at: 'Round 5', text: 'The creature attacks from the ceiling.' }],
+        delta: null, review: false }
+    };
+    const ORDER = ['a1-s01', 'a1-s02', 'a1-s03', 'a1-s04'];
+    const CONNS = [
+      { id: 'a1-x01', from: 'a1-s01', to: 'a1-s02', type: 'DOOR', label: 'Inner airlock to Hab Ring', two: true, st: 'sealed', unlock: 'a1-s01-i1' },
+      { id: 'a1-x02', from: 'a1-s02', to: 'a1-s03', type: 'POI', label: 'Operations Center', two: true, st: 'open' },
+      { id: 'a1-x03', from: 'a1-s03', to: 'a1-s04', type: 'EVENT', label: 'Reactor alarm: run for the pods', two: false, st: 'hidden', unlock: 'a1-s03-i1' },
+      { id: 'a1-x04', from: 'a1-s04', to: 'a2-s01', type: 'TRAVEL', label: 'Escape pod to the planet', two: false, st: 'open', notLoaded: true }
+    ];
+    const ENTS = {
+      'e-okafor': { name: 'Chief Dana Okafor', type: 'NPC', page: 10, summary: 'Station chief. Hiding, afraid, armed.', disp: 'suspicious', roaming: false,
+        stat: 'Combat 25 · Instinct 35 · Wounds 2 · HP 12 · Revolver 3d10', voice: 'Whispers. Repeats questions back.', goal: 'Get off the station alive.',
+        secret: 'He let the Helix tech into the reactor and did not report it.',
+        clues: [{ id: 'e-okafor-c1', text: 'He saw a Helix technician at the reactor on the night of the failure.', check: 'Calm him first, then Persuasion' }] },
+      'e-creature': { name: 'The Vent Thing', type: 'Creature', page: 20, summary: 'Long, pale, many-jointed. Hunts by sound.', disp: 'hostile', roaming: true,
+        stat: 'Combat 55 · Instinct 70 · Wounds 3 · HP 30 · Claws 2d10', voice: 'Clicks in the walls.', goal: 'Take one victim at a time.',
+        secret: 'It follows the signal from Ops. Stop the signal and it gets confused.', clues: [] },
+      'e-drones': { name: 'Maintenance Drones ×3', type: 'Creature', page: 18, summary: 'Corrupt cleaning drones. Slow. Relentless.', disp: 'hostile', roaming: false,
+        stat: 'Combat 20 · Wounds 1 · HP 8 · Cutting arm 1d10', voice: 'Cheerful safety messages.', goal: 'Clean all organic matter.', secret: null, clues: [] }
+    };
+    const MAXHP = { 'e-okafor': 12, 'e-creature': 30, 'e-drones': 8 };
+    const DISP = { allied: T.teal, neutral: T.muted, suspicious: T.gold, hostile: T.red };
+    const chip = (c) => 'font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: ' + c + '; border: 1px solid ' + c + '80; border-radius: 6px; padding: 2px 6px; flex-shrink: 0';
+
+    const sc = SCENES[s.sceneId];
+    const L = LABELS[sc.arch];
+    const rev = (id) => !!s.revealed[id];
+    const toggleRev = (id) => () => { const r = Object.assign({}, this.state.revealed); r[id] = !r[id]; this.setState({ revealed: r }); };
+    const unlocked = (c) => c.st === 'open' || (c.unlock && rev(c.unlock));
+
+    const btnStyle = (on) => 'height: 44px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; flex-shrink: 0; ' +
+      (on ? 'border: 1px solid ' + T.tealLine + '; background: ' + T.tealBg + '; color: ' + T.teal : 'border: 1px solid ' + T.line2 + '; background: ' + T.p3 + '; color: ' + T.text);
+    const mkItem = (it, tier) => {
+      const r = rev(it.id);
+      const k = KINDS[it.kind] || KINDS.other;
+      const masked = tier === 3 && s.solo && !r;
+      return {
+        title: masked ? 'Something is hidden here' : it.label,
+        kindLabel: masked ? 'Hidden' : k.label,
+        chipStyle: chip(masked ? T.muted : k.c),
+        checkText: it.check || 'No check',
+        result: it.result,
+        showResult: !s.solo || r,
+        hiddenResult: s.solo && !r,
+        btnLabel: s.solo ? (r ? 'Revealed' : 'Reveal') : (r ? 'Found' : 'Mark found'),
+        btnStyle: btnStyle(r),
+        cardStyle: 'border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; ' +
+          (masked ? 'background: repeating-linear-gradient(135deg, ' + T.panel + ' 0 10px, ' + T.stripe + ' 10px 20px); border: 1px dashed ' + T.line2 : 'background: ' + T.panel + '; border: 1px solid ' + T.line),
+        toggle: toggleRev(it.id)
+      };
+    };
+
+    const reach = {};
+    CONNS.forEach((c) => {
+      if (!unlocked(c)) return;
+      if (s.visited[c.from]) reach[c.to] = true;
+      if (c.two && s.visited[c.to]) reach[c.from] = true;
+    });
+    const known = (id) => !s.solo || s.visited[id] || reach[id];
+
+    // exits
+    const exits = [];
+    CONNS.forEach((c) => {
+      let other = null;
+      if (c.from === sc.id) other = c.to; else if (c.two && c.to === sc.id) other = c.from;
+      if (!other) return;
+      const open = unlocked(c);
+      let state = 'Open'; let label = c.label; let color = T.accent; let disabled = false;
+      if (c.notLoaded) { state = 'Not loaded'; color = T.muted; disabled = true; }
+      else if (!open && c.st === 'hidden') { state = s.solo ? 'Unrevealed' : 'Hidden · find the cooling log'; label = s.solo ? '???' : c.label; color = T.muted; disabled = true; }
+      else if (!open) { state = 'Sealed'; color = T.gold; disabled = true; }
+      exits.push({
+        type: c.type, label: label, state: state, disabled: disabled,
+        style: 'height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 10px; font-size: 14px; font-weight: 600; ' +
+          'border: 1px solid ' + color + (disabled ? '66' : '') + '; background: ' + (disabled ? T.p2 : T.accentBg) + '; color: ' + color + (disabled ? '; cursor: default' : ''),
+        go: () => { if (!disabled) this.go(other); }
+      });
+    });
+
+    // scene list
+    let lastGroup = null;
+    const sceneRows = ORDER.map((id) => {
+      const x = SCENES[id];
+      const show = x.group !== lastGroup; lastGroup = x.group;
+      const isCur = id === sc.id; const vis = s.visited[id]; const kn = known(id);
+      const status = isCur ? 'Here' : vis ? 'Visited' : 'New';
+      const col = isCur ? T.accent : vis ? T.muted : T.violet;
+      return {
+        group: x.group, showGroup: show, code: '#' + x.code, title: kn ? x.title : '???', status: status, disabled: !kn,
+        chipStyle: chip(col),
+        style: 'min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; font-size: 14px; color: ' + T.text + '; ' +
+          (isCur ? 'background: ' + T.accentBg + '; border: 1px solid ' + T.accent : 'background: transparent; border: 1px solid transparent'),
+        go: () => { if (kn) this.go(id); }
+      };
+    });
+    sceneRows.push({ group: 'ACT 2', showGroup: true, code: 'a2-s01', title: 'Not loaded yet', status: 'Grey', disabled: true, chipStyle: chip(T.faint),
+      style: 'min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; font-size: 14px; color: ' + T.muted + '; background: transparent; border: 1px dashed ' + T.line2, go: () => {} });
+
+    // node map
+    const POS = { 'a1-s01': [70, 50], 'a1-s02': [190, 125], 'a1-s03': [80, 205], 'a1-s04': [190, 285], 'a2-s01': [90, 365] };
+    const nodeVisible = (id) => id === 'a2-s01' ? (!s.solo || s.visited['a1-s04']) : known(id);
+    const edges = [];
+    CONNS.forEach((c) => {
+      if (!nodeVisible(c.from) || !nodeVisible(c.to)) return;
+      const a = POS[c.from]; const b = POS[c.to];
+      const dx = b[0] - a[0]; const dy = b[1] - a[1];
+      const len = Math.sqrt(dx * dx + dy * dy); const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+      const open = unlocked(c) && !c.notLoaded;
+      edges.push({ style: 'position: absolute; left: ' + a[0] + 'px; top: ' + a[1] + 'px; width: ' + len + 'px; height: 0; border-top: 2px ' + (open ? 'solid ' + T.edge : 'dashed ' + T.line2) + '; transform: rotate(' + ang + 'deg); transform-origin: 0 0' });
+    });
+    const nodes = [];
+    ORDER.concat(['a2-s01']).forEach((id) => {
+      if (!nodeVisible(id)) return;
+      const p = POS[id];
+      const x = SCENES[id];
+      const isCur = id === sc.id; const vis = s.visited[id];
+      let border = '1px dashed ' + T.line2; let bg = T.panel; let extra = '';
+      if (isCur) { border = '2px solid ' + T.accent; bg = T.accentBg; extra = 'animation: gmpulse 2s infinite;'; }
+      else if (vis) { border = '1px solid ' + T.edge; bg = T.p2; }
+      if (!x) {
+        nodes.push({ code: 'a2-s01', title: 'Not loaded', disabled: true, go: () => {},
+          style: 'position: absolute; left: ' + (p[0] - 54) + 'px; top: ' + (p[1] - 22) + 'px; width: 108px; min-height: 44px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 4px 8px; border-radius: 10px; border: 1px dashed ' + T.line2 + '; background: ' + T.bg + '; color: ' + T.faint });
+        return;
+      }
+      nodes.push({
+        code: '#' + x.code + (vis && !isCur ? ' · visited' : ''), title: (s.solo && !vis) ? '???' : x.title, disabled: false, go: () => this.go(id),
+        style: 'position: absolute; left: ' + (p[0] - 58) + 'px; top: ' + (p[1] - 24) + 'px; width: 116px; min-height: 48px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 4px 8px; border-radius: 10px; color: ' + T.text + '; text-align: left; border: ' + border + '; background: ' + bg + ';' + extra
+      });
+    });
+    const nv = s.view.node; const iv = s.view.img;
+    const nodeLayerStyle = 'position: absolute; left: 0; top: 0; width: 276px; height: 440px; transform-origin: 0 0; transform: translate(' + nv.x + 'px, ' + nv.y + 'px) scale(' + nv.k + ')';
+    const imgLayerStyle = 'position: absolute; inset: 0; transform-origin: 0 0; transform: translate(' + iv.x + 'px, ' + iv.y + 'px) scale(' + iv.k + ')';
+
+    // map
+    const PINS = { 'a1-s01': [13, 50], 'a1-s02': [41, 29], 'a1-s03': [41, 73], 'a1-s04': [78, 50] };
+    const pins = ORDER.filter((id) => known(id)).map((id) => {
+      const p = PINS[id]; const isCur = id === sc.id; const vis = s.visited[id];
+      const bg = isCur ? T.accent : vis ? T.p3 : T.panel;
+      const col = isCur ? T.onAccent : T.text;
+      return { code: (s.solo && !vis) ? '?' : SCENES[id].code, label: SCENES[id].title, go: () => this.go(id),
+        style: 'position: absolute; left: calc(' + p[0] + '% - 22px); top: calc(' + p[1] + '% - 22px); width: 44px; height: 44px; border-radius: 50%; border: 2px solid ' + (isCur ? T.accent : vis ? T.edge : T.violet) + '; background: ' + bg + '; color: ' + col + '; font-family: ' + T.mono + '; font-weight: 700; font-size: 14px;' + (isCur ? ' animation: gmpulse 2s infinite;' : '') };
+    });
+    const mm = s.mapMode;
+    let mapBoxStyle = '';
+    let imgW = 700; let imgH = 360;
+    if (mm === 'pip') { mapBoxStyle = 'position: absolute; right: 16px; bottom: 84px; width: 320px; height: 220px; z-index: 5; border-radius: 12px; overflow: hidden; border: 1px solid ' + T.line2 + '; box-shadow: 0 12px 30px rgba(0,0,0,.35); touch-action: none; background: ' + T.mapBg; imgW = 320; imgH = 220; }
+    else if (mm === 'split') mapBoxStyle = 'position: relative; flex-shrink: 0; height: 360px; overflow: hidden; border-bottom: 1px solid ' + T.line + '; touch-action: none; background: ' + T.mapBg;
+    else if (mm === 'full') { mapBoxStyle = 'position: relative; flex: 1; overflow: hidden; touch-action: none; background: ' + T.mapBg; imgH = 860; }
+    const modes = [['off', 'Text'], ['pip', 'PiP'], ['split', 'Split'], ['full', 'Map']];
+    const mapModes = modes.map((m) => ({
+      label: m[1], pressed: mm === m[0] ? 'true' : 'false', pick: () => this.setState({ mapMode: m[0] }),
+      style: 'height: 40px; min-width: 48px; padding: 0 8px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600; ' + (mm === m[0] ? 'background: ' + T.accent + '; color: ' + T.onAccent : 'background: transparent; color: ' + T.text)
+    }));
+
+    // entities
+    const inScene = sc.ents.concat(Object.keys(s.summoned).filter((k) => s.summoned[k] && sc.ents.indexOf(k) < 0));
+    const setHp = (id, i, d) => () => {
+      const hp = Object.assign({}, this.state.hp); const arr = hp[id].slice();
+      arr[i] = Math.max(0, Math.min(MAXHP[id], arr[i] + d)); hp[id] = arr; this.setState({ hp: hp });
+    };
+    const sceneEntities = inScene.map((id) => {
+      const e = ENTS[id]; const arr = s.hp[id];
+      return {
+        name: e.name, summary: e.summary, disp: e.disp, dispStyle: chip(DISP[e.disp]),
+        inspect: () => this.setState({ drawer: 'entity', inspect: id }),
+        rows: arr.map((v, i) => ({ label: arr.length > 1 ? 'HP #' + (i + 1) : 'HP', text: v + ' / ' + MAXHP[id], dec: setHp(id, i, -1), inc: setHp(id, i, 1) }))
+      };
+    });
+    const roamers = Object.keys(ENTS).filter((id) => ENTS[id].roaming && inScene.indexOf(id) < 0).map((id) => ({
+      name: ENTS[id].name, summon: () => { const sm = Object.assign({}, this.state.summoned); sm[id] = true; this.setState({ summoned: sm }); }
+    }));
+
+    // trackers
+    const TR = [['stress', 'Stress', 0, 20], ['o2', 'O2 hrs', 0, 12], ['day', 'Day', 1, 10]];
+    const trackers = TR.map((t) => ({
+      label: t[1], value: s.trk[t[0]],
+      dec: () => { const k = Object.assign({}, this.state.trk); k[t[0]] = Math.max(t[2], k[t[0]] - 1); this.setState({ trk: k }); },
+      inc: () => { const k = Object.assign({}, this.state.trk); k[t[0]] = Math.min(t[3], k[t[0]] + 1); this.setState({ trk: k }); }
+    }));
+
+    // clock
+    const deg = (s.clock / 6) * 360;
+    const ringStyle = 'width: 84px; height: 84px; flex-shrink: 0; border-radius: 50%; border: none; padding: 0; display: flex; align-items: center; justify-content: center; ' +
+      'background: repeating-conic-gradient(from -1.5deg, ' + T.p2 + ' 0deg 3deg, transparent 3deg 60deg), conic-gradient(' + T.gold + ' 0deg ' + deg + 'deg, ' + T.line2 + ' ' + deg + 'deg 360deg)';
+
+    // timeline
+    const evDone = rev('ev-rescue-ship');
+    const evDay = s.trk.day >= 3;
+    const eventText = (s.solo && !evDone) ? 'Hidden event. Tap Reveal when it happens.' : 'A Helix “rescue” ship docks. It removes witnesses.';
+    const eventStyle = 'display: flex; flex-direction: column; gap: 6px; border-radius: 12px; padding: 10px 12px; ' +
+      (evDay ? 'background: ' + T.deltaBg + '; border: 1px solid ' + T.gold : 'background: ' + T.p2 + '; border: 1px solid ' + T.line);
+
+    // truths
+    const TRUTHS = [
+      { title: 'Who caused the reactor failure?', text: 'A Helix technician turned off reactor cooling on purpose.', core: true,
+        clues: [{ src: 'a1-s03-i1', label: 'Ops · backup log terminal' }, { src: 'e-okafor-c1', label: 'Okafor · saw a Helix tech' }] },
+      { title: 'What is the signal?', text: 'Helix uses the relay to call something on the planet.', core: false,
+        clues: [{ src: 'a1-s03-h1', label: 'Ops · hidden signal loop' }] }
+    ];
+    const truths = TRUTHS.map((t) => {
+      const found = t.clues.filter((c) => rev(c.src)).length;
+      return {
+        title: t.title,
+        answer: (s.solo && found === 0) ? 'Answer hidden until a clue is found.' : t.text,
+        status: found > 0 ? 'Found ' + found + '/' + t.clues.length : (t.core ? 'Core · open' : 'Optional'),
+        chipStyle: chip(found > 0 ? T.teal : (t.core ? T.gold : T.muted)),
+        clues: t.clues.map((c) => ({
+          label: c.label, state: rev(c.src) ? 'Found' : 'Not yet',
+          dotStyle: 'width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: ' + (rev(c.src) ? T.teal : T.line2),
+          textStyle: 'font-weight: 700; color: ' + (rev(c.src) ? T.teal : T.muted)
+        }))
+      };
+    });
+
+    // inspector
+    let ins = { name: '', disp: '', dispStyle: '', type: '', page: '', stat: '', voice: '', goal: '', secret: '', secretStyle: '', clues: [] };
+    if (s.inspect) {
+      const e = ENTS[s.inspect];
+      ins = {
+        name: e.name, disp: e.disp, dispStyle: chip(DISP[e.disp]), type: e.type, page: e.page, stat: e.stat, voice: e.voice, goal: e.goal,
+        secret: e.secret ? (s.solo ? 'Hidden in Solo Mode.' : e.secret) : 'None.',
+        secretStyle: 'color: ' + (s.solo ? T.muted : T.red),
+        clues: e.clues.map((c) => ({ check: c.check, text: c.text, show: !s.solo || rev(c.id), btn: rev(c.id) ? 'Found' : (s.solo ? 'Reveal' : 'Mark found'), toggle: toggleRev(c.id) }))
+      };
+    }
+
+    const tabStyle = (on) => 'flex: 1; height: 44px; border-radius: 10px; font-size: 14px; font-weight: 600; ' + (on ? 'border: 1px solid ' + T.accent + '; background: ' + T.accentBg + '; color: ' + T.accent : 'border: 1px solid ' + T.line + '; background: ' + T.p2 + '; color: ' + T.text);
+
+    const themeBtns = ['scifi', 'fantasy', 'fantasyDark'].map((k) => {
+      const th = THEMES[k]; const on = s.theme === k;
+      return {
+        label: th.label, pressed: on ? 'true' : 'false', pick: () => this.setState({ theme: k }),
+        swatch: 'width: 28px; height: 20px; border-radius: 5px; flex-shrink: 0; border: 1px solid ' + th.line2 + '; background: linear-gradient(90deg, ' + th.bg + ' 0 50%, ' + th.accent + ' 50% 75%, ' + th.gold + ' 75% 100%)',
+        style: 'height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 10px; font-size: 13px; font-weight: 600; ' +
+          (on ? 'border: 1px solid ' + T.accent + '; background: ' + T.accentBg + '; color: ' + T.accent : 'border: 1px solid ' + T.line + '; background: ' + T.p2 + '; color: ' + T.text)
+      };
+    });
+
+    return {
+      rootStyle: rootStyle, themeBtns: themeBtns,
+      scene: sc, labels: L,
+      tier2: sc.t2.map((it) => mkItem(it, 2)), tier3: sc.t3.map((it) => mkItem(it, 3)), noTier3: sc.t3.length === 0,
+      hasDelta: !!sc.delta, hasEsc: sc.esc.length > 0,
+      readOpen: s.readOpen, readHint: s.readOpen ? 'Tap to fold' : 'Tap to open', toggleRead: () => this.setState({ readOpen: !this.state.readOpen }),
+      exits: exits, sceneRows: sceneRows, edges: edges, nodes: nodes, pins: pins,
+      nodePZ: this.makePZ('node', 276, 440), imgPZ: this.makePZ('img', imgW, imgH),
+      nodeLayerStyle: nodeLayerStyle, imgLayerStyle: imgLayerStyle,
+      nodeZoomText: Math.round(nv.k * 100) + '%', imgZoomText: Math.round(iv.k * 100) + '%',
+      navIsList: s.nav === 'list', navIsNodes: s.nav === 'nodes',
+      listPressed: s.nav === 'list' ? 'true' : 'false', nodesPressed: s.nav === 'nodes' ? 'true' : 'false',
+      listTabStyle: tabStyle(s.nav === 'list'), nodesTabStyle: tabStyle(s.nav === 'nodes'),
+      showList: () => this.setState({ nav: 'list' }), showNodes: () => this.setState({ nav: 'nodes' }),
+      mapModes: mapModes, mapVisible: mm !== 'off', mapBoxStyle: mapBoxStyle, showScene: mm !== 'full',
+      soloPressed: s.solo ? 'true' : 'false', soloLabel: s.solo ? 'Solo' : 'GM',
+      soloStyle: 'height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 10px; font-size: 13px; font-weight: 600; ' +
+        (s.solo ? 'border: 1px solid ' + T.violet + '; background: ' + T.violetBg + '; color: ' + T.violet : 'border: 1px solid ' + T.line + '; background: ' + T.p2 + '; color: ' + T.text),
+      toggleSolo: () => this.setState({ solo: !this.state.solo }),
+      trackers: trackers,
+      sceneEntities: sceneEntities, noEntities: sceneEntities.length === 0, roamers: roamers, noRoamers: roamers.length === 0,
+      ringStyle: ringStyle, clockText: s.clock + '/6',
+      clockInc: () => this.setState({ clock: Math.min(6, this.state.clock + 1) }), clockDec: () => this.setState({ clock: Math.max(0, this.state.clock - 1) }),
+      eventText: eventText, eventStyle: eventStyle, eventBtn: evDone ? 'Done' : (s.solo ? 'Reveal' : 'Mark done'), toggleEvent: toggleRev('ev-rescue-ship'),
+      truths: truths,
+      pdfOpen: s.drawer === 'pdf', entityOpen: s.drawer === 'entity', pdfPage: sc.page + 2, ins: ins,
+      openPdf: () => this.setState({ drawer: 'pdf' }), closeDrawer: () => this.setState({ drawer: null, inspect: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

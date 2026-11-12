@@ -1,0 +1,495 @@
+{
+  "schema_version": "1.0",
+  "meta": {
+    "module_id": "mod-silent-relay",
+    "title": "The Silent Relay",
+    "system": "Mothership 1e",
+    "genre": "sci-fi horror",
+    "check_format": "d100 roll-under skill check, written like 'Computers 40%'",
+    "page_offset": 2,
+    "chunk_id": "chunk-a1",
+    "chunk_title": "Act 1: Boarding the Relay",
+    "chunk_pages": "4-22",
+    "complete": true,
+    "stopped_at_page": null
+  },
+  "trackers": [
+    {
+      "id": "tr-stress",
+      "label": "Crew Stress",
+      "min": 0,
+      "max": 20,
+      "start": 2,
+      "scope": "global"
+    },
+    {
+      "id": "tr-o2",
+      "label": "O2 (hours)",
+      "min": 0,
+      "max": 12,
+      "start": 12,
+      "scope": "a1"
+    },
+    {
+      "id": "tr-day",
+      "label": "Day",
+      "min": 1,
+      "max": 10,
+      "start": 1,
+      "scope": "global"
+    }
+  ],
+  "acts": [
+    {
+      "id": "a1",
+      "title": "Boarding the Relay",
+      "page_start": 4,
+      "page_end": 22,
+      "summary": "The crew docks at a silent comms relay. The staff is missing."
+    }
+  ],
+  "scenes": [
+    {
+      "id": "a1-s01",
+      "code": "1",
+      "title": "Docking Ring",
+      "act_id": "a1",
+      "archetype": "physical_zone",
+      "group": "Outer Ring",
+      "page": 6,
+      "summary": "Dark docking ring. The airlock to the hab is sealed.",
+      "tags": [
+        "Dim Light",
+        "Zero-G"
+      ],
+      "read_aloud": "Your ship locks onto the ring with a dull clang. No lights. No welcome message. Only the slow tick of cooling metal.",
+      "tier1_sensory": [
+        "Emergency strips glow red along the floor",
+        "Frost on the inner airlock window",
+        "A child's drawing floats past"
+      ],
+      "tier2_interactive": [
+        {
+          "id": "a1-s01-i1",
+          "label": "Airlock control panel",
+          "check": "Computers 40%",
+          "result": "The panel accepts a manual override. The hab airlock opens.",
+          "kind": "tech",
+          "truth_id": null,
+          "unlocks_connection_id": "a1-x01",
+          "needs_review": false,
+          "source_quote": "a manual override will open the inner airlock"
+        }
+      ],
+      "tier3_hidden": [
+        {
+          "id": "a1-s01-h1",
+          "label": "Torn vent cover above the airlock",
+          "check": "Observation 30%",
+          "result": "Claw marks inside the vent. Something left this way.",
+          "kind": "hazard",
+          "truth_id": null,
+          "unlocks_connection_id": null,
+          "needs_review": false,
+          "source_quote": "deep gouges line the inside of the vent"
+        }
+      ],
+      "entity_ids": [],
+      "gm_tips": "Let the silence work. Make one Fear save when they first see the vent.",
+      "escalation": [],
+      "default_map_id": null,
+      "needs_review": false,
+      "source_quote": "The docking ring is dark and silent"
+    },
+    {
+      "id": "a1-s02",
+      "code": "2",
+      "title": "Hab Ring Concourse",
+      "act_id": "a1",
+      "archetype": "open_hub",
+      "group": "Hab Ring",
+      "page": 9,
+      "summary": "Empty living area. Doors to Ops and the crew quarters.",
+      "tags": [
+        "Low Power"
+      ],
+      "read_aloud": "The concourse curves away in both directions. Meal trays sit half-eaten on the tables.",
+      "tier1_sensory": [
+        "Half-eaten meals, about three days old",
+        "A looping station announcement with a broken voice"
+      ],
+      "tier2_interactive": [
+        {
+          "id": "a1-s02-i1",
+          "label": "Station duty board",
+          "check": null,
+          "result": "Shows 14 staff. Station Chief Okafor was on duty last.",
+          "kind": "social",
+          "truth_id": null,
+          "unlocks_connection_id": null,
+          "needs_review": false,
+          "source_quote": "the duty board lists fourteen names"
+        }
+      ],
+      "tier3_hidden": [],
+      "entity_ids": [
+        "e-okafor"
+      ],
+      "gm_tips": "Okafor hides in the quarters. He comes out only if the crew is calm.",
+      "escalation": [],
+      "default_map_id": null,
+      "needs_review": true,
+      "source_quote": "the concourse is deserted"
+    },
+    {
+      "id": "a1-s03",
+      "code": "3",
+      "title": "Operations Center",
+      "act_id": "a1",
+      "archetype": "investigation",
+      "group": "Hab Ring",
+      "page": 12,
+      "summary": "Wrecked ops room. Logs show sabotage.",
+      "tags": [
+        "Evidence",
+        "Sparking Consoles"
+      ],
+      "read_aloud": "Every screen in the room is cracked. Someone took a fire axe to the main console.",
+      "tier1_sensory": [
+        "Burned plastic smell",
+        "Fire axe stuck in the main console"
+      ],
+      "tier2_interactive": [
+        {
+          "id": "a1-s03-i1",
+          "label": "Backup log terminal",
+          "check": "Computers 40%",
+          "result": "A Helix access code shut down reactor cooling three days ago.",
+          "kind": "clue",
+          "truth_id": "t-sabotage",
+          "unlocks_connection_id": "a1-x03",
+          "needs_review": false,
+          "source_quote": "cooling was disabled using a Helix access code"
+        }
+      ],
+      "tier3_hidden": [
+        {
+          "id": "a1-s03-h1",
+          "label": "Hidden signal loop",
+          "check": "Hacking 25%",
+          "result": "A hidden program sends a signal to the planet below. It is not a distress call.",
+          "kind": "clue",
+          "truth_id": "t-signal",
+          "unlocks_connection_id": null,
+          "needs_review": false,
+          "source_quote": "a hidden loop transmits toward the planet"
+        }
+      ],
+      "entity_ids": [],
+      "gm_tips": "When they find the cooling log, start the Reactor Meltdown clock.",
+      "escalation": [],
+      "default_map_id": null,
+      "needs_review": false,
+      "source_quote": "The operations center has been wrecked"
+    },
+    {
+      "id": "a1-s04",
+      "code": "4",
+      "title": "Reactor Spine Chase",
+      "act_id": "a1",
+      "archetype": "action_stage",
+      "group": "Core",
+      "page": 17,
+      "encounter_page": 18,
+      "summary": "Run the reactor spine to the escape pods. Drones and the creature follow.",
+      "tags": [
+        "Heat",
+        "Alarms",
+        "Timed"
+      ],
+      "read_aloud": "Red lights. A voice counts down. The spine stretches ahead, two hundred meters of hot steel.",
+      "tier1_sensory": [
+        "Heat comes in waves from the floor",
+        "Alarm sirens drown out speech"
+      ],
+      "tier2_interactive": [
+        {
+          "id": "a1-s04-i1",
+          "label": "Coolant valve wheel",
+          "check": "Strength 35%",
+          "result": "Turn it to remove 1 segment from the Reactor Meltdown clock.",
+          "kind": "tech",
+          "truth_id": null,
+          "unlocks_connection_id": null,
+          "needs_review": false,
+          "source_quote": "a manual coolant valve can slow the meltdown"
+        }
+      ],
+      "tier3_hidden": [
+        {
+          "id": "a1-s04-h1",
+          "label": "Creature in the ceiling",
+          "check": "Observation 20%",
+          "result": "It drops on the last person in line.",
+          "kind": "hazard",
+          "truth_id": null,
+          "unlocks_connection_id": null,
+          "needs_review": false,
+          "source_quote": "the creature waits in the ceiling"
+        }
+      ],
+      "entity_ids": [
+        "e-drones",
+        "e-creature"
+      ],
+      "entity_counts": {
+        "e-drones": 2
+      },
+      "gm_tips": "Use range bands: Close, Near, Far. Move threats one band each round.",
+      "escalation": [
+        {
+          "at": "Round 1",
+          "text": "Maintenance drones block the far end."
+        },
+        {
+          "at": "Round 3",
+          "text": "A steam pipe bursts. Body save or 1d10 damage."
+        },
+        {
+          "at": "Round 5",
+          "text": "The creature attacks from the ceiling."
+        }
+      ],
+      "default_map_id": null,
+      "needs_review": false,
+      "source_quote": "The reactor spine is a long, narrow walkway"
+    }
+  ],
+  "connections": [
+    {
+      "id": "a1-x01",
+      "from": "a1-s01",
+      "to": "a1-s02",
+      "type": "door",
+      "label": "Inner airlock to Hab Ring",
+      "two_way": true,
+      "state": "sealed",
+      "requires": "Manual override at the airlock panel",
+      "page": 6,
+      "needs_review": false,
+      "source_quote": "The inner airlock is sealed"
+    },
+    {
+      "id": "a1-x02",
+      "from": "a1-s02",
+      "to": "a1-s03",
+      "type": "poi",
+      "label": "Operations Center",
+      "two_way": true,
+      "state": "open",
+      "requires": null,
+      "page": 9,
+      "needs_review": false,
+      "source_quote": "Ops is at the north end of the concourse"
+    },
+    {
+      "id": "a1-x03",
+      "from": "a1-s03",
+      "to": "a1-s04",
+      "type": "event",
+      "label": "Reactor alarm: run for the pods",
+      "two_way": false,
+      "state": "hidden",
+      "requires": "Find the cooling log",
+      "page": 12,
+      "needs_review": false,
+      "source_quote": "the reactor alarm sounds"
+    },
+    {
+      "id": "a1-x04",
+      "from": "a1-s04",
+      "to": "a2-s01",
+      "type": "travel",
+      "label": "Escape pod to the planet",
+      "two_way": false,
+      "state": "open",
+      "requires": null,
+      "page": 19,
+      "needs_review": false,
+      "source_quote": "the pods are set to land on the planet"
+    }
+  ],
+  "entities": [
+    {
+      "id": "e-okafor",
+      "name": "Chief Dana Okafor",
+      "type": "npc",
+      "page": 10,
+      "summary": "Station chief. Hides in the crew quarters. Afraid and armed.",
+      "count": 1,
+      "stat_line": "Combat 25 · Instinct 35 · Wounds 2 · HP 12 · Revolver 3d10",
+      "tracks": [
+        {
+          "label": "HP",
+          "max": 12
+        }
+      ],
+      "roleplay": {
+        "voice": "Whispers. Repeats questions back.",
+        "goal": "Get off the station alive.",
+        "secret": "He let the Helix tech into the reactor and did not report it."
+      },
+      "clues": [
+        {
+          "id": "e-okafor-c1",
+          "text": "He saw a Helix technician at the reactor on the night of the failure.",
+          "check": "Calm him first. Then a Persuasion roll, or show him the cooling log.",
+          "truth_id": "t-sabotage",
+          "hidden": true
+        }
+      ],
+      "disposition": "suspicious",
+      "faction_id": null,
+      "roaming": false,
+      "needs_review": false,
+      "source_quote": "Okafor is hiding in quarters"
+    },
+    {
+      "id": "e-creature",
+      "name": "The Vent Thing",
+      "type": "creature",
+      "page": 20,
+      "summary": "Long, pale, many-jointed. Hunts by sound.",
+      "count": 1,
+      "stat_line": "Combat 55 · Instinct 70 · Wounds 3 · HP 30 · Claws 2d10",
+      "tracks": [
+        {
+          "label": "HP",
+          "max": 30
+        }
+      ],
+      "roleplay": {
+        "voice": "Clicks in the walls.",
+        "goal": "Take one victim at a time.",
+        "secret": "It follows the signal from Ops. Stop the signal and it gets confused."
+      },
+      "clues": [],
+      "disposition": "hostile",
+      "faction_id": null,
+      "roaming": true,
+      "needs_review": false,
+      "source_quote": "the creature hunts by sound"
+    },
+    {
+      "id": "e-drones",
+      "name": "Maintenance Drones",
+      "type": "creature",
+      "page": 18,
+      "summary": "Cleaning drones with a corrupt program. Slow but they do not stop.",
+      "count": 3,
+      "stat_line": "Combat 20 · Wounds 1 · HP 8 · Cutting arm 1d10",
+      "tracks": [
+        {
+          "label": "HP",
+          "max": 8
+        }
+      ],
+      "roleplay": {
+        "voice": "Cheerful safety messages.",
+        "goal": "Clean all organic matter.",
+        "secret": null
+      },
+      "clues": [],
+      "disposition": "hostile",
+      "faction_id": "f-helix",
+      "roaming": false,
+      "needs_review": false,
+      "source_quote": "three drones patrol the spine"
+    }
+  ],
+  "truths": [
+    {
+      "id": "t-sabotage",
+      "title": "Who caused the reactor failure?",
+      "text": "A Helix technician turned off reactor cooling on purpose.",
+      "importance": "core",
+      "scope": "global",
+      "page": 5
+    },
+    {
+      "id": "t-signal",
+      "title": "What is the signal?",
+      "text": "Helix uses the relay to call something on the planet.",
+      "importance": "optional",
+      "scope": "global",
+      "page": 5
+    }
+  ],
+  "clocks": [
+    {
+      "id": "k-reactor",
+      "name": "Reactor Meltdown",
+      "segments": 6,
+      "start": 0,
+      "when_full": "The reactor explodes. Everyone still on the station dies.",
+      "hidden": false,
+      "scope": "a1"
+    }
+  ],
+  "timeline": [
+    {
+      "id": "ev-rescue-ship",
+      "when": "Day 3, morning",
+      "day": 3,
+      "order": 30,
+      "text": "A Helix 'rescue' ship docks. It removes witnesses.",
+      "trigger": "Earlier if the crew sends a distress call.",
+      "hidden": true,
+      "scene_id": "a1-s01",
+      "scope": "global"
+    }
+  ],
+  "factions": [
+    {
+      "id": "f-helix",
+      "name": "Helix Dynamics",
+      "summary": "Owns the relay. Wants the signal to continue.",
+      "goal": "Keep the signal running and hide the sabotage.",
+      "attitude": "neutral",
+      "secret": "Helix wants contact with the thing on the planet.",
+      "scope": "global",
+      "page": 4
+    }
+  ],
+  "random_tables": [
+    {
+      "id": "rt-relay",
+      "name": "Relay Encounters",
+      "dice": "1d6",
+      "entries": [
+        {
+          "range": "1-2",
+          "text": "Lights flicker. Nothing more.",
+          "entity_id": null
+        },
+        {
+          "range": "3-4",
+          "text": "A drone rolls past, cleaning.",
+          "entity_id": "e-drones"
+        },
+        {
+          "range": "5",
+          "text": "Clicking in the walls. Stress +1.",
+          "entity_id": null
+        },
+        {
+          "range": "6",
+          "text": "The Vent Thing finds the party.",
+          "entity_id": "e-creature"
+        }
+      ],
+      "scope": "a1",
+      "page": 21
+    }
+  ]
+}
