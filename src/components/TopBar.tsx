@@ -30,9 +30,9 @@ export const TopBar: React.FC<TopBarProps> = ({
         height: '64px',
         flexShrink: 0,
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-end',
         gap: '10px',
-        padding: '0 14px',
+        padding: '0 14px 4px',
         background: 'var(--panel)',
         borderBottom: '1px solid var(--line)',
         boxSizing: 'border-box',
@@ -79,7 +79,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             background: 'var(--p2)',
             border: '1px solid var(--line)',
             borderRadius: '10px',
-            padding: '3px',
+            padding: '2px',
           }}
         >
           <button
@@ -181,7 +181,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           background: 'var(--p2)',
           border: '1px solid var(--line)',
           borderRadius: '10px',
-          padding: '3px',
+          padding: '2px',
           gap: '2px',
         }}
         role="group"

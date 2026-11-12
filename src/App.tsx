@@ -14,8 +14,9 @@ export const App: React.FC = () => {
   const [mapMode, setMapMode] = useState<MapDisplayMode>('off');
   const [soloMask, setSoloMask] = useState(false);
   const [drawer, setDrawer] = useState<DrawerMode>(null);
+  const standalone = isRunningStandalone();
   const [showStandaloneBanner, setShowStandaloneBanner] = useState<boolean>(
-    () => !isRunningStandalone()
+    () => !standalone
   );
 
   useEffect(() => {
@@ -27,6 +28,10 @@ export const App: React.FC = () => {
   }, [theme]);
 
   const cssVars = getThemeCssVariables(theme) as React.CSSProperties;
+  // shortcut: iPadOS standalone PWA often reports env(safe-area-inset-top) as 0px while drawing the 24-28px clock/battery/multitasking bar, upgrade if WebKit reports accurate standalone insets
+  const safeTopPadding = standalone
+    ? 'var(--safe-top, max(env(safe-area-inset-top, 0px), 28px))'
+    : 'var(--safe-top, env(safe-area-inset-top, 0px))';
 
   return (
     <div
@@ -36,10 +41,10 @@ export const App: React.FC = () => {
         ...cssVars,
         width: '100%',
         height: '100%',
-        paddingTop: 'var(--safe-top, env(safe-area-inset-top, 0px))',
+        paddingTop: safeTopPadding,
         display: 'flex',
         flexDirection: 'column',
-        background: 'var(--bg)',
+        background: 'var(--panel)',
         color: 'var(--text)',
         fontFamily: 'var(--body)',
         fontSize: '14px',

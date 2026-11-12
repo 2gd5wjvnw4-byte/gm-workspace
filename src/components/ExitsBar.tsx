@@ -8,7 +8,7 @@ export const ExitsBar: React.FC = () => {
         flexShrink: 0,
         borderTop: '1px solid var(--line)',
         background: 'var(--panel)',
-        padding: '10px 16px',
+        padding: '6px 16px',
         display: 'flex',
         alignItems: 'center',
         gap: '8px',
