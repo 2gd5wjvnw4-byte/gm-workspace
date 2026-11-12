@@ -36,6 +36,7 @@ export const App: React.FC = () => {
         ...cssVars,
         width: '100%',
         height: '100%',
+        paddingTop: 'var(--safe-top, env(safe-area-inset-top, 0px))',
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--bg)',

@@ -237,6 +237,12 @@ export function applyThemeToElement(themeId: ThemeId, el?: HTMLElement | null): 
   for (const key of TOKEN_KEYS) {
     target.style.setProperty(`--${key}`, tokens[key]);
   }
+  if (typeof document !== 'undefined') {
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', tokens.panel);
+    }
+  }
 }
 
 export interface ThemeStoreState {

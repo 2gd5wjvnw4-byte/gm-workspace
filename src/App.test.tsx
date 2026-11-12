@@ -98,4 +98,10 @@ describe('GM Workspace App Shell & Themes', () => {
     fireEvent.click(dismissBtn);
     expect(screen.queryByTestId('standalone-banner')).not.toBeInTheDocument();
   });
+
+  it('applies safe-area-inset-top padding on app-root so TopBar clears iPadOS status bar', () => {
+    render(<App />);
+    const root = screen.getByTestId('app-root');
+    expect(root.style.paddingTop).toContain('env(safe-area-inset-top');
+  });
 });
