@@ -10,6 +10,7 @@ import {
   getMaskedItemView,
   getSceneExits,
   getSceneVisibility,
+  searchModuleRecords,
 } from './solo';
 
 const samplePath = resolve(process.cwd(), 'samples/silent-relay-a1.json');
@@ -218,5 +219,91 @@ describe('Solo Mask and scene reachability rules (src/lib/solo.ts)', () => {
     const unloadedExit = exitsS4.find((e) => e.connectionId === 'a1-x04')!;
     expect(unloadedExit.stateLabel).toBe('Not loaded');
     expect(unloadedExit.disabled).toBe(true);
+  });
+
+  it('searches across scenes, entities, items, truths, factions, and tables, and hides masked records in Solo Mask', () => {
+    // GM Mode: finds Okafor, terminal, Torn vent cover, Helix, Relay Encounters
+    const gmOkafor = searchModuleRecords({
+      query: 'okafor',
+      scenes: sampleChunk.scenes,
+      entities: sampleChunk.entities,
+      truths: sampleChunk.truths,
+      factions: sampleChunk.factions,
+      randomTables: sampleChunk.random_tables,
+      connections: sampleChunk.connections,
+      connectionState: {},
+      visited: { 'a1-s01': true },
+      revealed: {},
+      currentSceneId: 'a1-s01',
+      soloMask: false,
+    });
+    expect(gmOkafor.some((r) => r.type === 'entity' && r.id === 'e-okafor')).toBe(true);
+
+    const gmVent = searchModuleRecords({
+      query: 'torn vent',
+      scenes: sampleChunk.scenes,
+      entities: sampleChunk.entities,
+      truths: sampleChunk.truths,
+      factions: sampleChunk.factions,
+      randomTables: sampleChunk.random_tables,
+      connections: sampleChunk.connections,
+      connectionState: {},
+      visited: { 'a1-s01': true },
+      revealed: {},
+      currentSceneId: 'a1-s01',
+      soloMask: false,
+    });
+    expect(gmVent.some((r) => r.type === 'item' && r.id === 'a1-s01-h1')).toBe(true);
+
+    // Solo Mode at Scene 1: Tier 3 item a1-s01-h1 ("Torn vent cover") is unrevealed -> hidden from search
+    const soloVent = searchModuleRecords({
+      query: 'torn vent',
+      scenes: sampleChunk.scenes,
+      entities: sampleChunk.entities,
+      truths: sampleChunk.truths,
+      factions: sampleChunk.factions,
+      randomTables: sampleChunk.random_tables,
+      connections: sampleChunk.connections,
+      connectionState: {},
+      visited: { 'a1-s01': true },
+      revealed: {},
+      currentSceneId: 'a1-s01',
+      soloMask: true,
+    });
+    expect(soloVent).toHaveLength(0);
+
+    // Solo Mode at Scene 1: Scene 2 (where Okafor is) is unvisited -> Okafor is hidden from search
+    const soloOkaforUnvisited = searchModuleRecords({
+      query: 'okafor',
+      scenes: sampleChunk.scenes,
+      entities: sampleChunk.entities,
+      truths: sampleChunk.truths,
+      factions: sampleChunk.factions,
+      randomTables: sampleChunk.random_tables,
+      connections: sampleChunk.connections,
+      connectionState: {},
+      visited: { 'a1-s01': true },
+      revealed: {},
+      currentSceneId: 'a1-s01',
+      soloMask: true,
+    });
+    expect(soloOkaforUnvisited.some((r) => r.id === 'e-okafor')).toBe(false);
+
+    // Once Scene 2 is visited, Okafor is found in Solo Mode
+    const soloOkaforVisited = searchModuleRecords({
+      query: 'okafor',
+      scenes: sampleChunk.scenes,
+      entities: sampleChunk.entities,
+      truths: sampleChunk.truths,
+      factions: sampleChunk.factions,
+      randomTables: sampleChunk.random_tables,
+      connections: sampleChunk.connections,
+      connectionState: {},
+      visited: { 'a1-s01': true, 'a1-s02': true },
+      revealed: {},
+      currentSceneId: 'a1-s02',
+      soloMask: true,
+    });
+    expect(soloOkaforVisited.some((r) => r.id === 'e-okafor')).toBe(true);
   });
 });

@@ -1,12 +1,31 @@
 import React from 'react';
-import type { NavViewMode } from '../storage/types';
+import type { DispositionState, NavViewMode } from '../storage/types';
 import { computeReachableSceneIds, getSceneVisibility } from '../lib/solo';
 import { useCampaignStore } from '../store/campaignStore';
 
 export interface LeftPanelProps {
   navView: NavViewMode;
   onSelectNavView: (view: NavViewMode) => void;
-  onOpenEntityInspector: () => void;
+  onOpenEntityInspector: (entityId: string) => void;
+}
+
+const DISPOSITION_COLORS: Record<DispositionState, string> = {
+  allied: 'var(--teal)',
+  neutral: 'var(--muted)',
+  suspicious: 'var(--gold)',
+  hostile: 'var(--red)',
+};
+
+interface DockEntityCardModel {
+  id: string;
+  name: string;
+  summary: string;
+  disposition: DispositionState;
+  defaultDisposition: DispositionState;
+  copyCount: number;
+  tracks: Array<{ label: string; max: number }>;
+  isSummoned: boolean;
+  isImprovised: boolean;
 }
 
 interface UnloadedActSceneItem {
@@ -28,7 +47,16 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   onSelectNavView,
   onOpenEntityInspector,
 }) => {
-  const { merged, live, goToScene, toggleSceneVisited } = useCampaignStore();
+  const {
+    merged,
+    live,
+    goToScene,
+    toggleSceneVisited,
+    adjustEntityTrack,
+    cycleEntityDisposition,
+    summonEntityToScene,
+    removeSummonedEntityFromScene,
+  } = useCampaignStore();
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
@@ -43,10 +71,80 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   });
 
   const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
+  const currentScene =
+    merged.scenes.find((s) => s.id === currentSceneId) ?? merged.scenes[0] ?? null;
   const visited = live?.visited ?? {};
   const revealed = live?.revealed ?? {};
   const connectionState = live?.connectionState ?? {};
   const soloMask = Boolean(live?.ui?.soloMask);
+  const entityTracks = live?.entityTracks ?? {};
+  const entityDisposition = live?.entityDisposition ?? {};
+  const summonedForScene = currentSceneId ? (live?.summoned?.[currentSceneId] ?? []) : [];
+  const improvisedEntities = live?.improvisedEntities ?? [];
+
+  // Build "In This Scene" entity list: scene.entity_ids + summonedForScene + improvisedEntities for this scene
+  const entityById = new Map(merged.entities.map((e) => [e.id, e]));
+  const inSceneIds: string[] = [];
+  if (currentScene) {
+    for (const eid of currentScene.entity_ids) {
+      if (!inSceneIds.includes(eid) && entityById.has(eid)) {
+        inSceneIds.push(eid);
+      }
+    }
+    for (const eid of summonedForScene) {
+      if (!inSceneIds.includes(eid) && entityById.has(eid)) {
+        inSceneIds.push(eid);
+      }
+    }
+  }
+
+  const sceneEntityCards: DockEntityCardModel[] = inSceneIds.map((eid) => {
+    const ent = entityById.get(eid)!;
+    const isSummoned =
+      Boolean(currentScene) &&
+      !currentScene!.entity_ids.includes(eid) &&
+      summonedForScene.includes(eid);
+    const countOverride = currentScene?.entity_counts?.[eid];
+    const copyCount =
+      typeof countOverride === 'number' && countOverride > 0
+        ? countOverride
+        : Math.max(1, ent.count || 1);
+    const disp = entityDisposition[eid] ?? ent.disposition;
+    return {
+      id: eid,
+      name: ent.name,
+      summary: ent.summary,
+      disposition: disp,
+      defaultDisposition: ent.disposition,
+      copyCount,
+      tracks: ent.tracks,
+      isSummoned,
+      isImprovised: false,
+    };
+  });
+
+  if (currentSceneId) {
+    for (const imp of improvisedEntities) {
+      if (imp.sceneId === currentSceneId) {
+        const disp = entityDisposition[imp.id] ?? imp.disposition;
+        sceneEntityCards.push({
+          id: imp.id,
+          name: imp.name,
+          summary: imp.summary,
+          disposition: disp,
+          defaultDisposition: imp.disposition,
+          copyCount: 1,
+          tracks: imp.track ? [imp.track] : [],
+          isSummoned: false,
+          isImprovised: true,
+        });
+      }
+    }
+  }
+
+  const roamingEntities = merged.entities.filter(
+    (e) => e.roaming && !inSceneIds.includes(e.id)
+  );
 
   const reachable = computeReachableSceneIds({
     visited,
@@ -456,6 +554,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       )}
 
       <div
+        data-testid="in-this-scene-dock"
         style={{
           borderTop: '1px solid var(--line)',
           padding: '12px',
@@ -475,48 +574,214 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         >
           IN THIS SCENE
         </div>
-        <div
-          style={{
-            background: 'var(--p2)',
-            border: '1px solid var(--line)',
-            borderRadius: '12px',
-            padding: '10px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-          }}
-        >
-          <button
-            type="button"
-            onClick={onOpenEntityInspector}
-            style={{
-              all: 'unset',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              minHeight: '44px',
-            }}
+
+        {sceneEntityCards.length === 0 ? (
+          <div
+            data-testid="no-scene-entities"
+            style={{ fontSize: '13px', color: 'var(--muted)' }}
           >
-            <span style={{ fontWeight: 600, flex: 1 }}>Placeholder Entity (tap to inspect)</span>
-            <span
-              style={{
-                fontSize: '11px',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                color: 'var(--muted)',
-                border: '1px solid var(--line2)',
-                borderRadius: '6px',
-                padding: '2px 6px',
-              }}
-            >
-              Neutral
-            </span>
-          </button>
-          <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-            No entities loaded yet.
+            No one here. Yet.
           </div>
-        </div>
+        ) : (
+          sceneEntityCards.map((card) => {
+            const dispColor = DISPOSITION_COLORS[card.disposition];
+            const trackMatrix = entityTracks[card.id] ?? [];
+            return (
+              <div
+                key={card.id}
+                data-testid={`entity-card-${card.id}`}
+                style={{
+                  background: 'var(--p2)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '12px',
+                  padding: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <button
+                    type="button"
+                    data-testid={`inspect-entity-${card.id}`}
+                    onClick={() => onOpenEntityInspector(card.id)}
+                    style={{
+                      all: 'unset',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: '32px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {card.name}
+                    {card.copyCount > 1 ? ` ×${card.copyCount}` : ''}
+                  </button>
+                  {card.isImprovised && (
+                    <span
+                      data-testid={`entity-improvised-chip-${card.id}`}
+                      style={chipStyle('var(--gold)')}
+                    >
+                      Improvised
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    data-testid={`entity-disp-chip-${card.id}`}
+                    onClick={() =>
+                      cycleEntityDisposition(card.id, card.defaultDisposition)
+                    }
+                    aria-label={`Change ${card.name} disposition (${card.disposition})`}
+                    style={{
+                      ...chipStyle(dispColor),
+                      background: 'transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {card.disposition}
+                  </button>
+                  {card.isSummoned && currentSceneId && (
+                    <button
+                      type="button"
+                      data-testid={`remove-summoned-${card.id}`}
+                      onClick={() =>
+                        removeSummonedEntityFromScene(currentSceneId, card.id)
+                      }
+                      aria-label={`Remove ${card.name} from scene`}
+                      style={{
+                        height: '28px',
+                        padding: '0 8px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--line2)',
+                        background: 'var(--p3)',
+                        color: 'var(--muted)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                {card.summary && (
+                  <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                    {card.summary}
+                  </div>
+                )}
+
+                {card.tracks.length > 0 &&
+                  Array.from({ length: card.copyCount }).map((_, copyIdx) =>
+                    card.tracks.map((trackDef, trackIdx) => {
+                      const currentVal =
+                        trackMatrix[copyIdx]?.[trackIdx] ?? trackDef.max;
+                      const rowLabel =
+                        card.copyCount > 1
+                          ? `${trackDef.label} #${copyIdx + 1}`
+                          : trackDef.label;
+                      return (
+                        <div
+                          key={`${copyIdx}-${trackIdx}`}
+                          data-testid={`entity-track-row-${card.id}-${copyIdx}-${trackIdx}`}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: '12px',
+                              color: 'var(--muted)',
+                              width: '64px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {rowLabel}
+                          </span>
+                          <button
+                            type="button"
+                            data-testid={`entity-track-dec-${card.id}-${copyIdx}-${trackIdx}`}
+                            aria-label={`Decrease ${card.name} ${rowLabel}`}
+                            onClick={() =>
+                              adjustEntityTrack(
+                                card.id,
+                                copyIdx,
+                                trackIdx,
+                                -1,
+                                card.copyCount,
+                                card.tracks
+                              )
+                            }
+                            style={{
+                              width: '44px',
+                              height: '44px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              background: 'var(--p3)',
+                              color: 'var(--text)',
+                              fontSize: '18px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            −
+                          </button>
+                          <span
+                            data-testid={`entity-track-val-${card.id}-${copyIdx}-${trackIdx}`}
+                            style={{
+                              flex: 1,
+                              textAlign: 'center',
+                              fontFamily: 'var(--mono)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {currentVal} / {trackDef.max}
+                          </span>
+                          <button
+                            type="button"
+                            data-testid={`entity-track-inc-${card.id}-${copyIdx}-${trackIdx}`}
+                            aria-label={`Increase ${card.name} ${rowLabel}`}
+                            onClick={() =>
+                              adjustEntityTrack(
+                                card.id,
+                                copyIdx,
+                                trackIdx,
+                                1,
+                                card.copyCount,
+                                card.tracks
+                              )
+                            }
+                            style={{
+                              width: '44px',
+                              height: '44px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              background: 'var(--p3)',
+                              color: 'var(--text)',
+                              fontSize: '18px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+              </div>
+            );
+          })
+        )}
 
         <div
           style={{
@@ -530,9 +795,68 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         >
           ROAMING
         </div>
-        <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-          No roaming entities loaded yet.
-        </div>
+        {roamingEntities.length === 0 ? (
+          <div
+            data-testid="no-roaming-entities"
+            style={{ fontSize: '12px', color: 'var(--muted)' }}
+          >
+            {merged.entities.some((e) => e.roaming)
+              ? 'All roaming threats are in this scene.'
+              : 'No roaming entities loaded yet.'}
+          </div>
+        ) : (
+          roamingEntities.map((roamer) => (
+            <div
+              key={roamer.id}
+              data-testid={`roaming-card-${roamer.id}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'var(--p2)',
+                border: '1px dashed var(--line2)',
+                borderRadius: '12px',
+                padding: '6px 6px 6px 10px',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => onOpenEntityInspector(roamer.id)}
+                style={{
+                  all: 'unset',
+                  cursor: 'pointer',
+                  flex: 1,
+                  fontSize: '13px',
+                  fontWeight: 500,
+                }}
+              >
+                {roamer.name}
+              </button>
+              <button
+                type="button"
+                data-testid={`summon-btn-${roamer.id}`}
+                onClick={() => {
+                  if (currentSceneId) {
+                    summonEntityToScene(currentSceneId, roamer.id);
+                  }
+                }}
+                style={{
+                  height: '44px',
+                  padding: '0 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--redLine)',
+                  background: 'var(--redBg)',
+                  color: 'var(--red)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Summon
+              </button>
+            </div>
+          ))
+        )}
       </div>
       </div>
     </aside>

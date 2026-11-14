@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import type { ConnectionOverrideState, TableNote } from '../storage/types';
+import type {
+  ConnectionOverrideState,
+  DispositionState,
+  TableNote,
+} from '../storage/types';
 import {
   buildUnlockingItemsByConnection,
   getEffectiveConnectionState,
@@ -19,6 +23,13 @@ const CONNECTION_STATES: ConnectionOverrideState[] = [
   'hidden',
 ];
 
+const DISPOSITIONS: DispositionState[] = [
+  'allied',
+  'neutral',
+  'suspicious',
+  'hostile',
+];
+
 export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
   open,
   editingNote,
@@ -31,12 +42,19 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
     updateTableNote,
     deleteTableNote,
     setConnectionOverride,
+    addImprovisedEntity,
   } = useCampaignStore();
 
   const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? '';
   const [targetId, setTargetId] = useState<string>(currentSceneId);
   const [noteText, setNoteText] = useState<string>('');
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+
+  const [npcName, setNpcName] = useState<string>('');
+  const [npcSummary, setNpcSummary] = useState<string>('');
+  const [npcDisposition, setNpcDisposition] = useState<DispositionState>('neutral');
+  const [npcTrackLabel, setNpcTrackLabel] = useState<string>('HP');
+  const [npcTrackMax, setNpcTrackMax] = useState<string>('');
 
   useEffect(() => {
     if (!open) return;
@@ -48,6 +66,11 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
       setTargetId(currentSceneId);
       setNoteText('');
       setActiveNoteId(null);
+      setNpcName('');
+      setNpcSummary('');
+      setNpcDisposition('neutral');
+      setNpcTrackLabel('HP');
+      setNpcTrackMax('');
     }
   }, [open, editingNote, currentSceneId]);
 
@@ -97,6 +120,23 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
     deleteTableNote(idToDelete);
     setActiveNoteId(null);
     onClose();
+  };
+
+  const handleAddNpc = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!npcName.trim() || !currentSceneId) return;
+    const parsedMax = npcTrackMax.trim() ? Number(npcTrackMax) : null;
+    addImprovisedEntity({
+      name: npcName,
+      summary: npcSummary,
+      disposition: npcDisposition,
+      sceneId: currentSceneId,
+      trackLabel: npcTrackLabel,
+      trackMax: parsedMax,
+    });
+    setNpcName('');
+    setNpcSummary('');
+    setNpcTrackMax('');
   };
 
   return (
@@ -216,6 +256,11 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
                   Entity · {ent.name} ({ent.id})
                 </option>
               ))}
+              {(live?.improvisedEntities ?? []).map((imp) => (
+                <option key={imp.id} value={imp.id}>
+                  Improvised · {imp.name} ({imp.id})
+                </option>
+              ))}
             </select>
           </div>
 
@@ -283,6 +328,154 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
             </div>
           )}
         </div>
+
+        {!editingNote && (
+          <form
+            onSubmit={handleAddNpc}
+            data-testid="new-npc-section"
+            style={{
+              borderTop: '1px solid var(--line)',
+              paddingTop: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'var(--mono)',
+                fontSize: '11px',
+                letterSpacing: '.1em',
+                color: 'var(--muted)',
+                textTransform: 'uppercase',
+              }}
+            >
+              New NPC (Improvised in Current Scene)
+            </span>
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                data-testid="new-npc-name-input"
+                value={npcName}
+                onChange={(e) => setNpcName(e.target.value)}
+                placeholder="NPC name…"
+                aria-label="Improvised NPC name"
+                style={{
+                  flex: 1,
+                  minWidth: '160px',
+                  height: '44px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  padding: '0 12px',
+                  fontSize: '14px',
+                }}
+              />
+              <select
+                data-testid="new-npc-disp-select"
+                value={npcDisposition}
+                onChange={(e) => setNpcDisposition(e.target.value as DispositionState)}
+                aria-label="Improvised NPC disposition"
+                style={{
+                  height: '44px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  padding: '0 12px',
+                  fontSize: '13px',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {DISPOSITIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <input
+              type="text"
+              data-testid="new-npc-summary-input"
+              value={npcSummary}
+              onChange={(e) => setNpcSummary(e.target.value)}
+              placeholder="Short summary (voice, look, or role)…"
+              aria-label="Improvised NPC summary"
+              style={{
+                height: '44px',
+                borderRadius: '10px',
+                border: '1px solid var(--line)',
+                background: 'var(--bg)',
+                color: 'var(--text)',
+                padding: '0 12px',
+                fontSize: '14px',
+              }}
+            />
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                data-testid="new-npc-track-label-input"
+                value={npcTrackLabel}
+                onChange={(e) => setNpcTrackLabel(e.target.value)}
+                placeholder="Track label (e.g. HP)"
+                aria-label="Improvised NPC track label"
+                style={{
+                  width: '130px',
+                  height: '44px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  padding: '0 12px',
+                  fontSize: '13px',
+                }}
+              />
+              <input
+                type="number"
+                min={1}
+                data-testid="new-npc-track-max-input"
+                value={npcTrackMax}
+                onChange={(e) => setNpcTrackMax(e.target.value)}
+                placeholder="Max (optional)"
+                aria-label="Improvised NPC track max"
+                style={{
+                  width: '130px',
+                  height: '44px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  padding: '0 12px',
+                  fontSize: '13px',
+                }}
+              />
+              <button
+                type="submit"
+                data-testid="add-improvised-npc-btn"
+                disabled={!npcName.trim()}
+                style={{
+                  marginLeft: 'auto',
+                  height: '44px',
+                  padding: '0 14px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--goldLine)',
+                  background: 'var(--goldBg)',
+                  color: 'var(--gold)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: npcName.trim() ? 'pointer' : 'default',
+                  opacity: npcName.trim() ? 1 : 0.6,
+                }}
+              >
+                Add NPC to Scene
+              </button>
+            </div>
+          </form>
+        )}
 
         {!editingNote && merged.connections.length > 0 && (
           <div

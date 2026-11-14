@@ -48,6 +48,19 @@ export interface ScenePin {
   yPct: number;
 }
 
+export interface ImprovisedEntityRecord {
+  id: string;
+  name: string;
+  summary: string;
+  disposition: DispositionState;
+  sceneId: string;
+  track?: {
+    label: string;
+    max: number;
+  } | null;
+  createdAt: number;
+}
+
 export interface RollLogEntry {
   id: string;
   tableId: string;
@@ -71,7 +84,7 @@ export interface LiveState {
   entityDisposition: Record<string, DispositionState>;
   factionAttitude: Record<string, DispositionState>;
   summoned: Record<string, string[]>;
-  improvisedEntities: Array<Record<string, unknown>>;
+  improvisedEntities: ImprovisedEntityRecord[];
   notes: TableNote[];
   looseNotes: TableNote[];
   nodePositions: Record<string, { x: number; y: number }>;

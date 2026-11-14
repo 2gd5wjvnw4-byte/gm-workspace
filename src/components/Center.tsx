@@ -356,11 +356,21 @@ export const Center: React.FC<CenterProps> = ({ mapMode, onEditNote }) => {
                           fontWeight: 700,
                           color: 'var(--gold)',
                           flexShrink: 0,
+                          alignSelf: 'flex-start',
+                          paddingTop: '2px',
                         }}
                       >
                         TABLE CHANGE
                       </span>
-                      <span style={{ color: 'var(--deltaText)', flex: 1, fontSize: '14px' }}>
+                      <span
+                        data-testid={`table-note-text-${note.id}`}
+                        style={{
+                          color: 'var(--deltaText)',
+                          flex: 1,
+                          fontSize: '14px',
+                          whiteSpace: 'pre-line',
+                        }}
+                      >
                         {note.text}
                       </span>
                     </button>

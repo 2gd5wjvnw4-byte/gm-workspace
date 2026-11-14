@@ -1,12 +1,19 @@
 import type {
   ConnectionState,
   ModuleConnection,
+  ModuleEntity,
+  ModuleFaction,
+  ModuleRandomTable,
   ModuleScene,
+  ModuleTruth,
   SceneArchetype,
   SceneItem,
   SceneItemKind,
 } from './import/types';
-import type { ConnectionOverrideState } from '../storage/types';
+import type {
+  ConnectionOverrideState,
+  ImprovisedEntityRecord,
+} from '../storage/types';
 
 export interface ArchetypeLabels {
   name: string;
@@ -335,4 +342,234 @@ export function getSceneExits(params: {
   }
 
   return views;
+}
+
+export type SearchResultType =
+  | 'scene'
+  | 'entity'
+  | 'item'
+  | 'truth'
+  | 'faction'
+  | 'table';
+
+export interface SearchResultEntry {
+  type: SearchResultType;
+  id: string;
+  label: string;
+  sublabel?: string;
+  sceneId?: string;
+  entityId?: string;
+  itemId?: string;
+}
+
+export interface SearchModuleParams {
+  query: string;
+  scenes: ModuleScene[];
+  entities: ModuleEntity[];
+  improvisedEntities?: ImprovisedEntityRecord[];
+  truths: ModuleTruth[];
+  factions: ModuleFaction[];
+  randomTables: ModuleRandomTable[];
+  connections: ModuleConnection[];
+  connectionState: Record<string, ConnectionOverrideState>;
+  visited: Record<string, boolean>;
+  revealed: Record<string, boolean>;
+  summoned?: Record<string, string[]>;
+  currentSceneId?: string | null;
+  soloMask: boolean;
+}
+
+export function searchModuleRecords(params: SearchModuleParams): SearchResultEntry[] {
+  const {
+    query,
+    scenes,
+    entities,
+    improvisedEntities = [],
+    truths,
+    factions,
+    randomTables,
+    connections,
+    connectionState,
+    visited,
+    revealed,
+    summoned = {},
+    currentSceneId,
+    soloMask,
+  } = params;
+
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    return [];
+  }
+
+  const reachable = computeReachableSceneIds({
+    visited,
+    currentSceneId,
+    connections,
+    connectionState,
+    revealed,
+    scenes,
+  });
+
+  const isSceneVisited = (sceneId: string) =>
+    Boolean(visited[sceneId]) || sceneId === currentSceneId;
+
+  const results: SearchResultEntry[] = [];
+
+  // 1. Scenes (codes, titles, summaries)
+  for (const scene of scenes) {
+    const vis = getSceneVisibility({
+      sceneId: scene.id,
+      soloMask,
+      visited,
+      currentSceneId,
+      reachable,
+    });
+    if (vis === 'hidden' || vis === 'masked') {
+      // Unvisited scenes in Solo Mask are either hidden or shown as "???" — do not leak their titles/summaries
+      if (vis === 'masked' && `#${scene.code}`.toLowerCase().includes(q)) {
+        results.push({
+          type: 'scene',
+          id: scene.id,
+          label: `#${scene.code} · ???`,
+          sublabel: scene.group || scene.act_id.toUpperCase(),
+          sceneId: scene.id,
+        });
+      }
+      continue;
+    }
+
+    const codeMatch =
+      scene.code.toLowerCase().includes(q) || `#${scene.code}`.toLowerCase().includes(q);
+    const titleMatch = scene.title.toLowerCase().includes(q);
+    const summaryMatch = scene.summary.toLowerCase().includes(q);
+
+    if (codeMatch || titleMatch || summaryMatch) {
+      results.push({
+        type: 'scene',
+        id: scene.id,
+        label: `#${scene.code} · ${scene.title}`,
+        sublabel: scene.summary,
+        sceneId: scene.id,
+      });
+    }
+  }
+
+  // 2. Entities (base + improvised)
+  const visitedEntityIds = new Set<string>();
+  if (soloMask) {
+    for (const scene of scenes) {
+      if (isSceneVisited(scene.id)) {
+        for (const eid of scene.entity_ids) {
+          visitedEntityIds.add(eid);
+        }
+        for (const eid of summoned[scene.id] ?? []) {
+          visitedEntityIds.add(eid);
+        }
+      }
+    }
+  }
+
+  for (const entity of entities) {
+    if (soloMask && !entity.roaming && !visitedEntityIds.has(entity.id)) {
+      // Check if entity exists in any scene at all; if it's placed only in unvisited scenes, hide in Solo Mask
+      const placedSomewhere = scenes.some((s) => s.entity_ids.includes(entity.id));
+      if (placedSomewhere) {
+        continue;
+      }
+    }
+    if (entity.name.toLowerCase().includes(q)) {
+      results.push({
+        type: 'entity',
+        id: entity.id,
+        label: entity.name,
+        sublabel: entity.summary,
+        entityId: entity.id,
+      });
+    }
+  }
+
+  for (const imp of improvisedEntities) {
+    if (imp.name.toLowerCase().includes(q)) {
+      results.push({
+        type: 'entity',
+        id: imp.id,
+        label: `${imp.name} (Improvised)`,
+        sublabel: imp.summary,
+        entityId: imp.id,
+      });
+    }
+  }
+
+  // 3. Scene items (Tier 2 and Tier 3 labels)
+  for (const scene of scenes) {
+    if (soloMask && !isSceneVisited(scene.id)) {
+      continue;
+    }
+    for (const item of scene.tier2_interactive) {
+      const view = getMaskedItemView(item, 2, soloMask, revealed);
+      if (!view.isCardMasked && item.label.toLowerCase().includes(q)) {
+        results.push({
+          type: 'item',
+          id: item.id,
+          label: item.label,
+          sublabel: `#${scene.code} · ${scene.title}`,
+          sceneId: scene.id,
+          itemId: item.id,
+        });
+      }
+    }
+    for (const item of scene.tier3_hidden) {
+      const view = getMaskedItemView(item, 3, soloMask, revealed);
+      // In Solo Mask, unrevealed Tier 3 items are masked as "Something is hidden here"
+      if (!view.isCardMasked && item.label.toLowerCase().includes(q)) {
+        results.push({
+          type: 'item',
+          id: item.id,
+          label: item.label,
+          sublabel: `#${scene.code} · ${scene.title}`,
+          sceneId: scene.id,
+          itemId: item.id,
+        });
+      }
+    }
+  }
+
+  // 4. Truth titles
+  for (const truth of truths) {
+    if (truth.title.toLowerCase().includes(q)) {
+      results.push({
+        type: 'truth',
+        id: truth.id,
+        label: truth.title,
+        sublabel: truth.importance === 'core' ? 'Core Truth' : 'Optional Truth',
+      });
+    }
+  }
+
+  // 5. Faction names
+  for (const faction of factions) {
+    if (faction.name.toLowerCase().includes(q)) {
+      results.push({
+        type: 'faction',
+        id: faction.id,
+        label: faction.name,
+        sublabel: faction.summary,
+      });
+    }
+  }
+
+  // 6. Random table names
+  for (const table of randomTables) {
+    if (table.name.toLowerCase().includes(q)) {
+      results.push({
+        type: 'table',
+        id: table.id,
+        label: table.name,
+        sublabel: `Dice: ${table.dice}`,
+      });
+    }
+  }
+
+  return results;
 }

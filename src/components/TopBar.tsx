@@ -1,5 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { MapDisplayMode } from '../storage/types';
+import {
+  searchModuleRecords,
+  type SearchResultEntry,
+  type SearchResultType,
+} from '../lib/solo';
+import { useCampaignStore } from '../store/campaignStore';
 
 export interface TopBarProps {
   campaignLabel?: string;
@@ -11,6 +17,7 @@ export interface TopBarProps {
   soloMask: boolean;
   onToggleSoloMask: () => void;
   onOpenPdf: () => void;
+  onOpenEntityInspector?: (entityId: string) => void;
 }
 
 const MAP_MODES: Array<{ id: MapDisplayMode; label: string }> = [
@@ -19,6 +26,24 @@ const MAP_MODES: Array<{ id: MapDisplayMode; label: string }> = [
   { id: 'split', label: 'Split' },
   { id: 'full', label: 'Map' },
 ];
+
+const SEARCH_TYPE_ORDER: SearchResultType[] = [
+  'scene',
+  'entity',
+  'item',
+  'truth',
+  'faction',
+  'table',
+];
+
+const SEARCH_TYPE_HEADINGS: Record<SearchResultType, string> = {
+  scene: 'Scenes',
+  entity: 'Entities',
+  item: 'Scene Items',
+  truth: 'Truths',
+  faction: 'Factions',
+  table: 'Random Tables',
+};
 
 export const TopBar: React.FC<TopBarProps> = ({
   campaignLabel = 'TopBar · No module loaded',
@@ -30,7 +55,63 @@ export const TopBar: React.FC<TopBarProps> = ({
   soloMask,
   onToggleSoloMask,
   onOpenPdf,
+  onOpenEntityInspector,
 }) => {
+  const { merged, live, adjustTrackerValue, goToScene } = useCampaignStore();
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
+  const currentScene =
+    merged.scenes.find((s) => s.id === currentSceneId) ?? merged.scenes[0] ?? null;
+  const currentActId =
+    currentScene?.act_id ?? merged.acts[0]?.id ?? null;
+
+  const scopedTrackers = merged.trackers.filter(
+    (t) =>
+      !t.scope ||
+      t.scope.toLowerCase() === 'global' ||
+      (currentActId && t.scope === currentActId)
+  );
+  const trackerValues = live?.trackerValues ?? {};
+
+  const searchResults = searchModuleRecords({
+    query: searchQuery,
+    scenes: merged.scenes,
+    entities: merged.entities,
+    improvisedEntities: live?.improvisedEntities ?? [],
+    truths: merged.truths,
+    factions: merged.factions,
+    randomTables: merged.random_tables,
+    connections: merged.connections,
+    connectionState: live?.connectionState ?? {},
+    visited: live?.visited ?? {},
+    revealed: live?.revealed ?? {},
+    summoned: live?.summoned ?? {},
+    currentSceneId,
+    soloMask,
+  });
+
+  const handleSelectSearchResult = (res: SearchResultEntry) => {
+    setSearchQuery('');
+    if (res.type === 'scene' && res.sceneId) {
+      goToScene(res.sceneId);
+      return;
+    }
+    if (res.type === 'entity' && res.entityId) {
+      onOpenEntityInspector?.(res.entityId);
+      return;
+    }
+    if (res.type === 'item' && res.sceneId && res.itemId) {
+      goToScene(res.sceneId);
+      const itemId = res.itemId;
+      setTimeout(() => {
+        const el = document.querySelector(`[data-testid="item-card-${itemId}"]`);
+        if (el && typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 20);
+    }
+  };
   return (
     <header
       data-testid="zone-topbar"
@@ -79,107 +160,259 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
       </div>
 
-      {/* 2. Tracker steppers placeholder */}
-      <div style={{ display: 'flex', gap: '6px' }}>
+      {/* 2. Tracker steppers (scoped to global + current act) */}
+      <div data-testid="topbar-trackers" style={{ display: 'flex', gap: '6px' }}>
+        {scopedTrackers.map((tr) => {
+          const val = trackerValues[tr.id] ?? tr.start;
+          return (
+            <div
+              key={tr.id}
+              data-testid={`tracker-group-${tr.id}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+                background: 'var(--p2)',
+                border: '1px solid var(--line)',
+                borderRadius: '10px',
+                padding: '2px',
+              }}
+            >
+              <button
+                type="button"
+                data-testid={`tracker-dec-${tr.id}`}
+                aria-label={`Decrease ${tr.label}`}
+                onClick={() => adjustTrackerValue(tr.id, -1, tr.min, tr.max)}
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'var(--p3)',
+                  color: 'var(--text)',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                }}
+              >
+                −
+              </button>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  minWidth: '62px',
+                  padding: '0 4px',
+                }}
+              >
+                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                  {tr.label}
+                </span>
+                <span
+                  data-testid={`tracker-val-${tr.id}`}
+                  style={{
+                    fontFamily: 'var(--mono)',
+                    fontSize: '18px',
+                    fontWeight: 600,
+                  }}
+                >
+                  {val}
+                </span>
+              </div>
+              <button
+                type="button"
+                data-testid={`tracker-inc-${tr.id}`}
+                aria-label={`Increase ${tr.label}`}
+                onClick={() => adjustTrackerValue(tr.id, 1, tr.min, tr.max)}
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'var(--p3)',
+                  color: 'var(--text)',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                }}
+              >
+                +
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 3. Search field + grouped results dropdown */}
+      <div
+        style={{
+          flex: 1,
+          position: 'relative',
+          minWidth: '100px',
+        }}
+      >
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '3px',
-            background: 'var(--p2)',
+            gap: '8px',
+            background: 'var(--bg)',
             border: '1px solid var(--line)',
             borderRadius: '10px',
-            padding: '2px',
+            padding: '0 12px',
+            height: '44px',
+            boxSizing: 'border-box',
           }}
         >
-          <button
-            type="button"
-            aria-label="Decrease Day"
-            style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '8px',
-              border: 'none',
-              background: 'var(--p3)',
-              color: 'var(--text)',
-              fontSize: '20px',
-            }}
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+            style={{ color: 'var(--muted)', flexShrink: 0 }}
           >
-            −
-          </button>
-          <div
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-4-4" />
+          </svg>
+          <label htmlFor="gm-search" className="gm-sr">
+            Search the module
+          </label>
+          <input
+            id="gm-search"
+            data-testid="global-search-input"
+            type="search"
+            placeholder="Search…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             style={{
+              all: 'unset',
+              flex: 1,
+              minWidth: 0,
+              color: 'var(--text)',
+              fontSize: '14px',
+            }}
+          />
+          {searchQuery.trim().length > 0 && (
+            <button
+              type="button"
+              data-testid="clear-search-btn"
+              aria-label="Clear search"
+              onClick={() => setSearchQuery('')}
+              style={{
+                all: 'unset',
+                cursor: 'pointer',
+                color: 'var(--muted)',
+                fontSize: '12px',
+                padding: '4px 6px',
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {searchQuery.trim().length > 0 && (
+          <div
+            data-testid="search-results-dropdown"
+            style={{
+              position: 'absolute',
+              top: '48px',
+              left: 0,
+              right: 0,
+              maxHeight: '360px',
+              overflowY: 'auto',
+              background: 'var(--panel)',
+              border: '1px solid var(--line2)',
+              borderRadius: '12px',
+              boxShadow: '0 16px 40px rgba(0,0,0,.45)',
+              padding: '8px',
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              minWidth: '62px',
+              gap: '6px',
+              zIndex: 40,
+              boxSizing: 'border-box',
             }}
           >
-            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Day</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '18px', fontWeight: 600 }}>1</span>
+            {searchResults.length === 0 ? (
+              <div
+                data-testid="search-no-results"
+                style={{
+                  padding: '8px 10px',
+                  fontSize: '13px',
+                  color: 'var(--muted)',
+                }}
+              >
+                No matches found.
+              </div>
+            ) : (
+              SEARCH_TYPE_ORDER.map((typeKey) => {
+                const groupItems = searchResults.filter((r) => r.type === typeKey);
+                if (groupItems.length === 0) return null;
+                return (
+                  <div
+                    key={typeKey}
+                    data-testid={`search-group-${typeKey}`}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        fontSize: '11px',
+                        letterSpacing: '.1em',
+                        color: 'var(--muted)',
+                        textTransform: 'uppercase',
+                        padding: '4px 8px 2px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {SEARCH_TYPE_HEADINGS[typeKey]}
+                    </div>
+                    {groupItems.map((res) => (
+                      <button
+                        key={`${res.type}-${res.id}`}
+                        type="button"
+                        data-testid={`search-result-${res.type}-${res.id}`}
+                        onClick={() => handleSelectSearchResult(res)}
+                        style={{
+                          minHeight: '44px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'center',
+                          alignItems: 'flex-start',
+                          gap: '2px',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          background: 'var(--p2)',
+                          color: 'var(--text)',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          width: '100%',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        <span style={{ fontSize: '14px', fontWeight: 600 }}>
+                          {res.label}
+                        </span>
+                        {res.sublabel && (
+                          <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                            {res.sublabel}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })
+            )}
           </div>
-          <button
-            type="button"
-            aria-label="Increase Day"
-            style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '8px',
-              border: 'none',
-              background: 'var(--p3)',
-              color: 'var(--text)',
-              fontSize: '20px',
-            }}
-          >
-            +
-          </button>
-        </div>
-      </div>
-
-      {/* 3. Search field */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          background: 'var(--bg)',
-          border: '1px solid var(--line)',
-          borderRadius: '10px',
-          padding: '0 12px',
-          height: '44px',
-          minWidth: '100px',
-          boxSizing: 'border-box',
-        }}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden="true"
-          style={{ color: 'var(--muted)', flexShrink: 0 }}
-        >
-          <circle cx="11" cy="11" r="7" />
-          <path d="M20 20l-4-4" />
-        </svg>
-        <label htmlFor="gm-search" className="gm-sr">
-          Search the module
-        </label>
-        <input
-          id="gm-search"
-          type="search"
-          placeholder="Search…"
-          style={{
-            all: 'unset',
-            flex: 1,
-            minWidth: 0,
-            color: 'var(--text)',
-            fontSize: '14px',
-          }}
-        />
+        )}
       </div>
 
       {/* 4. Review button (hidden when count is 0) */}

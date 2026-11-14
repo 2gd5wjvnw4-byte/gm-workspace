@@ -25,6 +25,7 @@ export const App: React.FC = () => {
     setSoloMask,
   } = useCampaignStore();
   const [drawer, setDrawer] = useState<DrawerMode>(null);
+  const [inspectedEntityId, setInspectedEntityId] = useState<string | null>(null);
   const [actSheetOpen, setActSheetOpen] = useState(false);
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
@@ -96,15 +97,22 @@ export const App: React.FC = () => {
             soloMask={soloMask}
             onToggleSoloMask={() => setSoloMask(!soloMask)}
             onOpenPdf={() => setDrawer((d) => (d === 'pdf' ? null : 'pdf'))}
+            onOpenEntityInspector={(entityId) => {
+              setInspectedEntityId(entityId);
+              setDrawer('entity');
+            }}
           />
 
           <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
             <LeftPanel
               navView={navView}
               onSelectNavView={setNavView}
-              onOpenEntityInspector={() =>
-                setDrawer((d) => (d === 'entity' ? null : 'entity'))
-              }
+              onOpenEntityInspector={(entityId) => {
+                setInspectedEntityId(entityId);
+                setDrawer((d) =>
+                  d === 'entity' && inspectedEntityId === entityId ? null : 'entity'
+                );
+              }}
             />
 
             <Center
@@ -123,7 +131,11 @@ export const App: React.FC = () => {
               }}
             />
 
-            <DrawerHost activeDrawer={drawer} onClose={() => setDrawer(null)} />
+            <DrawerHost
+              activeDrawer={drawer}
+              inspectedEntityId={inspectedEntityId}
+              onClose={() => setDrawer(null)}
+            />
           </div>
 
           <ActSwitcherSheet

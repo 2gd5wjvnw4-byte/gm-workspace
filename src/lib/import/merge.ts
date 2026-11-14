@@ -174,6 +174,11 @@ export function reconcileLiveNotes(
     return live;
   }
   const validIds = collectValidTargetIds(merged);
+  for (const imp of live.improvisedEntities ?? []) {
+    if (imp && typeof imp.id === 'string') {
+      validIds.add(imp.id);
+    }
+  }
   const keptNotes = [];
   const movedNotes = [];
 

@@ -670,4 +670,188 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       useCampaignStore.getState().live?.notes.find((n) => n.id === createdNote?.id)
     ).toBeUndefined();
   });
+
+  it('preserves multiline formatting on Table change notes, tracks entities/drones, summons/removes roaming threats, opens entity inspector, adds improvised NPCs, steps trackers, and runs global search with Solo Mask rules', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Phase 4 Test Campaign',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    render(<App />);
+
+    // 1. Multiline Table change note preserves line breaks (whiteSpace: pre-line)
+    fireEvent.click(screen.getByTestId('add-note-override-btn'));
+    fireEvent.change(screen.getByTestId('note-text-input'), {
+      target: { value: 'First line of note.\nSecond line below it.' },
+    });
+    fireEvent.click(screen.getByTestId('note-override-modal'));
+    const createdMultilineNote = useCampaignStore.getState().live?.notes[0]!;
+    const noteTextEl = screen.getByTestId(`table-note-text-${createdMultilineNote.id}`);
+    expect(noteTextEl).toHaveStyle({ whiteSpace: 'pre-line' });
+    expect(noteTextEl.textContent).toBe('First line of note.\nSecond line below it.');
+
+    // 2. TopBar tracker steppers: tr-stress (min 0, max 20, start 2), tr-o2 (min 0, max 12, start 12), tr-day (min 1, max 10, start 1)
+    expect(screen.getByTestId('tracker-val-tr-stress')).toHaveTextContent('2');
+    expect(screen.getByTestId('tracker-val-tr-o2')).toHaveTextContent('12');
+    expect(screen.getByTestId('tracker-val-tr-day')).toHaveTextContent('1');
+
+    // Clamp Day at min=1 when decreasing from 1
+    fireEvent.click(screen.getByTestId('tracker-dec-tr-day'));
+    expect(screen.getByTestId('tracker-val-tr-day')).toHaveTextContent('1');
+
+    // Increase Day to 2
+    fireEvent.click(screen.getByTestId('tracker-inc-tr-day'));
+    expect(screen.getByTestId('tracker-val-tr-day')).toHaveTextContent('2');
+
+    // Clamp O2 at max=12 when increasing from 12, then decrease to 11
+    fireEvent.click(screen.getByTestId('tracker-inc-tr-o2'));
+    expect(screen.getByTestId('tracker-val-tr-o2')).toHaveTextContent('12');
+    fireEvent.click(screen.getByTestId('tracker-dec-tr-o2'));
+    expect(screen.getByTestId('tracker-val-tr-o2')).toHaveTextContent('11');
+
+    // 3. Roaming list in Scene 3: summon The Vent Thing (e-creature), damage its HP, then remove it
+    fireEvent.click(screen.getByTestId('scene-row-a1-s03'));
+    expect(screen.getByTestId('no-scene-entities')).toHaveTextContent('No one here. Yet.');
+    expect(screen.getByTestId('roaming-card-e-creature')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('summon-btn-e-creature'));
+    expect(screen.getByTestId('entity-card-e-creature')).toBeInTheDocument();
+    expect(screen.getByTestId('no-roaming-entities')).toHaveTextContent(
+      'All roaming threats are in this scene.'
+    );
+
+    expect(screen.getByTestId('entity-track-val-e-creature-0-0')).toHaveTextContent('30 / 30');
+    fireEvent.click(screen.getByTestId('entity-track-dec-e-creature-0-0'));
+    expect(screen.getByTestId('entity-track-val-e-creature-0-0')).toHaveTextContent('29 / 30');
+
+    // Remove summoned entity from Scene 3
+    fireEvent.click(screen.getByTestId('remove-summoned-e-creature'));
+    expect(screen.queryByTestId('entity-card-e-creature')).not.toBeInTheDocument();
+    expect(screen.getByTestId('roaming-card-e-creature')).toBeInTheDocument();
+
+    // 4. Summon e-drones into Scene 3 to verify base entity.count = 3 (3 independent drone HP tracks), and check Scene 4 entity_counts override (2 drones)
+    useCampaignStore.getState().summonEntityToScene('a1-s03', 'e-drones');
+    await waitFor(() => {
+      expect(screen.getByTestId('entity-card-e-drones')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('entity-track-val-e-drones-0-0')).toHaveTextContent('8 / 8');
+    expect(screen.getByTestId('entity-track-val-e-drones-1-0')).toHaveTextContent('8 / 8');
+    expect(screen.getByTestId('entity-track-val-e-drones-2-0')).toHaveTextContent('8 / 8');
+
+    // Damage each of the 3 drones separately
+    fireEvent.click(screen.getByTestId('entity-track-dec-e-drones-0-0'));
+    fireEvent.click(screen.getByTestId('entity-track-dec-e-drones-1-0'));
+    fireEvent.click(screen.getByTestId('entity-track-dec-e-drones-1-0'));
+    fireEvent.click(screen.getByTestId('entity-track-dec-e-drones-2-0'));
+    fireEvent.click(screen.getByTestId('entity-track-dec-e-drones-2-0'));
+    fireEvent.click(screen.getByTestId('entity-track-dec-e-drones-2-0'));
+
+    expect(screen.getByTestId('entity-track-val-e-drones-0-0')).toHaveTextContent('7 / 8');
+    expect(screen.getByTestId('entity-track-val-e-drones-1-0')).toHaveTextContent('6 / 8');
+    expect(screen.getByTestId('entity-track-val-e-drones-2-0')).toHaveTextContent('5 / 8');
+
+    // Walk to Scene 4 where scene.entity_counts overrides e-drones to 2 copies
+    fireEvent.click(screen.getByTestId('scene-row-a1-s04'));
+    expect(screen.getByTestId('inspect-entity-e-drones')).toHaveTextContent(
+      'Maintenance Drones ×2'
+    );
+    expect(screen.getByTestId('entity-track-row-e-drones-0-0')).toBeInTheDocument();
+    expect(screen.getByTestId('entity-track-row-e-drones-1-0')).toBeInTheDocument();
+    expect(screen.queryByTestId('entity-track-row-e-drones-2-0')).not.toBeInTheDocument();
+
+    // Adjust drone #1 in Scene 4 (where copyCount is 2) and confirm drone #3's HP (5/8) is NOT truncated
+    fireEvent.click(screen.getByTestId('entity-track-dec-e-drones-0-0'));
+    expect(screen.getByTestId('entity-track-val-e-drones-0-0')).toHaveTextContent('6 / 8');
+    expect(useCampaignStore.getState().live?.entityTracks['e-drones']).toEqual([
+      [6],
+      [6],
+      [5],
+    ]);
+
+    // 5. Global search: find "Okafor" (opens entity inspector) and "terminal" (jumps to scene 3)
+    const searchInput = screen.getByTestId('global-search-input');
+    fireEvent.change(searchInput, { target: { value: 'Okafor' } });
+    expect(screen.getByTestId('search-results-dropdown')).toBeInTheDocument();
+    expect(screen.getByTestId('search-group-entity')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('search-result-entity-e-okafor'));
+    // Inspector drawer opens for Okafor
+    expect(screen.getByTestId('inspector-entity-name')).toHaveTextContent('Chief Dana Okafor');
+    expect(screen.getByTestId('inspector-stat-line')).toHaveTextContent(
+      'Combat 25 · Instinct 35 · Wounds 2 · HP 12 · Revolver 3d10'
+    );
+    expect(screen.getByTestId('inspector-voice')).toHaveTextContent(
+      'Whispers. Repeats questions back.'
+    );
+    expect(screen.getByTestId('inspector-goal')).toHaveTextContent(
+      'Get off the station alive.'
+    );
+    expect(screen.getByTestId('inspector-secret')).toHaveTextContent(
+      'He let the Helix tech into the reactor and did not report it.'
+    );
+
+    // Cycle Okafor's disposition (starts suspicious -> hostile -> allied)
+    expect(screen.getByTestId('inspector-disp-chip')).toHaveTextContent('suspicious');
+    fireEvent.click(screen.getByTestId('inspector-disp-chip'));
+    expect(screen.getByTestId('inspector-disp-chip')).toHaveTextContent('hostile');
+    fireEvent.click(screen.getByTestId('inspector-disp-chip'));
+    expect(screen.getByTestId('inspector-disp-chip')).toHaveTextContent('allied');
+
+    // Toggle Solo Mask ON while inspecting Okafor: secret and unrevealed clue are masked
+    fireEvent.click(screen.getByTestId('solo-mask-toggle'));
+    expect(screen.getByTestId('inspector-secret')).toHaveTextContent('Hidden in Solo Mode.');
+    expect(screen.queryByTestId('inspector-clue-text-e-okafor-c1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('inspector-clue-hidden-e-okafor-c1')).toBeInTheDocument();
+
+    // Reveal Okafor's clue -> feeds live.revealed and reveals text
+    fireEvent.click(screen.getByTestId('inspector-clue-btn-e-okafor-c1'));
+    expect(screen.getByTestId('inspector-clue-text-e-okafor-c1')).toHaveTextContent(
+      'He saw a Helix technician at the reactor on the night of the failure.'
+    );
+    expect(useCampaignStore.getState().live?.revealed['e-okafor-c1']).toBe(true);
+
+    // Close inspector and search for "terminal" -> jumps to Scene 3
+    fireEvent.click(screen.getByTestId('close-entity-inspector-btn'));
+    fireEvent.change(screen.getByTestId('global-search-input'), {
+      target: { value: 'terminal' },
+    });
+    fireEvent.click(screen.getByTestId('search-result-item-a1-s03-i1'));
+    expect(screen.getByTestId('scene-title')).toHaveTextContent('Operations Center');
+
+    // 6. Add an Improvised NPC via the Add note / override modal
+    fireEvent.click(screen.getByTestId('add-note-override-btn'));
+    fireEvent.change(screen.getByTestId('new-npc-name-input'), {
+      target: { value: 'Corporal Vance' },
+    });
+    fireEvent.change(screen.getByTestId('new-npc-disp-select'), {
+      target: { value: 'allied' },
+    });
+    fireEvent.change(screen.getByTestId('new-npc-summary-input'), {
+      target: { value: 'Wounded security guard.' },
+    });
+    fireEvent.change(screen.getByTestId('new-npc-track-label-input'), {
+      target: { value: 'HP' },
+    });
+    fireEvent.change(screen.getByTestId('new-npc-track-max-input'), {
+      target: { value: '10' },
+    });
+    fireEvent.click(screen.getByTestId('add-improvised-npc-btn'));
+    fireEvent.click(screen.getByTestId('close-note-modal-btn'));
+
+    const impNpc = useCampaignStore.getState().live?.improvisedEntities[0]!;
+    expect(impNpc).toBeDefined();
+    expect(impNpc.name).toBe('Corporal Vance');
+    expect(screen.getByTestId(`entity-card-${impNpc.id}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`entity-improvised-chip-${impNpc.id}`)).toHaveTextContent(
+      'Improvised'
+    );
+    expect(screen.getByTestId(`entity-track-val-${impNpc.id}-0-0`)).toHaveTextContent(
+      '10 / 10'
+    );
+    fireEvent.click(screen.getByTestId(`entity-track-dec-${impNpc.id}-0-0`));
+    expect(screen.getByTestId(`entity-track-val-${impNpc.id}-0-0`)).toHaveTextContent(
+      '9 / 10'
+    );
+  });
 });

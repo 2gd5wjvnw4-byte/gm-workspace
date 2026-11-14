@@ -10,6 +10,8 @@ import {
   type CampaignRecord,
   type ChunkRecord,
   type ConnectionOverrideState,
+  type DispositionState,
+  type ImprovisedEntityRecord,
   type LiveState,
   type LoadedCampaign,
   type MapDisplayMode,
@@ -50,6 +52,26 @@ export interface CampaignStoreState {
   updateTableNote: (noteId: string, text: string, targetId?: string) => void;
   deleteTableNote: (noteId: string) => void;
   setConnectionOverride: (connectionId: string, state: ConnectionOverrideState) => void;
+  adjustTrackerValue: (trackerId: string, delta: number, min: number, max: number) => void;
+  adjustEntityTrack: (
+    entityId: string,
+    copyIndex: number,
+    trackIndex: number,
+    delta: number,
+    copyCount: number,
+    trackDefs: Array<{ label: string; max: number }>
+  ) => void;
+  cycleEntityDisposition: (entityId: string, defaultDisposition: DispositionState) => void;
+  summonEntityToScene: (sceneId: string, entityId: string) => void;
+  removeSummonedEntityFromScene: (sceneId: string, entityId: string) => void;
+  addImprovisedEntity: (input: {
+    name: string;
+    summary: string;
+    disposition: DispositionState;
+    sceneId: string;
+    trackLabel?: string;
+    trackMax?: number | null;
+  }) => ImprovisedEntityRecord | null;
 }
 
 const emptyMerged = (): MergedCampaignData => mergeRawChunkObjects([]);
@@ -390,6 +412,150 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           [connectionId]: state,
         },
       }));
+    },
+
+    adjustTrackerValue: (trackerId: string, delta: number, min: number, max: number) => {
+      const mergedTrackers = get().merged.trackers;
+      const trackerDef = mergedTrackers.find((t) => t.id === trackerId);
+      const startVal = trackerDef ? trackerDef.start : min;
+      commitLive((prev) => {
+        const currentVal = prev.trackerValues[trackerId] ?? startVal;
+        const clamped = Math.max(min, Math.min(max, currentVal + delta));
+        return {
+          ...prev,
+          trackerValues: {
+            ...prev.trackerValues,
+            [trackerId]: clamped,
+          },
+        };
+      });
+    },
+
+    adjustEntityTrack: (
+      entityId: string,
+      copyIndex: number,
+      trackIndex: number,
+      delta: number,
+      copyCount: number,
+      trackDefs: Array<{ label: string; max: number }>
+    ) => {
+      if (trackDefs.length === 0) return;
+      const maxVal = trackDefs[trackIndex]?.max ?? 0;
+      commitLive((prev) => {
+        const existingMatrix = prev.entityTracks[entityId] ?? [];
+        const totalCopies = Math.max(
+          existingMatrix.length,
+          copyCount,
+          copyIndex + 1,
+          1
+        );
+        const nextMatrix: number[][] = [];
+        for (let c = 0; c < totalCopies; c += 1) {
+          const existingRow = existingMatrix[c] ?? [];
+          const nextRow = trackDefs.map((def, tIdx) => {
+            const val = existingRow[tIdx];
+            return typeof val === 'number' ? val : def.max;
+          });
+          nextMatrix.push(nextRow);
+        }
+        const currentVal = nextMatrix[copyIndex]?.[trackIndex] ?? maxVal;
+        nextMatrix[copyIndex][trackIndex] = Math.max(
+          0,
+          Math.min(maxVal, currentVal + delta)
+        );
+        return {
+          ...prev,
+          entityTracks: {
+            ...prev.entityTracks,
+            [entityId]: nextMatrix,
+          },
+        };
+      });
+    },
+
+    cycleEntityDisposition: (entityId: string, defaultDisposition: DispositionState) => {
+      const order: DispositionState[] = ['allied', 'neutral', 'suspicious', 'hostile'];
+      commitLive((prev) => {
+        const currentDisp = prev.entityDisposition[entityId] ?? defaultDisposition;
+        const idx = order.indexOf(currentDisp);
+        const nextDisp = order[(idx + 1) % order.length];
+        return {
+          ...prev,
+          entityDisposition: {
+            ...prev.entityDisposition,
+            [entityId]: nextDisp,
+          },
+        };
+      });
+    },
+
+    summonEntityToScene: (sceneId: string, entityId: string) => {
+      commitLive((prev) => {
+        const currentList = prev.summoned[sceneId] ?? [];
+        if (currentList.includes(entityId)) {
+          return prev;
+        }
+        return {
+          ...prev,
+          summoned: {
+            ...prev.summoned,
+            [sceneId]: [...currentList, entityId],
+          },
+        };
+      });
+    },
+
+    removeSummonedEntityFromScene: (sceneId: string, entityId: string) => {
+      commitLive((prev) => {
+        const currentList = prev.summoned[sceneId] ?? [];
+        return {
+          ...prev,
+          summoned: {
+            ...prev.summoned,
+            [sceneId]: currentList.filter((id) => id !== entityId),
+          },
+        };
+      });
+    },
+
+    addImprovisedEntity: (input) => {
+      const name = input.name.trim();
+      if (!name) return null;
+      const summary = input.summary.trim();
+      const trackLabel = input.trackLabel?.trim() ?? '';
+      const rawMax = input.trackMax;
+      const hasTrack =
+        trackLabel.length > 0 &&
+        typeof rawMax === 'number' &&
+        Number.isFinite(rawMax) &&
+        rawMax > 0;
+      const track = hasTrack
+        ? { label: trackLabel, max: Math.round(rawMax) }
+        : null;
+      const newImp: ImprovisedEntityRecord = {
+        id: `imp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        summary,
+        disposition: input.disposition,
+        sceneId: input.sceneId,
+        track,
+        createdAt: Date.now(),
+      };
+      commitLive((prev) => ({
+        ...prev,
+        improvisedEntities: [...(prev.improvisedEntities ?? []), newImp],
+        entityDisposition: {
+          ...prev.entityDisposition,
+          [newImp.id]: newImp.disposition,
+        },
+        entityTracks: track
+          ? {
+              ...prev.entityTracks,
+              [newImp.id]: [[track.max]],
+            }
+          : prev.entityTracks,
+      }));
+      return newImp;
     },
   };
 });
