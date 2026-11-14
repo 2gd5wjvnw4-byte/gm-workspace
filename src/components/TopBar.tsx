@@ -247,6 +247,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* 6. Solo Mask toggle */}
       <button
         type="button"
+        data-testid="solo-mask-toggle"
         onClick={onToggleSoloMask}
         aria-pressed={soloMask}
         style={{

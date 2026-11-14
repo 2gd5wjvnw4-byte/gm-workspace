@@ -353,4 +353,159 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(await db.chunks.where('campaignId').equals(campId).count()).toBe(0);
     expect(await db.live.get(campId)).toBeUndefined();
   });
+
+  it('walks scenes 1 -> 2 -> 3 -> 4, reveals items to unlock exits, adds/edits/deletes table notes, overrides connection states, and masks items/scenes/exits in Solo Mask mode', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'The Silent Relay',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+
+    // Starts at Scene 1: Docking Ring (physical_zone)
+    expect(screen.getByTestId('scene-title')).toHaveTextContent('Docking Ring');
+    expect(screen.getByTestId('scene-header-code')).toHaveTextContent('a1-s01 · #1');
+    expect(screen.getByTestId('scene-archetype-chip')).toHaveTextContent('Physical Zone');
+    expect(screen.getByTestId('tier1-heading')).toHaveTextContent('TIER 1 · Sensory');
+    expect(screen.getByTestId('tier2-heading')).toHaveTextContent('TIER 2 · Interactive');
+    expect(screen.getByTestId('tier3-heading')).toHaveTextContent(
+      'TIER 3 · Hidden Threats & Loot'
+    );
+    expect(screen.getByTestId('exits-bar-label')).toHaveTextContent('Exits');
+    expect(screen.getByTestId('read-aloud-pointer')).toHaveTextContent(
+      'p.6 — starts: “Your ship locks onto the…”'
+    );
+    expect(screen.getByTestId('read-aloud-open-pdf-btn')).toBeInTheDocument();
+
+    // Scene 1 exit a1-x01 starts sealed (disabled)
+    const exitX01 = screen.getByTestId('exit-btn-a1-x01');
+    expect(exitX01).toBeDisabled();
+    expect(exitX01).toHaveTextContent('Sealed');
+
+    // Scene list shows a1-s01 as Here, a1-s02..04 as New, and unloaded a2-s01 as Not loaded
+    expect(screen.getByTestId('scene-status-a1-s01')).toHaveTextContent('Here');
+    expect(screen.getByTestId('scene-status-a1-s02')).toHaveTextContent('New');
+    expect(screen.getByTestId('scene-row-a2-s01')).toBeDisabled();
+    expect(screen.getByTestId('scene-status-a2-s01')).toHaveTextContent('Not loaded');
+
+    // Toggle Solo Mask ON at Scene 1 before revealing airlock panel
+    const soloToggle = screen.getByTestId('solo-mask-toggle');
+    fireEvent.click(soloToggle);
+    expect(soloToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(soloToggle).toHaveTextContent('Solo');
+
+    // In Solo Mode at Scene 1 with sealed exit: a1-s02, a1-s03, a1-s04 are unvisited and unreachable -> hidden from Scene List
+    expect(screen.queryByTestId('scene-row-a1-s02')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('scene-row-a1-s03')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('scene-row-a1-s04')).not.toBeInTheDocument();
+
+    // Tier 2 item result is hidden in Solo Mode until revealed; Tier 3 item is masked as "Something is hidden here"
+    expect(screen.queryByTestId('item-result-a1-s01-i1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('item-hidden-hint-a1-s01-i1')).toHaveTextContent(
+      'Result hidden. Roll, then tap Reveal.'
+    );
+    expect(screen.getByTestId('item-card-a1-s01-h1')).toHaveTextContent(
+      'Something is hidden here'
+    );
+    expect(screen.queryByTestId('item-result-a1-s01-h1')).not.toBeInTheDocument();
+
+    // Reveal Airlock control panel (a1-s01-i1) -> unlocks a1-x01!
+    fireEvent.click(screen.getByTestId('reveal-btn-a1-s01-i1'));
+    expect(screen.getByTestId('item-result-a1-s01-i1')).toHaveTextContent(
+      'The panel accepts a manual override. The hab airlock opens.'
+    );
+    expect(screen.getByTestId('exit-btn-a1-x01')).not.toBeDisabled();
+    expect(screen.getByTestId('exit-btn-a1-x01')).toHaveTextContent('Open');
+
+    // Now a1-s02 is reachable in Solo Mode -> shown in Scene List as "???"
+    expect(screen.getByTestId('scene-row-a1-s02')).toHaveTextContent('???');
+
+    // Walk to Scene 2 via exit button
+    fireEvent.click(screen.getByTestId('exit-btn-a1-x01'));
+    expect(screen.getByTestId('scene-title')).toHaveTextContent('Hab Ring Concourse');
+    expect(screen.getByTestId('scene-archetype-chip')).toHaveTextContent('Open Hub');
+    expect(screen.getByTestId('scene-needs-review-chip')).toHaveTextContent('Needs review');
+    expect(screen.getByTestId('exits-bar-label')).toHaveTextContent('Go To');
+
+    // Scene 2 is now visited, so its real title shows in Scene List; Scene 3 is now reachable -> shown as "???"
+    expect(screen.getByTestId('scene-row-a1-s02')).toHaveTextContent('Hab Ring Concourse');
+    expect(screen.getByTestId('scene-status-a1-s01')).toHaveTextContent('Visited');
+    expect(screen.getByTestId('scene-status-a1-s02')).toHaveTextContent('Here');
+    expect(screen.getByTestId('scene-row-a1-s03')).toHaveTextContent('???');
+
+    // Walk to Scene 3 via open exit a1-x02
+    fireEvent.click(screen.getByTestId('exit-btn-a1-x02'));
+    expect(screen.getByTestId('scene-title')).toHaveTextContent('Operations Center');
+    expect(screen.getByTestId('scene-archetype-chip')).toHaveTextContent('Investigation');
+    expect(screen.getByTestId('exits-bar-label')).toHaveTextContent('Follow Leads');
+
+    // In Scene 3 with Solo Mask ON, hidden exit a1-x03 is masked as "???" and disabled
+    const exitX03 = screen.getByTestId('exit-btn-a1-x03');
+    expect(exitX03).toBeDisabled();
+    expect(exitX03).toHaveTextContent('???');
+    expect(exitX03).toHaveTextContent('Unrevealed');
+
+    // Reveal the terminal (a1-s03-i1) -> unlocks hidden exit a1-x03 to Scene 4
+    fireEvent.click(screen.getByTestId('reveal-btn-a1-s03-i1'));
+    expect(screen.getByTestId('exit-btn-a1-x03')).not.toBeDisabled();
+    expect(screen.getByTestId('exit-btn-a1-x03')).toHaveTextContent(
+      'Reactor alarm: run for the pods'
+    );
+    expect(screen.getByTestId('exit-btn-a1-x03')).toHaveTextContent('Open');
+
+    // Walk to Scene 4 via newly opened exit a1-x03
+    fireEvent.click(screen.getByTestId('exit-btn-a1-x03'));
+    expect(screen.getByTestId('scene-title')).toHaveTextContent('Reactor Spine Chase');
+    expect(screen.getByTestId('scene-archetype-chip')).toHaveTextContent('Action Stage');
+    expect(screen.getByTestId('exits-bar-label')).toHaveTextContent('Outcomes');
+    expect(screen.getByTestId('scene-escalation-section')).toHaveTextContent('Round 1');
+    expect(screen.getByTestId('scene-gm-tip')).toHaveTextContent('Use range bands');
+
+    // Unloaded exit a1-x04 to a2-s01 is disabled and marked Not loaded
+    expect(screen.getByTestId('exit-btn-a1-x04')).toBeDisabled();
+    expect(screen.getByTestId('exit-btn-a1-x04')).toHaveTextContent('Not loaded');
+
+    // Add a table note via the top-anchored Add note / override modal
+    fireEvent.click(screen.getByTestId('add-note-override-btn'));
+    const modal = screen.getByTestId('note-override-modal');
+    expect(modal).toBeInTheDocument();
+    expect(modal.style.alignItems).toBe('flex-start');
+
+    fireEvent.change(screen.getByTestId('note-text-input'), {
+      target: { value: 'Coolant pipe already ruptured.' },
+    });
+    fireEvent.click(screen.getByTestId('save-note-btn'));
+
+    // Table change banner shows above read-aloud
+    const banner = screen.getByTestId('table-change-banner');
+    expect(banner).toHaveTextContent('TABLE CHANGE');
+    expect(banner).toHaveTextContent('Coolant pipe already ruptured.');
+
+    // Tap the note in the banner to edit it, then delete it
+    const noteButtons = banner.querySelectorAll('button');
+    fireEvent.click(noteButtons[0]);
+    expect(screen.getByTestId('note-override-modal')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('note-text-input'), {
+      target: { value: 'Coolant pipe patched by crew.' },
+    });
+    fireEvent.click(screen.getByTestId('save-note-btn'));
+    expect(screen.getByTestId('table-change-banner')).toHaveTextContent(
+      'Coolant pipe patched by crew.'
+    );
+
+    // Reopen note and delete
+    fireEvent.click(
+      screen.getByTestId('table-change-banner').querySelectorAll('button')[0]
+    );
+    fireEvent.click(screen.getByTestId('delete-note-btn'));
+    expect(screen.queryByTestId('table-change-banner')).not.toBeInTheDocument();
+
+    // Test connection state override from the modal
+    fireEvent.click(screen.getByTestId('add-note-override-btn'));
+    fireEvent.click(screen.getByTestId('conn-override-a1-x03-locked'));
+    fireEvent.click(screen.getByTestId('close-note-modal-btn'));
+    expect(useCampaignStore.getState().live?.connectionState['a1-x03']).toBe('locked');
+  });
 });

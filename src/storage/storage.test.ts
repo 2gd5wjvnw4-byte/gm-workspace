@@ -117,6 +117,58 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
     }
   });
 
+  it('persists currentSceneId, visited, revealed, connectionState, notes, and ui.soloMask via saveLive to IndexedDB', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const live = createDefaultLiveState('camp-persist', 'scifi');
+      live.currentSceneId = 'a1-s03';
+      live.visited = { 'a1-s01': true, 'a1-s02': true, 'a1-s03': true };
+      live.revealed = { 'a1-s01-i1': true, 'a1-s03-i1': true };
+      live.connectionState = { 'a1-x01': 'open', 'a1-x03': 'locked' };
+      live.notes = [
+        {
+          id: 'note-persist-1',
+          targetId: 'a1-s03',
+          text: 'Overridden security terminal.',
+          createdAt: 123456,
+        },
+      ];
+      live.ui.soloMask = true;
+
+      const p = saveLive(live);
+      await vi.advanceTimersByTimeAsync(500);
+      await p;
+
+      const stored = await db.live.get('camp-persist');
+      expect(stored).toBeDefined();
+      expect(stored?.currentSceneId).toBe('a1-s03');
+      expect(stored?.visited).toEqual({
+        'a1-s01': true,
+        'a1-s02': true,
+        'a1-s03': true,
+      });
+      expect(stored?.revealed).toEqual({
+        'a1-s01-i1': true,
+        'a1-s03-i1': true,
+      });
+      expect(stored?.connectionState).toEqual({
+        'a1-x01': 'open',
+        'a1-x03': 'locked',
+      });
+      expect(stored?.notes).toEqual([
+        {
+          id: 'note-persist-1',
+          targetId: 'a1-s03',
+          text: 'Overridden security terminal.',
+          createdAt: 123456,
+        },
+      ]);
+      expect(stored?.ui.soloMask).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stores and retrieves blobs with putBlob and getBlob', async () => {
     const payload = new Uint8Array([1, 2, 3, 4]);
     await putBlob('map:deck-1', payload, 'image/png');
@@ -152,6 +204,7 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
     expect(afterImport.chunks).toHaveLength(1);
     expect(afterImport.chunks[0].chunkId).toBe('chunk-a1');
     expect(afterImport.live.currentSceneId).toBe('a1-s01');
+    expect(afterImport.live.visited['a1-s01']).toBe(true);
 
     // Add a live note targeting scene a1-s01
     const liveWithNote = {

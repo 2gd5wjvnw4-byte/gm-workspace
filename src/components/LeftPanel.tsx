@@ -1,5 +1,7 @@
 import React from 'react';
 import type { NavViewMode } from '../storage/types';
+import { computeReachableSceneIds, getSceneVisibility } from '../lib/solo';
+import { useCampaignStore } from '../store/campaignStore';
 
 export interface LeftPanelProps {
   navView: NavViewMode;
@@ -7,11 +9,27 @@ export interface LeftPanelProps {
   onOpenEntityInspector: () => void;
 }
 
+interface UnloadedActSceneItem {
+  id: string;
+  actId: string;
+  actHeading: string;
+}
+
+function getUnloadedActHeading(actId: string): string {
+  const m = /^a(\d+)$/i.exec(actId);
+  if (m) {
+    return `Act ${m[1]}`;
+  }
+  return actId.toUpperCase();
+}
+
 export const LeftPanel: React.FC<LeftPanelProps> = ({
   navView,
   onSelectNavView,
   onOpenEntityInspector,
 }) => {
+  const { merged, live, goToScene } = useCampaignStore();
+
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
     height: '44px',
@@ -21,6 +39,82 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     border: active ? '1px solid var(--accent)' : '1px solid var(--line)',
     background: active ? 'var(--accentBg)' : 'var(--p2)',
     color: active ? 'var(--accent)' : 'var(--text)',
+    cursor: 'pointer',
+  });
+
+  const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
+  const visited = live?.visited ?? {};
+  const revealed = live?.revealed ?? {};
+  const connectionState = live?.connectionState ?? {};
+  const soloMask = Boolean(live?.ui?.soloMask);
+
+  const reachable = computeReachableSceneIds({
+    visited,
+    currentSceneId,
+    connections: merged.connections,
+    connectionState,
+    revealed,
+    scenes: merged.scenes,
+  });
+
+  // Group loaded scenes by act, then by scene.group
+  const actMap = new Map(merged.acts.map((a) => [a.id, a]));
+  const actOrder: string[] = [];
+  for (const act of merged.acts) {
+    if (!actOrder.includes(act.id)) {
+      actOrder.push(act.id);
+    }
+  }
+  for (const scene of merged.scenes) {
+    if (!actOrder.includes(scene.act_id)) {
+      actOrder.push(scene.act_id);
+    }
+  }
+
+  // Collect unloaded target scene IDs from connections
+  const loadedSceneIds = new Set(merged.scenes.map((s) => s.id));
+  const unloadedScenes: UnloadedActSceneItem[] = [];
+  const seenUnloaded = new Set<string>();
+  for (const conn of merged.connections) {
+    for (const target of [conn.from, conn.to]) {
+      if (
+        target &&
+        !loadedSceneIds.has(target) &&
+        merged.linkCheck.notLoadedTargets.has(target) &&
+        !seenUnloaded.has(target)
+      ) {
+        const visibility = getSceneVisibility({
+          sceneId: target,
+          soloMask,
+          visited,
+          currentSceneId,
+          reachable,
+        });
+        if (visibility === 'hidden') {
+          continue;
+        }
+        seenUnloaded.add(target);
+        const dashIdx = target.indexOf('-');
+        const actId = dashIdx > 0 ? target.slice(0, dashIdx) : 'unloaded';
+        unloadedScenes.push({
+          id: target,
+          actId,
+          actHeading: getUnloadedActHeading(actId),
+        });
+      }
+    }
+  }
+
+  const chipStyle = (colorVar: string): React.CSSProperties => ({
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '.04em',
+    textTransform: 'uppercase',
+    color: colorVar,
+    border: `1px solid ${colorVar}`,
+    borderRadius: '6px',
+    padding: '2px 6px',
+    flexShrink: 0,
   });
 
   return (
@@ -59,61 +153,215 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
 
       {navView === 'list' ? (
         <div
+          data-testid="scene-list-container"
           style={{
             padding: '0 12px 12px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '6px',
+            gap: '4px',
           }}
         >
-          <div
-            style={{
-              fontFamily: 'var(--mono)',
-              fontSize: '11px',
-              letterSpacing: '.1em',
-              color: 'var(--muted)',
-              padding: '8px 4px 2px',
-              textTransform: 'uppercase',
-            }}
-          >
-            LEFT PANEL · SCENE LIST
-          </div>
-          <div
-            style={{
-              minHeight: '44px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '6px 10px',
-              borderRadius: '10px',
-              fontSize: '14px',
-              color: 'var(--text)',
-              background: 'var(--accentBg)',
-              border: '1px solid var(--accent)',
-            }}
-          >
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '12px', width: '44px', flexShrink: 0 }}>
-              #1
-            </span>
-            <span style={{ flex: 1, textAlign: 'left' }}>Placeholder Scene</span>
-            <span
-              style={{
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '.04em',
-                textTransform: 'uppercase',
-                color: 'var(--accent)',
-                border: '1px solid var(--accent)',
-                borderRadius: '6px',
-                padding: '2px 6px',
-              }}
-            >
-              Here
-            </span>
-          </div>
-          <p style={{ margin: '4px', fontSize: '13px', color: 'var(--muted)' }}>
-            LeftPanel placeholder — import a module JSON in Phase 2 to populate scenes.
-          </p>
+          {merged.scenes.length === 0 ? (
+            <p style={{ margin: '4px', fontSize: '13px', color: 'var(--muted)' }}>
+              Import a module JSON to populate the scene list.
+            </p>
+          ) : (
+            <>
+              {actOrder.map((actId) => {
+                const actObj = actMap.get(actId);
+                const actScenes = merged.scenes.filter((s) => s.act_id === actId);
+                const visibleScenes = actScenes.filter(
+                  (s) =>
+                    getSceneVisibility({
+                      sceneId: s.id,
+                      soloMask,
+                      visited,
+                      currentSceneId,
+                      reachable,
+                    }) !== 'hidden'
+                );
+                if (visibleScenes.length === 0) {
+                  return null;
+                }
+
+                let lastGroup: string | null = null;
+                const actHeading = actObj
+                  ? `${actObj.id.toUpperCase()} · ${actObj.title}`
+                  : actId.toUpperCase();
+
+                return (
+                  <React.Fragment key={actId}>
+                    <div
+                      data-testid={`act-group-${actId}`}
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        fontSize: '11px',
+                        letterSpacing: '.1em',
+                        color: 'var(--muted)',
+                        padding: '8px 4px 2px',
+                        textTransform: 'uppercase',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {actHeading}
+                    </div>
+                    {visibleScenes.map((scene) => {
+                      const showGroup =
+                        Boolean(scene.group) && scene.group !== lastGroup;
+                      lastGroup = scene.group;
+                      const isCurrent = scene.id === currentSceneId;
+                      const isVisited = Boolean(visited[scene.id]) || isCurrent;
+                      const visibility = getSceneVisibility({
+                        sceneId: scene.id,
+                        soloMask,
+                        visited,
+                        currentSceneId,
+                        reachable,
+                      });
+                      const displayTitle =
+                        visibility === 'masked' ? '???' : scene.title;
+                      const statusLabel = isCurrent
+                        ? 'Here'
+                        : isVisited
+                          ? 'Visited'
+                          : 'New';
+                      const statusColor = isCurrent
+                        ? 'var(--accent)'
+                        : isVisited
+                          ? 'var(--muted)'
+                          : 'var(--violet)';
+
+                      return (
+                        <React.Fragment key={scene.id}>
+                          {showGroup && (
+                            <div
+                              style={{
+                                fontFamily: 'var(--mono)',
+                                fontSize: '11px',
+                                letterSpacing: '.1em',
+                                color: 'var(--muted)',
+                                padding: '6px 4px 2px',
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              {scene.group}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            data-testid={`scene-row-${scene.id}`}
+                            onClick={() => goToScene(scene.id)}
+                            style={{
+                              minHeight: '44px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '6px 10px',
+                              borderRadius: '10px',
+                              fontSize: '14px',
+                              color: 'var(--text)',
+                              background: isCurrent ? 'var(--accentBg)' : 'transparent',
+                              border: isCurrent
+                                ? '1px solid var(--accent)'
+                                : '1px solid transparent',
+                              cursor: 'pointer',
+                              width: '100%',
+                              boxSizing: 'border-box',
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: 'var(--mono)',
+                                fontSize: '12px',
+                                width: '44px',
+                                flexShrink: 0,
+                                textAlign: 'left',
+                              }}
+                            >
+                              #{scene.code}
+                            </span>
+                            <span style={{ flex: 1, textAlign: 'left' }}>
+                              {displayTitle}
+                            </span>
+                            <span
+                              data-testid={`scene-status-${scene.id}`}
+                              style={chipStyle(statusColor)}
+                            >
+                              {statusLabel}
+                            </span>
+                          </button>
+                        </React.Fragment>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
+
+              {unloadedScenes.map((unloaded, idx) => {
+                const showActHeader =
+                  idx === 0 || unloadedScenes[idx - 1].actId !== unloaded.actId;
+                return (
+                  <React.Fragment key={unloaded.id}>
+                    {showActHeader && (
+                      <div
+                        data-testid={`act-group-${unloaded.actId}`}
+                        style={{
+                          fontFamily: 'var(--mono)',
+                          fontSize: '11px',
+                          letterSpacing: '.1em',
+                          color: 'var(--muted)',
+                          padding: '8px 4px 2px',
+                          textTransform: 'uppercase',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {unloaded.actHeading}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      data-testid={`scene-row-${unloaded.id}`}
+                      disabled
+                      style={{
+                        minHeight: '44px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '6px 10px',
+                        borderRadius: '10px',
+                        fontSize: '14px',
+                        color: 'var(--faint)',
+                        background: 'transparent',
+                        border: '1px dashed var(--line2)',
+                        cursor: 'default',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: 'var(--mono)',
+                          fontSize: '12px',
+                          width: '44px',
+                          flexShrink: 0,
+                          textAlign: 'left',
+                        }}
+                      >
+                        {unloaded.id}
+                      </span>
+                      <span style={{ flex: 1, textAlign: 'left' }}>Not loaded yet</span>
+                      <span
+                        data-testid={`scene-status-${unloaded.id}`}
+                        style={chipStyle('var(--faint)')}
+                      >
+                        Not loaded
+                      </span>
+                    </button>
+                  </React.Fragment>
+                );
+              })}
+            </>
+          )}
         </div>
       ) : (
         <div

@@ -1,8 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { THEMES, THEME_ORDER, useThemeStore } from '../store/themeStore';
+import { useCampaignStore } from '../store/campaignStore';
 
-export const RightPanel: React.FC = () => {
+export interface RightPanelProps {
+  onOpenNoteModal?: () => void;
+}
+
+export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
   const { theme, setTheme } = useThemeStore();
+  const { live } = useCampaignStore();
+  const looseNotesCount = live?.looseNotes?.length ?? 0;
   const [isCompact, setIsCompact] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1200 : false
   );
@@ -106,6 +113,8 @@ export const RightPanel: React.FC = () => {
         <h2 style={sectionHeaderStyle}>SCRATCHPAD</h2>
         <button
           type="button"
+          data-testid="add-note-override-btn"
+          onClick={onOpenNoteModal}
           style={{
             height: '48px',
             borderRadius: '10px',
@@ -114,6 +123,7 @@ export const RightPanel: React.FC = () => {
             color: 'var(--gold)',
             fontWeight: 600,
             fontSize: '14px',
+            cursor: 'pointer',
           }}
         >
           Add note / override
@@ -129,7 +139,7 @@ export const RightPanel: React.FC = () => {
             fontSize: '13px',
           }}
         >
-          Loose Notes (0)
+          Loose Notes ({looseNotesCount})
         </button>
         <div
           style={{

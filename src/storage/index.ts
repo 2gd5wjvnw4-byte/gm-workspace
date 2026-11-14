@@ -237,9 +237,22 @@ export async function importChunk(
   const merged = mergeRawChunkObjects(allChunks.map((c) => c.rawJson));
   live = reconcileLiveNotes(live, merged);
   if (!live.currentSceneId && merged.scenes.length > 0) {
+    const firstSceneId = merged.scenes[0].id;
     live = {
       ...live,
-      currentSceneId: merged.scenes[0].id,
+      currentSceneId: firstSceneId,
+      visited: {
+        ...live.visited,
+        [firstSceneId]: true,
+      },
+    };
+  } else if (live.currentSceneId && !live.visited[live.currentSceneId]) {
+    live = {
+      ...live,
+      visited: {
+        ...live.visited,
+        [live.currentSceneId]: true,
+      },
     };
   }
   await db.live.put(live);

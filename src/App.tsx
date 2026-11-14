@@ -7,20 +7,32 @@ import { DrawerHost, type DrawerMode } from './components/DrawerHost';
 import { CampaignScreen } from './components/CampaignScreen';
 import { ActSwitcherSheet } from './components/ActSwitcherSheet';
 import { ReviewSheet } from './components/ReviewSheet';
+import { NoteOverrideModal } from './components/NoteOverrideModal';
 import { isRunningStandalone, StandaloneBanner } from './components/StandaloneBanner';
 import { applyThemeToElement, getThemeCssVariables, useThemeStore } from './store/themeStore';
 import { useCampaignStore } from './store/campaignStore';
-import { requestPersist, type MapDisplayMode, type NavViewMode } from './storage';
+import { requestPersist, type TableNote } from './storage';
 
 export const App: React.FC = () => {
   const { theme } = useThemeStore();
-  const { activeCampaign, chunks, merged } = useCampaignStore();
-  const [navView, setNavView] = useState<NavViewMode>('list');
-  const [mapMode, setMapMode] = useState<MapDisplayMode>('off');
-  const [soloMask, setSoloMask] = useState(false);
+  const {
+    activeCampaign,
+    chunks,
+    merged,
+    live,
+    setNavView,
+    setMapMode,
+    setSoloMask,
+  } = useCampaignStore();
   const [drawer, setDrawer] = useState<DrawerMode>(null);
   const [actSheetOpen, setActSheetOpen] = useState(false);
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false);
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState<TableNote | null>(null);
+
+  const navView = live?.ui?.navView ?? 'list';
+  const mapMode = live?.ui?.mapMode ?? 'off';
+  const soloMask = Boolean(live?.ui?.soloMask);
 
   const standalone = isRunningStandalone();
   const [showStandaloneBanner, setShowStandaloneBanner] = useState<boolean>(
@@ -82,7 +94,7 @@ export const App: React.FC = () => {
             mapMode={mapMode}
             onSelectMapMode={setMapMode}
             soloMask={soloMask}
-            onToggleSoloMask={() => setSoloMask((s) => !s)}
+            onToggleSoloMask={() => setSoloMask(!soloMask)}
             onOpenPdf={() => setDrawer((d) => (d === 'pdf' ? null : 'pdf'))}
           />
 
@@ -98,9 +110,18 @@ export const App: React.FC = () => {
             <Center
               mapMode={mapMode}
               onOpenPdf={() => setDrawer('pdf')}
+              onEditNote={(note) => {
+                setEditingNote(note);
+                setNoteModalOpen(true);
+              }}
             />
 
-            <RightPanel />
+            <RightPanel
+              onOpenNoteModal={() => {
+                setEditingNote(null);
+                setNoteModalOpen(true);
+              }}
+            />
 
             <DrawerHost activeDrawer={drawer} onClose={() => setDrawer(null)} />
           </div>
@@ -113,6 +134,15 @@ export const App: React.FC = () => {
           <ReviewSheet
             open={reviewSheetOpen}
             onClose={() => setReviewSheetOpen(false)}
+          />
+
+          <NoteOverrideModal
+            open={noteModalOpen}
+            editingNote={editingNote}
+            onClose={() => {
+              setNoteModalOpen(false);
+              setEditingNote(null);
+            }}
           />
         </>
       )}
