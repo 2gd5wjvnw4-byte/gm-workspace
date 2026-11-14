@@ -41,6 +41,7 @@ export interface CampaignStoreState {
   setActiveLoadedCampaign: (loaded: LoadedCampaign | null) => void;
   clearError: () => void;
   goToScene: (sceneId: string) => void;
+  toggleSceneVisited: (sceneId: string) => void;
   toggleRevealedItem: (itemId: string, unlocksConnectionId?: string | null) => void;
   setSoloMask: (soloMask: boolean) => void;
   setNavView: (navView: NavViewMode) => void;
@@ -277,6 +278,24 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           [sceneId]: true,
         },
       }));
+    },
+
+    toggleSceneVisited: (sceneId: string) => {
+      commitLive((prev) => {
+        if (prev.currentSceneId === sceneId) {
+          return prev;
+        }
+        const nextVisited = { ...prev.visited };
+        if (nextVisited[sceneId]) {
+          delete nextVisited[sceneId];
+        } else {
+          nextVisited[sceneId] = true;
+        }
+        return {
+          ...prev,
+          visited: nextVisited,
+        };
+      });
     },
 
     toggleRevealedItem: (itemId: string, unlocksConnectionId?: string | null) => {

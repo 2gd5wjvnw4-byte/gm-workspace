@@ -28,7 +28,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   onSelectNavView,
   onOpenEntityInspector,
 }) => {
-  const { merged, live, goToScene } = useCampaignStore();
+  const { merged, live, goToScene, toggleSceneVisited } = useCampaignStore();
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
@@ -128,11 +128,22 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
-        overflowY: 'auto',
+        overflow: 'hidden',
         boxSizing: 'border-box',
       }}
     >
-      <div style={{ padding: '12px 12px 8px', display: 'flex', gap: '4px' }}>
+      <div
+        data-testid="left-panel-tabs"
+        style={{
+          padding: '12px 12px 8px',
+          display: 'flex',
+          gap: '4px',
+          flexShrink: 0,
+          background: 'var(--panel)',
+          borderBottom: '1px solid var(--line)',
+          zIndex: 2,
+        }}
+      >
         <button
           type="button"
           onClick={() => onSelectNavView('list')}
@@ -151,7 +162,18 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         </button>
       </div>
 
-      {navView === 'list' ? (
+      <div
+        data-testid="left-panel-scroll"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          paddingTop: '8px',
+        }}
+      >
+        {navView === 'list' ? (
         <div
           data-testid="scene-list-container"
           style={{
@@ -247,16 +269,13 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                               {scene.group}
                             </div>
                           )}
-                          <button
-                            type="button"
-                            data-testid={`scene-row-${scene.id}`}
-                            onClick={() => goToScene(scene.id)}
+                          <div
                             style={{
                               minHeight: '44px',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '8px',
-                              padding: '6px 10px',
+                              gap: '6px',
+                              padding: '2px 6px 2px 10px',
                               borderRadius: '10px',
                               fontSize: '14px',
                               color: 'var(--text)',
@@ -264,32 +283,82 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                               border: isCurrent
                                 ? '1px solid var(--accent)'
                                 : '1px solid transparent',
-                              cursor: 'pointer',
                               width: '100%',
                               boxSizing: 'border-box',
                             }}
                           >
-                            <span
+                            <button
+                              type="button"
+                              data-testid={`scene-row-${scene.id}`}
+                              onClick={() => goToScene(scene.id)}
                               style={{
-                                fontFamily: 'var(--mono)',
-                                fontSize: '12px',
-                                width: '44px',
-                                flexShrink: 0,
-                                textAlign: 'left',
+                                all: 'unset',
+                                cursor: 'pointer',
+                                flex: 1,
+                                minHeight: '44px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                minWidth: 0,
                               }}
                             >
-                              #{scene.code}
-                            </span>
-                            <span style={{ flex: 1, textAlign: 'left' }}>
-                              {displayTitle}
-                            </span>
-                            <span
-                              data-testid={`scene-status-${scene.id}`}
-                              style={chipStyle(statusColor)}
-                            >
-                              {statusLabel}
-                            </span>
-                          </button>
+                              <span
+                                style={{
+                                  fontFamily: 'var(--mono)',
+                                  fontSize: '12px',
+                                  width: '44px',
+                                  flexShrink: 0,
+                                  textAlign: 'left',
+                                }}
+                              >
+                                #{scene.code}
+                              </span>
+                              <span style={{ flex: 1, textAlign: 'left' }}>
+                                {displayTitle}
+                              </span>
+                            </button>
+                            {isCurrent ? (
+                              <span
+                                data-testid={`scene-status-${scene.id}`}
+                                style={{
+                                  ...chipStyle(statusColor),
+                                  minHeight: '44px',
+                                  minWidth: '44px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  boxSizing: 'border-box',
+                                }}
+                              >
+                                {statusLabel}
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                data-testid={`scene-status-${scene.id}`}
+                                aria-label={
+                                  isVisited
+                                    ? `Mark #${scene.code} as New`
+                                    : `Mark #${scene.code} as Visited`
+                                }
+                                aria-pressed={isVisited}
+                                onClick={() => toggleSceneVisited(scene.id)}
+                                style={{
+                                  ...chipStyle(statusColor),
+                                  minHeight: '44px',
+                                  minWidth: '44px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  background: 'transparent',
+                                  cursor: 'pointer',
+                                  boxSizing: 'border-box',
+                                }}
+                              >
+                                {statusLabel}
+                              </button>
+                            )}
+                          </div>
                         </React.Fragment>
                       );
                     })}
@@ -478,6 +547,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
           No roaming entities loaded yet.
         </div>
+      </div>
       </div>
     </aside>
   );

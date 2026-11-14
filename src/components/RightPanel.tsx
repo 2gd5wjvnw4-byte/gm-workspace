@@ -268,28 +268,41 @@ export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
           ))}
         </aside>
         {overlayOpen && (
-          <aside
-            data-testid="zone-right-panel"
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: '56px',
-              bottom: 0,
-              width: '300px',
-              background: 'var(--panel)',
-              borderLeft: '1px solid var(--line2)',
-              boxShadow: '-16px 0 40px rgba(0,0,0,.35)',
-              overflowY: 'auto',
-              padding: '14px 12px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '18px',
-              zIndex: 15,
-              boxSizing: 'border-box',
-            }}
-          >
-            {panelContent}
-          </aside>
+          <>
+            <div
+              data-testid="right-panel-backdrop"
+              aria-hidden="true"
+              onClick={() => setOverlayOpen(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.25)',
+                zIndex: 14,
+              }}
+            />
+            <aside
+              data-testid="zone-right-panel"
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: '56px',
+                bottom: 0,
+                width: '300px',
+                background: 'var(--panel)',
+                borderLeft: '1px solid var(--line2)',
+                boxShadow: '-16px 0 40px rgba(0,0,0,.35)',
+                overflowY: 'auto',
+                padding: '14px 12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '18px',
+                zIndex: 15,
+                boxSizing: 'border-box',
+              }}
+            >
+              {panelContent}
+            </aside>
+          </>
         )}
       </>
     );

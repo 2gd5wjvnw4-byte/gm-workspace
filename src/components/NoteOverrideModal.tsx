@@ -77,6 +77,11 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
   return (
     <div
       data-testid="note-override-modal"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
       style={{
         position: 'fixed',
         inset: 0,
@@ -90,6 +95,7 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
       }}
     >
       <div
+        data-testid="note-override-modal-card"
         style={{
           width: '540px',
           maxWidth: 'calc(100vw - 32px)',

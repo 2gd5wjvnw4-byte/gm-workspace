@@ -508,4 +508,82 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.click(screen.getByTestId('close-note-modal-btn'));
     expect(useCampaignStore.getState().live?.connectionState['a1-x03']).toBe('locked');
   });
+
+  it('toggles non-current scene visited status, keeps left panel tabs fixed above scroll area, and closes right panel overlay and note modal on outside tap', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'The Silent Relay',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    // Render at compact width (1180x820) so RightPanel uses the rail + overlay
+    Object.defineProperty(window, 'innerWidth', {
+      writable: true,
+      configurable: true,
+      value: 1180,
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      writable: true,
+      configurable: true,
+      value: 820,
+    });
+
+    render(<App />);
+
+    // 1. Left panel tabs are fixed outside the scrolling container
+    const leftPanel = screen.getByTestId('zone-left-panel');
+    const tabsBar = screen.getByTestId('left-panel-tabs');
+    const scrollArea = screen.getByTestId('left-panel-scroll');
+    expect(leftPanel).toHaveStyle({ overflow: 'hidden' });
+    expect(tabsBar).toHaveStyle({ flexShrink: '0' });
+    expect(scrollArea).toHaveStyle({ overflowY: 'auto' });
+    expect(scrollArea.contains(tabsBar)).toBe(false);
+
+    // 2. Scene status toggle: starts at a1-s01 (Here), a1-s02 is New
+    expect(screen.getByTestId('scene-status-a1-s01')).toHaveTextContent('Here');
+    expect(screen.getByTestId('scene-status-a1-s02')).toHaveTextContent('New');
+
+    // Walk to a1-s02 via scene list row -> a1-s01 becomes Visited, a1-s02 becomes Here
+    fireEvent.click(screen.getByTestId('scene-row-a1-s02'));
+    expect(screen.getByTestId('scene-title')).toHaveTextContent('Hab Ring Concourse');
+    expect(screen.getByTestId('scene-status-a1-s01')).toHaveTextContent('Visited');
+    expect(screen.getByTestId('scene-status-a1-s02')).toHaveTextContent('Here');
+
+    // Tap a1-s01's status button to toggle it back to New without changing current scene
+    const s01StatusBtn = screen.getByTestId('scene-status-a1-s01');
+    expect(s01StatusBtn.tagName).toBe('BUTTON');
+    expect(s01StatusBtn).toHaveStyle({ minHeight: '44px' });
+    fireEvent.click(s01StatusBtn);
+    expect(screen.getByTestId('scene-status-a1-s01')).toHaveTextContent('New');
+    expect(useCampaignStore.getState().live?.visited['a1-s01']).toBeUndefined();
+    expect(screen.getByTestId('scene-title')).toHaveTextContent('Hab Ring Concourse');
+
+    // Tap a1-s01's status button again to mark it Visited without changing current scene
+    fireEvent.click(screen.getByTestId('scene-status-a1-s01'));
+    expect(screen.getByTestId('scene-status-a1-s01')).toHaveTextContent('Visited');
+    expect(useCampaignStore.getState().live?.visited['a1-s01']).toBe(true);
+    expect(screen.getByTestId('scene-title')).toHaveTextContent('Hab Ring Concourse');
+
+    // 3. RightPanel overlay opens on rail button tap and closes when tapping outside backdrop
+    fireEvent.click(screen.getByRole('button', { name: 'Open Scratchpad and Theme' }));
+    expect(screen.getByTestId('zone-right-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('right-panel-backdrop')).toBeInTheDocument();
+
+    // Open NoteOverrideModal from inside the RightPanel overlay
+    fireEvent.click(screen.getByTestId('add-note-override-btn'));
+    expect(screen.getByTestId('note-override-modal')).toBeInTheDocument();
+
+    // Tapping inside the modal card does not close it
+    fireEvent.click(screen.getByTestId('note-override-modal-card'));
+    expect(screen.getByTestId('note-override-modal')).toBeInTheDocument();
+
+    // Tapping the modal backdrop closes the modal
+    fireEvent.click(screen.getByTestId('note-override-modal'));
+    expect(screen.queryByTestId('note-override-modal')).not.toBeInTheDocument();
+
+    // Tapping the right-panel backdrop closes the right-panel overlay
+    fireEvent.click(screen.getByTestId('right-panel-backdrop'));
+    expect(screen.queryByTestId('zone-right-panel')).not.toBeInTheDocument();
+  });
 });
