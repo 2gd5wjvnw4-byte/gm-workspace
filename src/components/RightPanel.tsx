@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import type { TableNote } from '../storage/types';
 import { THEMES, THEME_ORDER, useThemeStore } from '../store/themeStore';
 import { useCampaignStore } from '../store/campaignStore';
 import {
@@ -50,6 +51,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   const looseNotes = live?.looseNotes ?? [];
   const [looseNotesOpen, setLooseNotesOpen] = useState(false);
   const [newLooseNoteText, setNewLooseNoteText] = useState('');
+  const [confirmDeleteNote, setConfirmDeleteNote] = useState<TableNote | null>(null);
   const [isCompact, setIsCompact] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1200 : false
   );
@@ -300,7 +302,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                   <span style={{ flex: 1, whiteSpace: 'pre-wrap' }}>{note.text}</span>
                   <button
                     type="button"
-                    onClick={() => deleteLooseNote(note.id)}
+                    onClick={() => setConfirmDeleteNote(note)}
                     aria-label={`Delete loose note ${note.text}`}
                     style={{
                       height: '44px',
@@ -399,6 +401,116 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           })}
         </div>
       </CollapsibleSection>
+
+      {confirmDeleteNote && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Delete loose note"
+          data-testid="delete-loose-note-modal"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            paddingTop: '48px',
+            zIndex: 50,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '420px',
+              background: 'var(--panel)',
+              border: '1px solid var(--line2)',
+              borderRadius: '14px',
+              padding: '18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: 'var(--head)',
+                fontSize: '18px',
+                fontWeight: 700,
+                color: 'var(--text)',
+              }}
+            >
+              Delete loose note
+            </div>
+
+            <div style={{ fontSize: '14px', color: 'var(--muted)', lineHeight: 1.5 }}>
+              Are you sure you want to delete this loose note?
+              <div
+                style={{
+                  marginTop: '8px',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  background: 'var(--p2)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--text)',
+                  fontSize: '13px',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {confirmDeleteNote.text}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                marginTop: '4px',
+              }}
+            >
+              <button
+                type="button"
+                data-testid="cancel-delete-loose-note"
+                onClick={() => setConfirmDeleteNote(null)}
+                style={{
+                  height: '44px',
+                  padding: '0 16px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--p3)',
+                  color: 'var(--text)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-delete-loose-note"
+                onClick={() => {
+                  deleteLooseNote(confirmDeleteNote.id);
+                  setConfirmDeleteNote(null);
+                }}
+                style={{
+                  height: '44px',
+                  padding: '0 18px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--redLine)',
+                  background: 'var(--redBg)',
+                  color: 'var(--red)',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 

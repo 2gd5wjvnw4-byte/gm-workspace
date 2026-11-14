@@ -302,6 +302,19 @@ describe('RightPanel Phase 5 sections', () => {
     fireEvent.click(
       within(screen.getByTestId(`loose-note-${loose[0].id}`)).getByRole('button', { name: /Delete/i })
     );
+    expect(screen.getByTestId('delete-loose-note-modal')).toBeTruthy();
+    expect(useCampaignStore.getState().live?.looseNotes).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId('cancel-delete-loose-note'));
+    expect(screen.queryByTestId('delete-loose-note-modal')).toBeNull();
+    expect(useCampaignStore.getState().live?.looseNotes).toHaveLength(1);
+
+    fireEvent.click(
+      within(screen.getByTestId(`loose-note-${loose[0].id}`)).getByRole('button', { name: /Delete/i })
+    );
+    expect(screen.getByTestId('delete-loose-note-modal')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('confirm-delete-loose-note'));
+    expect(screen.queryByTestId('delete-loose-note-modal')).toBeNull();
     expect(useCampaignStore.getState().live?.looseNotes).toHaveLength(0);
   });
 });
