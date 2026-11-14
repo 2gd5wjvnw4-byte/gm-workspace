@@ -274,8 +274,8 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                               minHeight: '44px',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '6px',
-                              padding: '2px 6px 2px 10px',
+                              gap: '8px',
+                              padding: '6px 10px',
                               borderRadius: '10px',
                               fontSize: '14px',
                               color: 'var(--text)',
@@ -295,7 +295,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                                 all: 'unset',
                                 cursor: 'pointer',
                                 flex: 1,
-                                minHeight: '44px',
+                                minHeight: '32px',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '8px',
@@ -320,15 +320,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                             {isCurrent ? (
                               <span
                                 data-testid={`scene-status-${scene.id}`}
-                                style={{
-                                  ...chipStyle(statusColor),
-                                  minHeight: '44px',
-                                  minWidth: '44px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  boxSizing: 'border-box',
-                                }}
+                                style={chipStyle(statusColor)}
                               >
                                 {statusLabel}
                               </span>
@@ -345,14 +337,8 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                                 onClick={() => toggleSceneVisited(scene.id)}
                                 style={{
                                   ...chipStyle(statusColor),
-                                  minHeight: '44px',
-                                  minWidth: '44px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
                                   background: 'transparent',
                                   cursor: 'pointer',
-                                  boxSizing: 'border-box',
                                 }}
                               >
                                 {statusLabel}

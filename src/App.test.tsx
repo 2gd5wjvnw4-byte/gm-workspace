@@ -467,16 +467,18 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(screen.getByTestId('exit-btn-a1-x04')).toBeDisabled();
     expect(screen.getByTestId('exit-btn-a1-x04')).toHaveTextContent('Not loaded');
 
-    // Add a table note via the top-anchored Add note / override modal
+    // Add a table note via the top-anchored Add note / override modal (auto-saves on outside tap)
     fireEvent.click(screen.getByTestId('add-note-override-btn'));
     const modal = screen.getByTestId('note-override-modal');
     expect(modal).toBeInTheDocument();
     expect(modal.style.alignItems).toBe('flex-start');
+    expect(screen.queryByTestId('save-note-btn')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId('note-text-input'), {
       target: { value: 'Coolant pipe already ruptured.' },
     });
-    fireEvent.click(screen.getByTestId('save-note-btn'));
+    // Close by tapping outside the modal card
+    fireEvent.click(screen.getByTestId('note-override-modal'));
 
     // Table change banner shows above read-aloud
     const banner = screen.getByTestId('table-change-banner');
@@ -490,7 +492,8 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.change(screen.getByTestId('note-text-input'), {
       target: { value: 'Coolant pipe patched by crew.' },
     });
-    fireEvent.click(screen.getByTestId('save-note-btn'));
+    // Close by tapping outside — edited note auto-saves
+    fireEvent.click(screen.getByTestId('note-override-modal'));
     expect(screen.getByTestId('table-change-banner')).toHaveTextContent(
       'Coolant pipe patched by crew.'
     );
@@ -550,10 +553,12 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(screen.getByTestId('scene-status-a1-s01')).toHaveTextContent('Visited');
     expect(screen.getByTestId('scene-status-a1-s02')).toHaveTextContent('Here');
 
-    // Tap a1-s01's status button to toggle it back to New without changing current scene
+    // Tap a1-s01's compact status button to toggle it back to New without changing current scene
     const s01StatusBtn = screen.getByTestId('scene-status-a1-s01');
     expect(s01StatusBtn.tagName).toBe('BUTTON');
-    expect(s01StatusBtn).toHaveStyle({ minHeight: '44px' });
+    expect(s01StatusBtn).toHaveStyle({ padding: '2px 6px' });
+    expect(s01StatusBtn.style.minHeight).toBe('');
+    expect(s01StatusBtn.style.minWidth).toBe('');
     fireEvent.click(s01StatusBtn);
     expect(screen.getByTestId('scene-status-a1-s01')).toHaveTextContent('New');
     expect(useCampaignStore.getState().live?.visited['a1-s01']).toBeUndefined();
@@ -573,17 +578,96 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     // Open NoteOverrideModal from inside the RightPanel overlay
     fireEvent.click(screen.getByTestId('add-note-override-btn'));
     expect(screen.getByTestId('note-override-modal')).toBeInTheDocument();
+    expect(screen.queryByTestId('save-note-btn')).not.toBeInTheDocument();
+
+    // Typing a note and tapping outside the modal card saves it and closes the modal
+    fireEvent.change(screen.getByTestId('note-text-input'), {
+      target: { value: 'Auto-saved when tapping outside.' },
+    });
 
     // Tapping inside the modal card does not close it
     fireEvent.click(screen.getByTestId('note-override-modal-card'));
     expect(screen.getByTestId('note-override-modal')).toBeInTheDocument();
 
-    // Tapping the modal backdrop closes the modal
+    // Tapping the modal backdrop closes the modal and leaves the auto-saved note on the scene
     fireEvent.click(screen.getByTestId('note-override-modal'));
     expect(screen.queryByTestId('note-override-modal')).not.toBeInTheDocument();
+    expect(screen.getByTestId('table-change-banner')).toHaveTextContent(
+      'Auto-saved when tapping outside.'
+    );
 
     // Tapping the right-panel backdrop closes the right-panel overlay
     fireEvent.click(screen.getByTestId('right-panel-backdrop'));
     expect(screen.queryByTestId('zone-right-panel')).not.toBeInTheDocument();
+  });
+
+  it('handles note auto-save edge cases: clear-to-delete, target switching before/after typing', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Edge Case Campaign',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    render(<App />);
+
+    // Edge case 1: Open Add Note, type text, then clear all text before closing -> no note saved
+    fireEvent.click(screen.getByTestId('add-note-override-btn'));
+    fireEvent.change(screen.getByTestId('note-text-input'), {
+      target: { value: 'Temporary text' },
+    });
+    expect(useCampaignStore.getState().live?.notes.length).toBe(1);
+    fireEvent.change(screen.getByTestId('note-text-input'), {
+      target: { value: '' },
+    });
+    expect(useCampaignStore.getState().live?.notes.length).toBe(0);
+    fireEvent.click(screen.getByTestId('note-override-modal'));
+    expect(useCampaignStore.getState().live?.notes.length).toBe(0);
+
+    // Edge case 2: Open Add Note, change target BEFORE typing, then type -> saved to new target
+    fireEvent.click(screen.getByTestId('add-note-override-btn'));
+    fireEvent.change(screen.getByTestId('note-target-select'), {
+      target: { value: 'a1-s03' },
+    });
+    fireEvent.change(screen.getByTestId('note-text-input'), {
+      target: { value: 'Targeted to scene 3 first' },
+    });
+    fireEvent.click(screen.getByTestId('note-override-modal'));
+    const notesAfterCase2 = useCampaignStore.getState().live?.notes ?? [];
+    expect(notesAfterCase2.length).toBe(1);
+    expect(notesAfterCase2[0].targetId).toBe('a1-s03');
+    expect(notesAfterCase2[0].text).toBe('Targeted to scene 3 first');
+
+    // Edge case 3: Open note modal, type text, THEN change target -> updated in store with new target
+    fireEvent.click(screen.getByTestId('add-note-override-btn'));
+    fireEvent.change(screen.getByTestId('note-text-input'), {
+      target: { value: 'Changed target afterwards' },
+    });
+    const notesDuringCase3 = useCampaignStore.getState().live?.notes ?? [];
+    const createdNote = notesDuringCase3.find((n) => n.text === 'Changed target afterwards');
+    expect(createdNote).toBeDefined();
+    expect(createdNote?.targetId).toBe('a1-s01');
+    // Change target in dropdown
+    fireEvent.change(screen.getByTestId('note-target-select'), {
+      target: { value: 'a1-s02' },
+    });
+    const updatedNote = useCampaignStore
+      .getState()
+      .live?.notes.find((n) => n.id === createdNote?.id);
+    expect(updatedNote?.targetId).toBe('a1-s02');
+    fireEvent.click(screen.getByTestId('close-note-modal-btn'));
+
+    // Edge case 4: Edit existing note and clear text -> note is deleted from store
+    // Open the note for a1-s02 by navigating there or via banner
+    fireEvent.click(screen.getByTestId('scene-row-a1-s02'));
+    const banner = screen.getByTestId('table-change-banner');
+    fireEvent.click(banner.querySelectorAll('button')[0]);
+    expect(screen.getByTestId('note-override-modal')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('note-text-input'), {
+      target: { value: '   ' },
+    });
+    fireEvent.click(screen.getByTestId('close-note-modal-btn'));
+    expect(
+      useCampaignStore.getState().live?.notes.find((n) => n.id === createdNote?.id)
+    ).toBeUndefined();
   });
 });

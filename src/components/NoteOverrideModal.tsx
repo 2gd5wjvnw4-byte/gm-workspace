@@ -36,15 +36,18 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
   const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? '';
   const [targetId, setTargetId] = useState<string>(currentSceneId);
   const [noteText, setNoteText] = useState<string>('');
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     if (editingNote) {
       setTargetId(editingNote.targetId);
       setNoteText(editingNote.text);
+      setActiveNoteId(editingNote.id);
     } else {
       setTargetId(currentSceneId);
       setNoteText('');
+      setActiveNoteId(null);
     }
   }, [open, editingNote, currentSceneId]);
 
@@ -56,21 +59,43 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
   const connectionState = live?.connectionState ?? {};
   const revealed = live?.revealed ?? {};
 
-  const handleSaveNote = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = noteText.trim();
-    if (!trimmed) return;
-    if (editingNote) {
-      updateTableNote(editingNote.id, trimmed, targetId || currentSceneId);
-    } else {
-      addTableNote(targetId || currentSceneId, trimmed);
+  const syncNoteToStore = (nextText: string, nextTargetId: string) => {
+    const trimmed = nextText.trim();
+    const resolvedTarget = nextTargetId || currentSceneId;
+    if (!trimmed) {
+      if (activeNoteId) {
+        deleteTableNote(activeNoteId);
+        setActiveNoteId(null);
+      }
+      return;
     }
-    onClose();
+    if (activeNoteId) {
+      updateTableNote(activeNoteId, trimmed, resolvedTarget);
+    } else {
+      const created = addTableNote(resolvedTarget, trimmed);
+      if (created) {
+        setActiveNoteId(created.id);
+      }
+    }
+  };
+
+  const handleTargetChange = (nextTargetId: string) => {
+    setTargetId(nextTargetId);
+    if (activeNoteId && noteText.trim()) {
+      updateTableNote(activeNoteId, noteText.trim(), nextTargetId || currentSceneId);
+    }
+  };
+
+  const handleTextChange = (nextText: string) => {
+    setNoteText(nextText);
+    syncNoteToStore(nextText, targetId);
   };
 
   const handleDeleteNote = () => {
-    if (!editingNote) return;
-    deleteTableNote(editingNote.id);
+    const idToDelete = activeNoteId ?? editingNote?.id;
+    if (!idToDelete) return;
+    deleteTableNote(idToDelete);
+    setActiveNoteId(null);
     onClose();
   };
 
@@ -150,8 +175,7 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
           </button>
         </div>
 
-        <form
-          onSubmit={handleSaveNote}
+        <div
           style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -171,7 +195,7 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
               id="note-target-select"
               data-testid="note-target-select"
               value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
+              onChange={(e) => handleTargetChange(e.target.value)}
               style={{
                 height: '44px',
                 borderRadius: '10px',
@@ -196,23 +220,31 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label
-              htmlFor="note-text-input"
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: '11px',
-                letterSpacing: '.1em',
-                color: 'var(--muted)',
-                textTransform: 'uppercase',
-              }}
-            >
-              Table note
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label
+                htmlFor="note-text-input"
+                style={{
+                  fontFamily: 'var(--mono)',
+                  fontSize: '11px',
+                  letterSpacing: '.1em',
+                  color: 'var(--muted)',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Table note
+              </label>
+              <span
+                data-testid="note-autosave-hint"
+                style={{ fontSize: '11px', color: 'var(--muted)' }}
+              >
+                Saves automatically
+              </span>
+            </div>
             <textarea
               id="note-text-input"
               data-testid="note-text-input"
               value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
+              onChange={(e) => handleTextChange(e.target.value)}
               placeholder="Write what changed at the table…"
               rows={3}
               style={{
@@ -228,8 +260,8 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            {editingNote && (
+          {editingNote && (
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-start' }}>
               <button
                 type="button"
                 data-testid="delete-note-btn"
@@ -244,48 +276,13 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
                   fontSize: '13px',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  marginRight: 'auto',
                 }}
               >
                 Delete Note
               </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                height: '44px',
-                padding: '0 14px',
-                borderRadius: '10px',
-                border: '1px solid var(--line)',
-                background: 'var(--p2)',
-                color: 'var(--text)',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              data-testid="save-note-btn"
-              style={{
-                height: '44px',
-                padding: '0 16px',
-                borderRadius: '10px',
-                border: '1px solid var(--goldLine)',
-                background: 'var(--goldBg)',
-                color: 'var(--gold)',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              {editingNote ? 'Update Note' : 'Save Note'}
-            </button>
-          </div>
-        </form>
+            </div>
+          )}
+        </div>
 
         {!editingNote && merged.connections.length > 0 && (
           <div
