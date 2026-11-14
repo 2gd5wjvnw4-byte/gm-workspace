@@ -2,11 +2,13 @@ import React from 'react';
 import type { DispositionState, NavViewMode } from '../storage/types';
 import { computeReachableSceneIds, getSceneVisibility } from '../lib/solo';
 import { useCampaignStore } from '../store/campaignStore';
+import { NodeMapCanvas } from './NodeMapCanvas';
 
 export interface LeftPanelProps {
   navView: NavViewMode;
   onSelectNavView: (view: NavViewMode) => void;
   onOpenEntityInspector: (entityId: string) => void;
+  onExpandNodeMap?: () => void;
 }
 
 const DISPOSITION_COLORS: Record<DispositionState, string> = {
@@ -46,6 +48,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   navView,
   onSelectNavView,
   onOpenEntityInspector,
+  onExpandNodeMap,
 }) => {
   const {
     merged,
@@ -56,6 +59,8 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     cycleEntityDisposition,
     summonEntityToScene,
     removeSummonedEntityFromScene,
+    setNodePosition,
+    resetNodePositions,
   } = useCampaignStore();
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
@@ -549,40 +554,21 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           )}
         </div>
       ) : (
-        <div
-          style={{
-            margin: '0 12px 12px',
-            height: '440px',
-            position: 'relative',
-            background: 'var(--mapBg)',
-            border: '1px solid var(--line)',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
-            boxSizing: 'border-box',
-          }}
-        >
-          <span style={{ fontSize: '13px', color: 'var(--muted)', textAlign: 'center' }}>
-            Node Map placeholder (440px canvas)
-          </span>
-          <div
-            style={{
-              position: 'absolute',
-              left: '10px',
-              bottom: '8px',
-              fontSize: '11px',
-              color: 'var(--muted)',
-              background: 'var(--mapBg)',
-              padding: '2px 4px',
-              borderRadius: '4px',
-            }}
-          >
-            Pinch to zoom · drag to move · 100%
-          </div>
-        </div>
+        <NodeMapCanvas
+          scenes={merged.scenes}
+          connections={merged.connections}
+          notLoadedTargets={merged.linkCheck.notLoadedTargets}
+          currentSceneId={currentSceneId}
+          visited={visited}
+          revealed={revealed}
+          connectionState={connectionState}
+          soloMask={soloMask}
+          nodePositions={live?.nodePositions ?? {}}
+          onSelectScene={goToScene}
+          onMoveNode={setNodePosition}
+          onResetLayout={resetNodePositions}
+          onExpand={onExpandNodeMap}
+        />
       )}
       </div>
 

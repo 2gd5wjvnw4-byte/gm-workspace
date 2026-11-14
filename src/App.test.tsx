@@ -1040,4 +1040,34 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(screen.getByTestId('inspector-track-val-e-okafor-0-0')).toHaveTextContent('6 / 6');
     expect(screen.getByTestId('entity-track-val-e-okafor-0-0')).toHaveTextContent('6 / 6');
   });
+
+  it('renders live Node Map tab in LeftPanel, navigates on node tap, and opens/closes Expand overlay over Center', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Phase 6 Node Map Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-row-a1-s02')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Node Map' }));
+    expect(screen.getByTestId('node-map-canvas')).toBeInTheDocument();
+    expect(screen.getByTestId('map-node-a1-s01')).toBeInTheDocument();
+    expect(screen.getByTestId('map-node-a2-s01')).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand node map' }));
+    expect(screen.getByTestId('node-map-expanded-overlay')).toBeInTheDocument();
+    expect(screen.getByTestId('node-map-canvas-expanded')).toBeInTheDocument();
+
+    const expandedNodes = screen.getAllByTestId('map-node-a1-s02');
+    fireEvent.click(expandedNodes[expandedNodes.length - 1]);
+    expect(useCampaignStore.getState().live?.currentSceneId).toBe('a1-s02');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close expanded node map' }));
+    expect(screen.queryByTestId('node-map-expanded-overlay')).not.toBeInTheDocument();
+  });
 });

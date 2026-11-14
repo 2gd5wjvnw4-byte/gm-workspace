@@ -8,6 +8,7 @@ import { CampaignScreen } from './components/CampaignScreen';
 import { ActSwitcherSheet } from './components/ActSwitcherSheet';
 import { ReviewSheet } from './components/ReviewSheet';
 import { NoteOverrideModal } from './components/NoteOverrideModal';
+import { NodeMapCanvas } from './components/NodeMapCanvas';
 import { isRunningStandalone, StandaloneBanner } from './components/StandaloneBanner';
 import { applyThemeToElement, getThemeCssVariables, useThemeStore } from './store/themeStore';
 import { useCampaignStore } from './store/campaignStore';
@@ -23,6 +24,9 @@ export const App: React.FC = () => {
     setNavView,
     setMapMode,
     setSoloMask,
+    goToScene,
+    setNodePosition,
+    resetNodePositions,
   } = useCampaignStore();
   const [drawer, setDrawer] = useState<DrawerMode>(null);
   const [inspectedEntityId, setInspectedEntityId] = useState<string | null>(null);
@@ -30,6 +34,7 @@ export const App: React.FC = () => {
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<TableNote | null>(null);
+  const [nodeMapExpanded, setNodeMapExpanded] = useState(false);
 
   const navView = live?.ui?.navView ?? 'list';
   const mapMode = live?.ui?.mapMode ?? 'off';
@@ -113,16 +118,48 @@ export const App: React.FC = () => {
                   d === 'entity' && inspectedEntityId === entityId ? null : 'entity'
                 );
               }}
+              onExpandNodeMap={() => setNodeMapExpanded(true)}
             />
 
-            <Center
-              mapMode={mapMode}
-              onOpenPdf={() => setDrawer('pdf')}
-              onEditNote={(note) => {
-                setEditingNote(note);
-                setNoteModalOpen(true);
-              }}
-            />
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', position: 'relative' }}>
+              <Center
+                mapMode={mapMode}
+                onOpenPdf={() => setDrawer('pdf')}
+                onEditNote={(note) => {
+                  setEditingNote(note);
+                  setNoteModalOpen(true);
+                }}
+              />
+
+              {nodeMapExpanded && (
+                <div
+                  data-testid="node-map-expanded-overlay"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 30,
+                    background: 'var(--mapBg)',
+                  }}
+                >
+                  <NodeMapCanvas
+                    scenes={merged.scenes}
+                    connections={merged.connections}
+                    notLoadedTargets={merged.linkCheck.notLoadedTargets}
+                    currentSceneId={live?.currentSceneId ?? merged.scenes[0]?.id ?? null}
+                    visited={live?.visited ?? {}}
+                    revealed={live?.revealed ?? {}}
+                    connectionState={live?.connectionState ?? {}}
+                    soloMask={soloMask}
+                    nodePositions={live?.nodePositions ?? {}}
+                    onSelectScene={goToScene}
+                    onMoveNode={setNodePosition}
+                    onResetLayout={resetNodePositions}
+                    expanded
+                    onClose={() => setNodeMapExpanded(false)}
+                  />
+                </div>
+              )}
+            </div>
 
             <RightPanel
               onOpenNoteModal={() => {

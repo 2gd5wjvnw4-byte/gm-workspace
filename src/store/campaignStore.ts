@@ -100,6 +100,8 @@ export interface CampaignStoreState {
   appendRollLog: (entry: Omit<RollLogEntry, 'id' | 'createdAt'>) => RollLogEntry;
   addLooseNote: (text: string) => TableNote | null;
   deleteLooseNote: (noteId: string) => void;
+  setNodePosition: (sceneId: string, pos: { x: number; y: number }) => void;
+  resetNodePositions: (sceneIds?: string[]) => void;
 }
 
 const emptyMerged = (): MergedCampaignData => mergeRawChunkObjects([]);
@@ -769,6 +771,35 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
         ...prev,
         looseNotes: (prev.looseNotes ?? []).filter((n) => n.id !== noteId),
       }));
+    },
+
+    setNodePosition: (sceneId: string, pos: { x: number; y: number }) => {
+      commitLive((prev) => ({
+        ...prev,
+        nodePositions: {
+          ...(prev.nodePositions ?? {}),
+          [sceneId]: { x: Math.round(pos.x), y: Math.round(pos.y) },
+        },
+      }));
+    },
+
+    resetNodePositions: (sceneIds?: string[]) => {
+      commitLive((prev) => {
+        if (!sceneIds || sceneIds.length === 0) {
+          return {
+            ...prev,
+            nodePositions: {},
+          };
+        }
+        const next = { ...(prev.nodePositions ?? {}) };
+        for (const id of sceneIds) {
+          delete next[id];
+        }
+        return {
+          ...prev,
+          nodePositions: next,
+        };
+      });
     },
   };
 });
