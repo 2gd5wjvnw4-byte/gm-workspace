@@ -78,7 +78,38 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   const connectionState = live?.connectionState ?? {};
   const soloMask = Boolean(live?.ui?.soloMask);
   const entityTracks = live?.entityTracks ?? {};
+  const entityTrackMax = live?.entityTrackMax ?? {};
   const entityDisposition = live?.entityDisposition ?? {};
+  const [dockPct, setDockPct] = React.useState<number>(50);
+  const leftPanelRef = React.useRef<HTMLElement | null>(null);
+
+  const handleSplitPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startY = Number.isFinite(e.clientY) ? e.clientY : 0;
+    const startPct = dockPct;
+    const rectHeight = leftPanelRef.current?.getBoundingClientRect().height ?? 0;
+    const containerHeight = rectHeight > 0 ? rectHeight : 600;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      if (!Number.isFinite(moveEvent.clientY)) return;
+      const deltaY = startY - moveEvent.clientY;
+      const nextPct = Math.max(
+        15,
+        Math.min(85, Math.round(startPct + (deltaY / containerHeight) * 100))
+      );
+      setDockPct(nextPct);
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
   const summonedForScene = currentSceneId ? (live?.summoned?.[currentSceneId] ?? []) : [];
   const improvisedEntities = live?.improvisedEntities ?? [];
 
@@ -217,6 +248,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
 
   return (
     <aside
+      ref={leftPanelRef}
       data-testid="zone-left-panel"
       style={{
         width: '300px',
@@ -555,12 +587,44 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       </div>
 
       <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize In This Scene panel"
+        aria-valuenow={dockPct}
+        aria-valuemin={15}
+        aria-valuemax={85}
+        data-testid="left-split-handle"
+        onPointerDown={handleSplitPointerDown}
+        style={{
+          height: '24px',
+          minHeight: '24px',
+          flexShrink: 0,
+          borderTop: '1px solid var(--line)',
+          background: 'var(--p2)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'ns-resize',
+          touchAction: 'none',
+          userSelect: 'none',
+        }}
+      >
+        <div
+          style={{
+            width: '36px',
+            height: '4px',
+            borderRadius: '2px',
+            background: 'var(--line2)',
+          }}
+        />
+      </div>
+
+      <div
         data-testid="in-this-scene-dock"
         style={{
-          flex: 1,
+          flex: `0 0 ${dockPct}%`,
           minHeight: 0,
           overflowY: 'auto',
-          borderTop: '1px solid var(--line)',
           padding: '12px',
           display: 'flex',
           flexDirection: 'column',
@@ -590,6 +654,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           sceneEntityCards.map((card) => {
             const dispColor = DISPOSITION_COLORS[card.disposition];
             const trackMatrix = entityTracks[card.id] ?? [];
+            const maxMatrix = entityTrackMax[card.id] ?? [];
             return (
               <div
                 key={card.id}
@@ -687,8 +752,10 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                 {card.tracks.length > 0 &&
                   Array.from({ length: card.copyCount }).map((_, copyIdx) =>
                     card.tracks.map((trackDef, trackIdx) => {
+                      const effectiveMax =
+                        maxMatrix[copyIdx]?.[trackIdx] ?? trackDef.max;
                       const currentVal =
-                        trackMatrix[copyIdx]?.[trackIdx] ?? trackDef.max;
+                        trackMatrix[copyIdx]?.[trackIdx] ?? effectiveMax;
                       const rowLabel =
                         card.copyCount > 1
                           ? `${trackDef.label} #${copyIdx + 1}`
@@ -749,7 +816,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                               fontWeight: 600,
                             }}
                           >
-                            {currentVal} / {trackDef.max}
+                            {currentVal} / {effectiveMax}
                           </span>
                           <button
                             type="button"

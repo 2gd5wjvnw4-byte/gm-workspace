@@ -28,7 +28,14 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
     cycleEntityDisposition,
     toggleRevealedItem,
     adjustEntityTrack,
+    setEntityTrackValue,
+    setEntityTrackMax,
   } = useCampaignStore();
+  const [editingTrackCell, setEditingTrackCell] = React.useState<{
+    key: string;
+    field: 'current' | 'max';
+    draft: string;
+  } | null>(null);
   const isPdf = activeDrawer === 'pdf';
   const isEntity = activeDrawer === 'entity';
   const width = isPdf ? '480px' : '420px';
@@ -38,10 +45,15 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
   const revealed = live?.revealed ?? {};
   const entityDisposition = live?.entityDisposition ?? {};
   const entityTracks = live?.entityTracks ?? {};
+  const entityTrackMax = live?.entityTrackMax ?? {};
   const improvisedEntities = live?.improvisedEntities ?? [];
   const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
   const currentScene =
     merged.scenes.find((s) => s.id === currentSceneId) ?? merged.scenes[0] ?? null;
+
+  React.useEffect(() => {
+    setEditingTrackCell(null);
+  }, [inspectedEntityId, activeDrawer]);
 
   const renderInspectorTracks = (
     entityId: string,
@@ -53,6 +65,7 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
       return null;
     }
     const trackMatrix = entityTracks[entityId] ?? [];
+    const maxMatrix = entityTrackMax[entityId] ?? [];
     return (
       <div
         data-testid={`inspector-tracks-${entityId}`}
@@ -79,11 +92,78 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
         </span>
         {Array.from({ length: copyCount }).map((_, copyIdx) =>
           tracks.map((trackDef, trackIdx) => {
-            const currentVal = trackMatrix[copyIdx]?.[trackIdx] ?? trackDef.max;
+            const effectiveMax = maxMatrix[copyIdx]?.[trackIdx] ?? trackDef.max;
+            const currentVal = trackMatrix[copyIdx]?.[trackIdx] ?? effectiveMax;
             const rowLabel =
               copyCount > 1
                 ? `${trackDef.label} #${copyIdx + 1}`
                 : trackDef.label;
+            const cellKey = `${entityId}-${copyIdx}-${trackIdx}`;
+            const isEditingCurrent =
+              editingTrackCell?.key === cellKey &&
+              editingTrackCell.field === 'current';
+            const isEditingMax =
+              editingTrackCell?.key === cellKey &&
+              editingTrackCell.field === 'max';
+
+            const commitEdit = (field: 'current' | 'max', raw: string) => {
+              const parsed = Number.parseInt(raw.trim(), 10);
+              if (!Number.isNaN(parsed)) {
+                if (field === 'current') {
+                  setEntityTrackValue(
+                    entityId,
+                    copyIdx,
+                    trackIdx,
+                    parsed,
+                    copyCount,
+                    tracks
+                  );
+                } else {
+                  setEntityTrackMax(
+                    entityId,
+                    copyIdx,
+                    trackIdx,
+                    parsed,
+                    copyCount,
+                    tracks
+                  );
+                }
+              }
+              setEditingTrackCell(null);
+            };
+
+            const numberBtnStyle: React.CSSProperties = {
+              minWidth: '38px',
+              minHeight: '44px',
+              padding: '0 6px',
+              borderRadius: '6px',
+              border: '1px dashed var(--line2)',
+              background: 'var(--bg)',
+              color: 'var(--text)',
+              fontFamily: 'var(--mono)',
+              fontWeight: 600,
+              fontSize: '14px',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            };
+
+            const numberInputStyle: React.CSSProperties = {
+              width: '54px',
+              height: '44px',
+              padding: '0 4px',
+              borderRadius: '6px',
+              border: '1px solid var(--accent)',
+              background: 'var(--bg)',
+              color: 'var(--text)',
+              fontFamily: 'var(--mono)',
+              fontWeight: 600,
+              fontSize: '14px',
+              textAlign: 'center',
+              boxSizing: 'border-box',
+            };
+
             return (
               <div
                 key={`${copyIdx}-${trackIdx}`}
@@ -127,6 +207,7 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                     color: 'var(--text)',
                     fontSize: '18px',
                     cursor: 'pointer',
+                    flexShrink: 0,
                   }}
                 >
                   −
@@ -135,12 +216,101 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                   data-testid={`inspector-track-val-${entityId}-${copyIdx}-${trackIdx}`}
                   style={{
                     flex: 1,
-                    textAlign: 'center',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
                     fontFamily: 'var(--mono)',
                     fontWeight: 600,
                   }}
                 >
-                  {currentVal} / {trackDef.max}
+                  {isEditingCurrent ? (
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      autoFocus
+                      data-testid={`inspector-track-current-input-${entityId}-${copyIdx}-${trackIdx}`}
+                      aria-label={`Edit ${entityName} ${rowLabel} current`}
+                      value={editingTrackCell.draft}
+                      onChange={(e) =>
+                        setEditingTrackCell({
+                          key: cellKey,
+                          field: 'current',
+                          draft: e.target.value,
+                        })
+                      }
+                      onBlur={() =>
+                        commitEdit('current', editingTrackCell.draft)
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          commitEdit('current', editingTrackCell.draft);
+                        } else if (e.key === 'Escape') {
+                          setEditingTrackCell(null);
+                        }
+                      }}
+                      style={numberInputStyle}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid={`inspector-track-current-btn-${entityId}-${copyIdx}-${trackIdx}`}
+                      aria-label={`Edit ${entityName} ${rowLabel} current value (${currentVal})`}
+                      onClick={() =>
+                        setEditingTrackCell({
+                          key: cellKey,
+                          field: 'current',
+                          draft: String(currentVal),
+                        })
+                      }
+                      style={numberBtnStyle}
+                    >
+                      {currentVal}
+                    </button>
+                  )}
+                  <span style={{ color: 'var(--muted)' }}> / </span>
+                  {isEditingMax ? (
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      autoFocus
+                      data-testid={`inspector-track-max-input-${entityId}-${copyIdx}-${trackIdx}`}
+                      aria-label={`Edit ${entityName} ${rowLabel} max`}
+                      value={editingTrackCell.draft}
+                      onChange={(e) =>
+                        setEditingTrackCell({
+                          key: cellKey,
+                          field: 'max',
+                          draft: e.target.value,
+                        })
+                      }
+                      onBlur={() => commitEdit('max', editingTrackCell.draft)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          commitEdit('max', editingTrackCell.draft);
+                        } else if (e.key === 'Escape') {
+                          setEditingTrackCell(null);
+                        }
+                      }}
+                      style={numberInputStyle}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid={`inspector-track-max-btn-${entityId}-${copyIdx}-${trackIdx}`}
+                      aria-label={`Edit ${entityName} ${rowLabel} max value (${effectiveMax})`}
+                      onClick={() =>
+                        setEditingTrackCell({
+                          key: cellKey,
+                          field: 'max',
+                          draft: String(effectiveMax),
+                        })
+                      }
+                      style={numberBtnStyle}
+                    >
+                      {effectiveMax}
+                    </button>
+                  )}
                 </span>
                 <button
                   type="button"
@@ -165,6 +335,7 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                     color: 'var(--text)',
                     fontSize: '18px',
                     cursor: 'pointer',
+                    flexShrink: 0,
                   }}
                 >
                   +

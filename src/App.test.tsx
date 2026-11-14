@@ -873,7 +873,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(leftPanel.contains(bottomDock)).toBe(true);
     expect(topScroll.contains(bottomDock)).toBe(false);
     expect(topScroll).toHaveStyle({ flex: '1', minHeight: '0', overflowY: 'auto' });
-    expect(bottomDock).toHaveStyle({ flex: '1', minHeight: '0', overflowY: 'auto' });
+    expect(bottomDock).toHaveStyle({ flex: '0 0 50%', minHeight: '0', overflowY: 'auto' });
 
     // 2. Scratchpad button and modal heading read "Override Scene / Add Note"
     const overrideBtn = screen.getByTestId('add-note-override-btn');
@@ -950,5 +950,94 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(screen.getByTestId('entity-track-val-e-drones-1-0')).toHaveTextContent(
       '7 / 8'
     );
+  });
+
+  it('resizes the In This Scene lower-left panel when dragging its top edge handle', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 4b Split Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByTestId('left-split-handle')).toBeInTheDocument();
+    });
+
+    const handle = screen.getByTestId('left-split-handle');
+    const dock = screen.getByTestId('in-this-scene-dock');
+    expect(handle).toHaveAttribute('aria-valuenow', '50');
+    expect(dock).toHaveStyle({ flex: '0 0 50%' });
+
+    // Drag up by 120px (fallback container height 600px => +20% => 70%)
+    fireEvent(handle, new MouseEvent('pointerdown', { bubbles: true, clientY: 300 }));
+    fireEvent(window, new MouseEvent('pointermove', { bubbles: true, clientY: 180 }));
+    fireEvent(window, new MouseEvent('pointerup', { bubbles: true, clientY: 180 }));
+
+    expect(handle).toHaveAttribute('aria-valuenow', '70');
+    expect(dock).toHaveStyle({ flex: '0 0 70%' });
+
+    // Drag far down to test clamping at 15%
+    fireEvent(handle, new MouseEvent('pointerdown', { bubbles: true, clientY: 180 }));
+    fireEvent(window, new MouseEvent('pointermove', { bubbles: true, clientY: 900 }));
+    fireEvent(window, new MouseEvent('pointerup', { bubbles: true, clientY: 900 }));
+
+    expect(handle).toHaveAttribute('aria-valuenow', '15');
+    expect(dock).toHaveStyle({ flex: '0 0 15%' });
+  });
+
+  it('edits current and max track numbers in the right Entity Inspector drawer while keeping steppers', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 4b Tracks Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-row-a1-s02')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('scene-row-a1-s02'));
+    fireEvent.click(screen.getByTestId('inspect-entity-e-okafor'));
+
+    // Edit max HP from 12 to 18 by tapping max number
+    fireEvent.click(screen.getByTestId('inspector-track-max-btn-e-okafor-0-0'));
+    const maxInput = screen.getByTestId('inspector-track-max-input-e-okafor-0-0');
+    fireEvent.change(maxInput, { target: { value: '18' } });
+    fireEvent.keyDown(maxInput, { key: 'Enter' });
+
+    expect(useCampaignStore.getState().live?.entityTrackMax?.['e-okafor']).toEqual([[18]]);
+    expect(screen.getByTestId('inspector-track-max-btn-e-okafor-0-0')).toHaveTextContent('18');
+    expect(screen.getByTestId('entity-track-val-e-okafor-0-0')).toHaveTextContent('18 / 18');
+
+    // Edit current HP to 10 by tapping current number
+    fireEvent.click(screen.getByTestId('inspector-track-current-btn-e-okafor-0-0'));
+    const curInput = screen.getByTestId('inspector-track-current-input-e-okafor-0-0');
+    fireEvent.change(curInput, { target: { value: '10' } });
+    fireEvent.keyDown(curInput, { key: 'Enter' });
+
+    expect(useCampaignStore.getState().live?.entityTracks['e-okafor']).toEqual([[10]]);
+    expect(screen.getByTestId('inspector-track-current-btn-e-okafor-0-0')).toHaveTextContent('10');
+    expect(screen.getByTestId('entity-track-val-e-okafor-0-0')).toHaveTextContent('10 / 18');
+
+    // Stepper buttons still work and respect the new max (18)
+    fireEvent.click(screen.getByTestId('inspector-track-inc-e-okafor-0-0'));
+    expect(screen.getByTestId('inspector-track-current-btn-e-okafor-0-0')).toHaveTextContent('11');
+    fireEvent.click(screen.getByTestId('inspector-track-dec-e-okafor-0-0'));
+    expect(screen.getByTestId('inspector-track-current-btn-e-okafor-0-0')).toHaveTextContent('10');
+
+    // Lowering max below current clamps current down to the new max
+    fireEvent.click(screen.getByTestId('inspector-track-max-btn-e-okafor-0-0'));
+    const maxInput2 = screen.getByTestId('inspector-track-max-input-e-okafor-0-0');
+    fireEvent.change(maxInput2, { target: { value: '6' } });
+    fireEvent.blur(maxInput2);
+
+    expect(useCampaignStore.getState().live?.entityTrackMax?.['e-okafor']).toEqual([[6]]);
+    expect(useCampaignStore.getState().live?.entityTracks['e-okafor']).toEqual([[6]]);
+    expect(screen.getByTestId('inspector-track-val-e-okafor-0-0')).toHaveTextContent('6 / 6');
+    expect(screen.getByTestId('entity-track-val-e-okafor-0-0')).toHaveTextContent('6 / 6');
   });
 });

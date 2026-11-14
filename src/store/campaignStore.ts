@@ -61,6 +61,22 @@ export interface CampaignStoreState {
     copyCount: number,
     trackDefs: Array<{ label: string; max: number }>
   ) => void;
+  setEntityTrackValue: (
+    entityId: string,
+    copyIndex: number,
+    trackIndex: number,
+    value: number,
+    copyCount: number,
+    trackDefs: Array<{ label: string; max: number }>
+  ) => void;
+  setEntityTrackMax: (
+    entityId: string,
+    copyIndex: number,
+    trackIndex: number,
+    maxValue: number,
+    copyCount: number,
+    trackDefs: Array<{ label: string; max: number }>
+  ) => void;
   cycleEntityDisposition: (entityId: string, defaultDisposition: DispositionState) => void;
   summonEntityToScene: (sceneId: string, entityId: string) => void;
   removeSummonedEntityFromScene: (sceneId: string, entityId: string) => void;
@@ -440,8 +456,12 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
       trackDefs: Array<{ label: string; max: number }>
     ) => {
       if (trackDefs.length === 0) return;
-      const maxVal = trackDefs[trackIndex]?.max ?? 0;
       commitLive((prev) => {
+        const existingMaxMatrix = prev.entityTrackMax?.[entityId] ?? [];
+        const effectiveMax =
+          existingMaxMatrix[copyIndex]?.[trackIndex] ??
+          trackDefs[trackIndex]?.max ??
+          0;
         const existingMatrix = prev.entityTracks[entityId] ?? [];
         const totalCopies = Math.max(
           existingMatrix.length,
@@ -454,20 +474,120 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           const existingRow = existingMatrix[c] ?? [];
           const nextRow = trackDefs.map((def, tIdx) => {
             const val = existingRow[tIdx];
-            return typeof val === 'number' ? val : def.max;
+            const rowMax = existingMaxMatrix[c]?.[tIdx] ?? def.max;
+            return typeof val === 'number' ? val : rowMax;
           });
           nextMatrix.push(nextRow);
         }
-        const currentVal = nextMatrix[copyIndex]?.[trackIndex] ?? maxVal;
+        const currentVal = nextMatrix[copyIndex]?.[trackIndex] ?? effectiveMax;
         nextMatrix[copyIndex][trackIndex] = Math.max(
           0,
-          Math.min(maxVal, currentVal + delta)
+          Math.min(effectiveMax, currentVal + delta)
         );
         return {
           ...prev,
           entityTracks: {
             ...prev.entityTracks,
             [entityId]: nextMatrix,
+          },
+        };
+      });
+    },
+
+    setEntityTrackValue: (
+      entityId: string,
+      copyIndex: number,
+      trackIndex: number,
+      value: number,
+      copyCount: number,
+      trackDefs: Array<{ label: string; max: number }>
+    ) => {
+      if (trackDefs.length === 0 || Number.isNaN(value)) return;
+      commitLive((prev) => {
+        const existingMaxMatrix = prev.entityTrackMax?.[entityId] ?? [];
+        const effectiveMax =
+          existingMaxMatrix[copyIndex]?.[trackIndex] ??
+          trackDefs[trackIndex]?.max ??
+          0;
+        const existingMatrix = prev.entityTracks[entityId] ?? [];
+        const totalCopies = Math.max(
+          existingMatrix.length,
+          copyCount,
+          copyIndex + 1,
+          1
+        );
+        const nextMatrix: number[][] = [];
+        for (let c = 0; c < totalCopies; c += 1) {
+          const existingRow = existingMatrix[c] ?? [];
+          const nextRow = trackDefs.map((def, tIdx) => {
+            const val = existingRow[tIdx];
+            const rowMax = existingMaxMatrix[c]?.[tIdx] ?? def.max;
+            return typeof val === 'number' ? val : rowMax;
+          });
+          nextMatrix.push(nextRow);
+        }
+        nextMatrix[copyIndex][trackIndex] = Math.max(
+          0,
+          Math.min(effectiveMax, Math.round(value))
+        );
+        return {
+          ...prev,
+          entityTracks: {
+            ...prev.entityTracks,
+            [entityId]: nextMatrix,
+          },
+        };
+      });
+    },
+
+    setEntityTrackMax: (
+      entityId: string,
+      copyIndex: number,
+      trackIndex: number,
+      maxValue: number,
+      copyCount: number,
+      trackDefs: Array<{ label: string; max: number }>
+    ) => {
+      if (trackDefs.length === 0 || Number.isNaN(maxValue)) return;
+      const nextMax = Math.max(0, Math.round(maxValue));
+      commitLive((prev) => {
+        const existingMaxMatrix = prev.entityTrackMax?.[entityId] ?? [];
+        const existingMatrix = prev.entityTracks[entityId] ?? [];
+        const totalCopies = Math.max(
+          existingMaxMatrix.length,
+          existingMatrix.length,
+          copyCount,
+          copyIndex + 1,
+          1
+        );
+        const nextMaxMatrix: number[][] = [];
+        for (let c = 0; c < totalCopies; c += 1) {
+          const existingRow = existingMaxMatrix[c] ?? [];
+          const nextRow = trackDefs.map((def, tIdx) => {
+            const val = existingRow[tIdx];
+            return typeof val === 'number' ? val : def.max;
+          });
+          nextMaxMatrix.push(nextRow);
+        }
+        nextMaxMatrix[copyIndex][trackIndex] = nextMax;
+
+        let nextEntityTracks = prev.entityTracks;
+        const currentStored = existingMatrix[copyIndex]?.[trackIndex];
+        if (typeof currentStored === 'number' && currentStored > nextMax) {
+          const nextMatrix = existingMatrix.map((row) => [...row]);
+          nextMatrix[copyIndex][trackIndex] = nextMax;
+          nextEntityTracks = {
+            ...prev.entityTracks,
+            [entityId]: nextMatrix,
+          };
+        }
+
+        return {
+          ...prev,
+          entityTracks: nextEntityTracks,
+          entityTrackMax: {
+            ...(prev.entityTrackMax ?? {}),
+            [entityId]: nextMaxMatrix,
           },
         };
       });

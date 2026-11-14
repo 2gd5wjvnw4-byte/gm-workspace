@@ -81,6 +81,7 @@ export interface LiveState {
   clockValues: Record<string, number>;
   timelineDone: Record<string, boolean>;
   entityTracks: Record<string, number[][]>;
+  entityTrackMax?: Record<string, number[][]>;
   entityDisposition: Record<string, DispositionState>;
   factionAttitude: Record<string, DispositionState>;
   summoned: Record<string, string[]>;
@@ -135,6 +136,7 @@ export function createDefaultLiveState(campaignId: string, theme: ThemeId = 'sci
     clockValues: {},
     timelineDone: {},
     entityTracks: {},
+    entityTrackMax: {},
     entityDisposition: {},
     factionAttitude: {},
     summoned: {},
