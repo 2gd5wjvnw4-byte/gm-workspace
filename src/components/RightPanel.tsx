@@ -43,10 +43,13 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     cycleFactionAttitude,
     appendRollLog,
     summonEntityToScene,
+    addTableNote,
+    addLooseNote,
     deleteLooseNote,
   } = useCampaignStore();
   const looseNotes = live?.looseNotes ?? [];
   const [looseNotesOpen, setLooseNotesOpen] = useState(false);
+  const [newLooseNoteText, setNewLooseNoteText] = useState('');
   const [isCompact, setIsCompact] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1200 : false
   );
@@ -178,6 +181,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         currentSceneId={currentSceneId}
         onAppendRollLog={appendRollLog}
         onSummonEntity={summonEntityToScene}
+        onAddSceneNote={(sceneId, text) => addTableNote(sceneId, text)}
       />
 
       {/* 6. Scratchpad */}
@@ -223,6 +227,46 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         </button>
         {looseNotesOpen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input
+                type="text"
+                aria-label="New loose note"
+                placeholder="Add a loose note..."
+                value={newLooseNoteText}
+                onChange={(e) => setNewLooseNoteText(e.target.value)}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  height: '44px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  padding: '0 10px',
+                  fontSize: '13px',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const created = addLooseNote(newLooseNoteText);
+                  if (created) setNewLooseNoteText('');
+                }}
+                style={{
+                  height: '44px',
+                  padding: '0 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--accent)',
+                  background: 'var(--accentBg)',
+                  color: 'var(--accent)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Add
+              </button>
+            </div>
             {looseNotes.length === 0 ? (
               <div
                 style={{

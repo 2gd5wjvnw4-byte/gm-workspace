@@ -660,6 +660,7 @@ export interface RandomTablesSectionProps {
   currentSceneId: string | null;
   onAppendRollLog: (entry: Omit<RollLogEntry, 'id' | 'createdAt'>) => RollLogEntry;
   onSummonEntity: (sceneId: string, entityId: string) => void;
+  onAddSceneNote: (sceneId: string, text: string) => void;
 }
 
 export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
@@ -668,9 +669,10 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
   currentSceneId,
   onAppendRollLog,
   onSummonEntity,
+  onAddSceneNote,
 }) => {
   const [latestByTable, setLatestByTable] = useState<
-    Record<string, { roll: number; text: string; entityId: string | null }>
+    Record<string, { roll: number; text: string; entityId: string | null; noteAdded?: boolean }>
   >({});
   const [logOpen, setLogOpen] = useState(false);
 
@@ -762,25 +764,54 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                     Rolled {latest.roll}
                   </div>
                   <div style={{ fontSize: '13px', color: 'var(--text)' }}>{latest.text}</div>
-                  {latest.entityId && currentSceneId && (
-                    <button
-                      type="button"
-                      onClick={() => onSummonEntity(currentSceneId, latest.entityId!)}
-                      style={{
-                        alignSelf: 'flex-start',
-                        height: '44px',
-                        padding: '0 12px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--tealLine)',
-                        background: 'var(--tealBg)',
-                        color: 'var(--teal)',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Add to scene
-                    </button>
+                  {currentSceneId && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onAddSceneNote(
+                            currentSceneId,
+                            `${table.name} (${latest.roll}): ${latest.text}`
+                          );
+                          setLatestByTable((prev) => ({
+                            ...prev,
+                            [table.id]: { ...latest, noteAdded: true },
+                          }));
+                        }}
+                        style={{
+                          height: '44px',
+                          padding: '0 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--goldLine)',
+                          background: 'var(--goldBg)',
+                          color: 'var(--gold)',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {latest.noteAdded ? 'Added to scene notes' : 'Add as scene note'}
+                      </button>
+                      {latest.entityId && (
+                        <button
+                          type="button"
+                          onClick={() => onSummonEntity(currentSceneId, latest.entityId!)}
+                          style={{
+                            height: '44px',
+                            padding: '0 12px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--tealLine)',
+                            background: 'var(--tealBg)',
+                            color: 'var(--teal)',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Add to scene
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

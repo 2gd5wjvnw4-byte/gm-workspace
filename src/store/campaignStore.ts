@@ -98,6 +98,7 @@ export interface CampaignStoreState {
   toggleTimelineDone: (eventId: string) => void;
   cycleFactionAttitude: (factionId: string, defaultAttitude: DispositionState) => void;
   appendRollLog: (entry: Omit<RollLogEntry, 'id' | 'createdAt'>) => RollLogEntry;
+  addLooseNote: (text: string) => TableNote | null;
   deleteLooseNote: (noteId: string) => void;
 }
 
@@ -745,6 +746,22 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
         rollLog: [created, ...(prev.rollLog ?? [])].slice(0, 50),
       }));
       return created;
+    },
+
+    addLooseNote: (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return null;
+      const note: TableNote = {
+        id: `loose-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        targetId: 'loose',
+        text: trimmed,
+        createdAt: Date.now(),
+      };
+      commitLive((prev) => ({
+        ...prev,
+        looseNotes: [note, ...(prev.looseNotes ?? [])],
+      }));
+      return note;
     },
 
     deleteLooseNote: (noteId: string) => {

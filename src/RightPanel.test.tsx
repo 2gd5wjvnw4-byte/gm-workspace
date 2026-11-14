@@ -269,6 +269,14 @@ describe('RightPanel Phase 5 sections', () => {
     expect(useCampaignStore.getState().live?.rollLog.length).toBe(50);
     expect(screen.getByRole('button', { name: /Roll log \(10\)/i })).toBeTruthy();
 
+    // Any roll result (even without entity_id) has Add as scene note
+    const addNoteBtn = within(relayCard).getByRole('button', { name: 'Add as scene note' });
+    fireEvent.click(addNoteBtn);
+    const notes = useCampaignStore.getState().live?.notes ?? [];
+    expect(notes.some((n) => n.targetId === 'a1-s01' && n.text.includes('Relay Encounters'))).toBe(
+      true
+    );
+
     // If the latest roll has an entity_id, Add to scene summons it
     const addBtn = within(relayCard).queryByRole('button', { name: 'Add to scene' });
     if (addBtn) {
@@ -278,26 +286,21 @@ describe('RightPanel Phase 5 sections', () => {
     }
   });
 
-  it('shows Last backup: Never and lets user expand and delete Loose Notes', () => {
-    useCampaignStore.setState((s) => ({
-      live: s.live
-        ? {
-            ...s.live,
-            looseNotes: [
-              { id: 'ln-1', targetId: 'old-scene', text: 'Orphaned clue note', createdAt: 1 },
-            ],
-          }
-        : null,
-    }));
-
+  it('shows Last backup: Never and lets user add and delete Loose Notes directly', () => {
     render(<RightPanel />);
     expect(screen.getByTestId('last-backup-label').textContent).toBe('Last backup: Never');
 
     fireEvent.click(screen.getByTestId('loose-notes-toggle'));
-    expect(screen.getByTestId('loose-note-ln-1').textContent).toContain('Orphaned clue note');
+    const input = screen.getByLabelText('New loose note');
+    fireEvent.change(input, { target: { value: 'Direct loose note' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    const loose = useCampaignStore.getState().live?.looseNotes ?? [];
+    expect(loose).toHaveLength(1);
+    expect(loose[0].text).toBe('Direct loose note');
 
     fireEvent.click(
-      within(screen.getByTestId('loose-note-ln-1')).getByRole('button', { name: /Delete/i })
+      within(screen.getByTestId(`loose-note-${loose[0].id}`)).getByRole('button', { name: /Delete/i })
     );
     expect(useCampaignStore.getState().live?.looseNotes).toHaveLength(0);
   });
