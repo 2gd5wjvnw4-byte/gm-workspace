@@ -129,6 +129,10 @@ export const App: React.FC = () => {
                 setEditingNote(null);
                 setNoteModalOpen(true);
               }}
+              onOpenEntityInspector={(entityId) => {
+                setInspectedEntityId(entityId);
+                setDrawer('entity');
+              }}
             />
 
             <DrawerHost

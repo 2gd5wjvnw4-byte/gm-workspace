@@ -16,6 +16,7 @@ import {
   type LoadedCampaign,
   type MapDisplayMode,
   type NavViewMode,
+  type RollLogEntry,
   type TableNote,
 } from '../storage';
 import { mergeRawChunkObjects, type MergedCampaignData } from '../lib/import';
@@ -88,6 +89,16 @@ export interface CampaignStoreState {
     trackLabel?: string;
     trackMax?: number | null;
   }) => ImprovisedEntityRecord | null;
+  adjustClockValue: (
+    clockId: string,
+    delta: number,
+    start: number,
+    maxSegments: number
+  ) => void;
+  toggleTimelineDone: (eventId: string) => void;
+  cycleFactionAttitude: (factionId: string, defaultAttitude: DispositionState) => void;
+  appendRollLog: (entry: Omit<RollLogEntry, 'id' | 'createdAt'>) => RollLogEntry;
+  deleteLooseNote: (noteId: string) => void;
 }
 
 const emptyMerged = (): MergedCampaignData => mergeRawChunkObjects([]);
@@ -676,6 +687,71 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           : prev.entityTracks,
       }));
       return newImp;
+    },
+
+    adjustClockValue: (
+      clockId: string,
+      delta: number,
+      start: number,
+      maxSegments: number
+    ) => {
+      commitLive((prev) => {
+        const current = prev.clockValues[clockId] ?? start;
+        const clamped = Math.max(0, Math.min(maxSegments, current + delta));
+        return {
+          ...prev,
+          clockValues: {
+            ...prev.clockValues,
+            [clockId]: clamped,
+          },
+        };
+      });
+    },
+
+    toggleTimelineDone: (eventId: string) => {
+      commitLive((prev) => ({
+        ...prev,
+        timelineDone: {
+          ...prev.timelineDone,
+          [eventId]: !prev.timelineDone[eventId],
+        },
+      }));
+    },
+
+    cycleFactionAttitude: (factionId: string, defaultAttitude: DispositionState) => {
+      const order: DispositionState[] = ['allied', 'neutral', 'suspicious', 'hostile'];
+      commitLive((prev) => {
+        const current = prev.factionAttitude[factionId] ?? defaultAttitude;
+        const idx = order.indexOf(current);
+        const next = order[(idx + 1) % order.length];
+        return {
+          ...prev,
+          factionAttitude: {
+            ...prev.factionAttitude,
+            [factionId]: next,
+          },
+        };
+      });
+    },
+
+    appendRollLog: (entry) => {
+      const created: RollLogEntry = {
+        ...entry,
+        id: `roll-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        createdAt: Date.now(),
+      };
+      commitLive((prev) => ({
+        ...prev,
+        rollLog: [created, ...(prev.rollLog ?? [])].slice(0, 50),
+      }));
+      return created;
+    },
+
+    deleteLooseNote: (noteId: string) => {
+      commitLive((prev) => ({
+        ...prev,
+        looseNotes: (prev.looseNotes ?? []).filter((n) => n.id !== noteId),
+      }));
     },
   };
 });

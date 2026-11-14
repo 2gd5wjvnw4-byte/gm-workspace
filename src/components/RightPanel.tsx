@@ -1,19 +1,80 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { THEMES, THEME_ORDER, useThemeStore } from '../store/themeStore';
 import { useCampaignStore } from '../store/campaignStore';
+import {
+  ClocksSection,
+  ClueMatrixSection,
+  CollapsibleSection,
+  FactionsSection,
+  RandomTablesSection,
+  TimelineSection,
+} from './RightPanelSections';
 
 export interface RightPanelProps {
   onOpenNoteModal?: () => void;
+  onOpenEntityInspector?: (entityId: string) => void;
 }
 
-export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
+function formatLastBackup(lastBackupAt?: number | null): string {
+  if (!lastBackupAt) return 'Never';
+  const diffMs = Math.max(0, Date.now() - lastBackupAt);
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+export const RightPanel: React.FC<RightPanelProps> = ({
+  onOpenNoteModal,
+  onOpenEntityInspector,
+}) => {
   const { theme, setTheme } = useThemeStore();
-  const { live } = useCampaignStore();
-  const looseNotesCount = live?.looseNotes?.length ?? 0;
+  const {
+    activeCampaign,
+    live,
+    merged,
+    goToScene,
+    toggleRevealedItem,
+    adjustClockValue,
+    toggleTimelineDone,
+    cycleFactionAttitude,
+    appendRollLog,
+    summonEntityToScene,
+    deleteLooseNote,
+  } = useCampaignStore();
+  const looseNotes = live?.looseNotes ?? [];
+  const [looseNotesOpen, setLooseNotesOpen] = useState(false);
   const [isCompact, setIsCompact] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1200 : false
   );
   const [overlayOpen, setOverlayOpen] = useState(false);
+
+  const soloMask = Boolean(live?.ui.soloMask);
+  const currentSceneId = live?.currentSceneId ?? null;
+  const currentScene = useMemo(
+    () => merged.scenes.find((s) => s.id === currentSceneId) ?? null,
+    [merged.scenes, currentSceneId]
+  );
+  const currentActId = currentScene?.act_id ?? merged.acts[0]?.id ?? null;
+
+  const sceneTitleById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of merged.scenes) {
+      map.set(s.id, s.title);
+    }
+    return map;
+  }, [merged.scenes]);
+
+  const dayTracker = useMemo(
+    () => merged.trackers.find((t) => t.label.trim().toLowerCase() === 'day') ?? null,
+    [merged.trackers]
+  );
+  const currentDayValue = dayTracker
+    ? (live?.trackerValues?.[dayTracker.id] ?? dayTracker.start)
+    : null;
 
   useEffect(() => {
     const handleResize = () => {
@@ -35,15 +96,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
     color: 'var(--muted)',
     fontWeight: 600,
     textTransform: 'uppercase',
-  };
-
-  const placeholderCardStyle: React.CSSProperties = {
-    background: 'var(--p2)',
-    border: '1px solid var(--line)',
-    borderRadius: '12px',
-    padding: '10px 12px',
-    fontSize: '13px',
-    color: 'var(--muted)',
   };
 
   const panelContent = (
@@ -79,38 +131,57 @@ export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
       )}
 
       {/* 1. Clocks */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <h2 style={sectionHeaderStyle}>CLOCKS</h2>
-        <div style={placeholderCardStyle}>RightPanel · Clocks placeholder</div>
-      </section>
+      <ClocksSection
+        clocks={merged.clocks}
+        clockValues={live?.clockValues ?? {}}
+        currentActId={currentActId}
+        soloMask={soloMask}
+        onAdjustClock={adjustClockValue}
+      />
 
       {/* 2. Timeline */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <h2 style={sectionHeaderStyle}>TIMELINE</h2>
-        <div style={placeholderCardStyle}>Timeline placeholder</div>
-      </section>
+      <TimelineSection
+        timeline={merged.timeline}
+        timelineDone={live?.timelineDone ?? {}}
+        revealed={live?.revealed ?? {}}
+        currentDayValue={currentDayValue}
+        soloMask={soloMask}
+        sceneTitleById={sceneTitleById}
+        onToggleDone={toggleTimelineDone}
+        onToggleReveal={(id) => toggleRevealedItem(id)}
+        onJumpToScene={goToScene}
+      />
 
       {/* 3. Clue Matrix */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <h2 style={sectionHeaderStyle}>CLUE MATRIX</h2>
-        <div style={placeholderCardStyle}>Clue Matrix placeholder</div>
-      </section>
+      <ClueMatrixSection
+        truths={merged.truths}
+        scenes={merged.scenes}
+        entities={merged.entities}
+        revealed={live?.revealed ?? {}}
+        soloMask={soloMask}
+        onJumpToScene={goToScene}
+        onOpenEntityInspector={onOpenEntityInspector}
+      />
 
       {/* 4. Factions */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <h2 style={sectionHeaderStyle}>FACTIONS</h2>
-        <div style={placeholderCardStyle}>Factions placeholder</div>
-      </section>
+      <FactionsSection
+        factions={merged.factions}
+        factionAttitude={live?.factionAttitude ?? {}}
+        soloMask={soloMask}
+        onCycleAttitude={cycleFactionAttitude}
+      />
 
       {/* 5. Random Tables */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <h2 style={sectionHeaderStyle}>RANDOM TABLES</h2>
-        <div style={placeholderCardStyle}>Random Tables placeholder</div>
-      </section>
+      <RandomTablesSection
+        tables={merged.random_tables}
+        rollLog={live?.rollLog ?? []}
+        currentSceneId={currentSceneId}
+        onAppendRollLog={appendRollLog}
+        onSummonEntity={summonEntityToScene}
+      />
 
       {/* 6. Scratchpad */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <h2 style={sectionHeaderStyle}>SCRATCHPAD</h2>
+      <CollapsibleSection title="SCRATCHPAD" testId="section-scratchpad">
         <button
           type="button"
           data-testid="add-note-override-btn"
@@ -130,6 +201,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
         </button>
         <button
           type="button"
+          data-testid="loose-notes-toggle"
+          aria-expanded={looseNotesOpen}
+          onClick={() => setLooseNotesOpen((v) => !v)}
           style={{
             height: '44px',
             borderRadius: '10px',
@@ -137,10 +211,72 @@ export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
             background: 'var(--p2)',
             color: 'var(--text)',
             fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 12px',
+            cursor: 'pointer',
           }}
         >
-          Loose Notes ({looseNotesCount})
+          <span>Loose Notes ({looseNotes.length})</span>
+          <span aria-hidden="true">{looseNotesOpen ? '▾' : '▸'}</span>
         </button>
+        {looseNotesOpen && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {looseNotes.length === 0 ? (
+              <div
+                style={{
+                  background: 'var(--p2)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '10px',
+                  padding: '8px 10px',
+                  fontSize: '12px',
+                  color: 'var(--muted)',
+                }}
+              >
+                No loose notes.
+              </div>
+            ) : (
+              looseNotes.map((note) => (
+                <div
+                  key={note.id}
+                  data-testid={`loose-note-${note.id}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: 'var(--p2)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    fontSize: '12px',
+                    color: 'var(--text)',
+                  }}
+                >
+                  <span style={{ flex: 1, whiteSpace: 'pre-wrap' }}>{note.text}</span>
+                  <button
+                    type="button"
+                    onClick={() => deleteLooseNote(note.id)}
+                    aria-label={`Delete loose note ${note.text}`}
+                    style={{
+                      height: '44px',
+                      padding: '0 10px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--redLine)',
+                      background: 'var(--redBg)',
+                      color: 'var(--red)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
         <div
           style={{
             display: 'flex',
@@ -151,7 +287,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
             paddingTop: '4px',
           }}
         >
-          <span>Last backup: never</span>
+          <span data-testid="last-backup-label">
+            Last backup: {formatLastBackup(activeCampaign?.lastBackupAt)}
+          </span>
           <button
             type="button"
             style={{
@@ -168,11 +306,10 @@ export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
             Save Backup
           </button>
         </div>
-      </section>
+      </CollapsibleSection>
 
       {/* 7. Theme */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <h2 style={sectionHeaderStyle}>THEME</h2>
+      <CollapsibleSection title="THEME" testId="section-theme">
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
           role="group"
@@ -217,7 +354,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
             );
           })}
         </div>
-      </section>
+      </CollapsibleSection>
     </>
   );
 
