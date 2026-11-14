@@ -854,4 +854,101 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       '9 / 10'
     );
   });
+
+  it('splits LeftPanel into independent top/bottom scroll halves, renames Scratchpad button to Override Scene / Add Note, and steps entity tracks inside the Entity Inspector drawer', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 4a Test Campaign',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    render(<App />);
+
+    // 1. LeftPanel split: left-panel-scroll and in-this-scene-dock are sibling flex: 1 scroll containers
+    const leftPanel = screen.getByTestId('zone-left-panel');
+    const topScroll = screen.getByTestId('left-panel-scroll');
+    const bottomDock = screen.getByTestId('in-this-scene-dock');
+
+    expect(leftPanel.contains(topScroll)).toBe(true);
+    expect(leftPanel.contains(bottomDock)).toBe(true);
+    expect(topScroll.contains(bottomDock)).toBe(false);
+    expect(topScroll).toHaveStyle({ flex: '1', minHeight: '0', overflowY: 'auto' });
+    expect(bottomDock).toHaveStyle({ flex: '1', minHeight: '0', overflowY: 'auto' });
+
+    // 2. Scratchpad button and modal heading read "Override Scene / Add Note"
+    const overrideBtn = screen.getByTestId('add-note-override-btn');
+    expect(overrideBtn).toHaveTextContent('Override Scene / Add Note');
+    fireEvent.click(overrideBtn);
+    const modalCard = screen.getByTestId('note-override-modal-card');
+    expect(modalCard).toHaveTextContent('Override Scene / Add Note');
+
+    // Add an improvised NPC with HP track while modal is open
+    fireEvent.change(screen.getByTestId('new-npc-name-input'), {
+      target: { value: 'Tech Specialist Lin' },
+    });
+    fireEvent.change(screen.getByTestId('new-npc-track-label-input'), {
+      target: { value: 'HP' },
+    });
+    fireEvent.change(screen.getByTestId('new-npc-track-max-input'), {
+      target: { value: '14' },
+    });
+    fireEvent.click(screen.getByTestId('add-improvised-npc-btn'));
+    fireEvent.click(screen.getByTestId('close-note-modal-btn'));
+
+    // 3. Inspect improvised NPC from left panel and step its HP track inside the Entity Inspector drawer
+    const impNpc = useCampaignStore.getState().live?.improvisedEntities[0]!;
+    fireEvent.click(screen.getByTestId(`inspect-entity-${impNpc.id}`));
+    expect(screen.getByTestId('inspector-entity-name')).toHaveTextContent(
+      'Tech Specialist Lin'
+    );
+    const impDecBtn = screen.getByTestId(`inspector-track-dec-${impNpc.id}-0-0`);
+    const impIncBtn = screen.getByTestId(`inspector-track-inc-${impNpc.id}-0-0`);
+    expect(impDecBtn).toHaveStyle({ width: '44px', height: '44px' });
+    expect(impIncBtn).toHaveStyle({ width: '44px', height: '44px' });
+    expect(
+      screen.getByTestId(`inspector-track-val-${impNpc.id}-0-0`)
+    ).toHaveTextContent('14 / 14');
+
+    fireEvent.click(impDecBtn);
+    expect(
+      screen.getByTestId(`inspector-track-val-${impNpc.id}-0-0`)
+    ).toHaveTextContent('13 / 14');
+    // Left panel card updates in lockstep
+    expect(screen.getByTestId(`entity-track-val-${impNpc.id}-0-0`)).toHaveTextContent(
+      '13 / 14'
+    );
+
+    // 4. Walk to Scene 2 (where Chief Dana Okafor and Maintenance Drones are in scene) and inspect Okafor
+    fireEvent.click(screen.getByTestId('scene-row-a1-s02'));
+    fireEvent.click(screen.getByTestId('inspect-entity-e-okafor'));
+    expect(screen.getByTestId('inspector-entity-name')).toHaveTextContent(
+      'Chief Dana Okafor'
+    );
+    expect(screen.getByTestId('inspector-track-val-e-okafor-0-0')).toHaveTextContent(
+      '12 / 12'
+    );
+    fireEvent.click(screen.getByTestId('inspector-track-dec-e-okafor-0-0'));
+    expect(screen.getByTestId('inspector-track-val-e-okafor-0-0')).toHaveTextContent(
+      '11 / 12'
+    );
+    expect(screen.getByTestId('entity-track-val-e-okafor-0-0')).toHaveTextContent(
+      '11 / 12'
+    );
+
+    // Walk to Scene 4 (where Maintenance Drones has scene.entity_counts override = 2) and inspect e-drones
+    fireEvent.click(screen.getByTestId('scene-row-a1-s04'));
+    fireEvent.click(screen.getByTestId('inspect-entity-e-drones'));
+    expect(screen.getByTestId('inspector-track-row-e-drones-0-0')).toBeInTheDocument();
+    expect(screen.getByTestId('inspector-track-row-e-drones-1-0')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('inspector-track-row-e-drones-2-0')
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('inspector-track-dec-e-drones-1-0'));
+    expect(screen.getByTestId('inspector-track-val-e-drones-1-0')).toHaveTextContent(
+      '7 / 8'
+    );
+    expect(screen.getByTestId('entity-track-val-e-drones-1-0')).toHaveTextContent(
+      '7 / 8'
+    );
+  });
 });

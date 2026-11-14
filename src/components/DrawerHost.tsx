@@ -22,8 +22,13 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
   inspectedEntityId,
   onClose,
 }) => {
-  const { merged, live, cycleEntityDisposition, toggleRevealedItem } =
-    useCampaignStore();
+  const {
+    merged,
+    live,
+    cycleEntityDisposition,
+    toggleRevealedItem,
+    adjustEntityTrack,
+  } = useCampaignStore();
   const isPdf = activeDrawer === 'pdf';
   const isEntity = activeDrawer === 'entity';
   const width = isPdf ? '480px' : '420px';
@@ -32,7 +37,145 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
   const soloMask = Boolean(live?.ui?.soloMask);
   const revealed = live?.revealed ?? {};
   const entityDisposition = live?.entityDisposition ?? {};
+  const entityTracks = live?.entityTracks ?? {};
   const improvisedEntities = live?.improvisedEntities ?? [];
+  const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
+  const currentScene =
+    merged.scenes.find((s) => s.id === currentSceneId) ?? merged.scenes[0] ?? null;
+
+  const renderInspectorTracks = (
+    entityId: string,
+    entityName: string,
+    copyCount: number,
+    tracks: Array<{ label: string; max: number }>
+  ) => {
+    if (tracks.length === 0) {
+      return null;
+    }
+    const trackMatrix = entityTracks[entityId] ?? [];
+    return (
+      <div
+        data-testid={`inspector-tracks-${entityId}`}
+        style={{
+          background: 'var(--p2)',
+          border: '1px solid var(--line)',
+          borderRadius: '10px',
+          padding: '10px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
+        <span
+          style={{
+            fontFamily: 'var(--mono)',
+            fontSize: '11px',
+            letterSpacing: '.1em',
+            color: 'var(--muted)',
+            textTransform: 'uppercase',
+          }}
+        >
+          TRACKING
+        </span>
+        {Array.from({ length: copyCount }).map((_, copyIdx) =>
+          tracks.map((trackDef, trackIdx) => {
+            const currentVal = trackMatrix[copyIdx]?.[trackIdx] ?? trackDef.max;
+            const rowLabel =
+              copyCount > 1
+                ? `${trackDef.label} #${copyIdx + 1}`
+                : trackDef.label;
+            return (
+              <div
+                key={`${copyIdx}-${trackIdx}`}
+                data-testid={`inspector-track-row-${entityId}-${copyIdx}-${trackIdx}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '12px',
+                    color: 'var(--muted)',
+                    width: '80px',
+                    flexShrink: 0,
+                  }}
+                >
+                  {rowLabel}
+                </span>
+                <button
+                  type="button"
+                  data-testid={`inspector-track-dec-${entityId}-${copyIdx}-${trackIdx}`}
+                  aria-label={`Decrease ${entityName} ${rowLabel}`}
+                  onClick={() =>
+                    adjustEntityTrack(
+                      entityId,
+                      copyIdx,
+                      trackIdx,
+                      -1,
+                      copyCount,
+                      tracks
+                    )
+                  }
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'var(--p3)',
+                    color: 'var(--text)',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  −
+                </button>
+                <span
+                  data-testid={`inspector-track-val-${entityId}-${copyIdx}-${trackIdx}`}
+                  style={{
+                    flex: 1,
+                    textAlign: 'center',
+                    fontFamily: 'var(--mono)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {currentVal} / {trackDef.max}
+                </span>
+                <button
+                  type="button"
+                  data-testid={`inspector-track-inc-${entityId}-${copyIdx}-${trackIdx}`}
+                  aria-label={`Increase ${entityName} ${rowLabel}`}
+                  onClick={() =>
+                    adjustEntityTrack(
+                      entityId,
+                      copyIdx,
+                      trackIdx,
+                      1,
+                      copyCount,
+                      tracks
+                    )
+                  }
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'var(--p3)',
+                    color: 'var(--text)',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  +
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    );
+  };
 
   const baseEntity = inspectedEntityId
     ? merged.entities.find((e) => e.id === inspectedEntityId) ?? null
@@ -263,6 +406,21 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                       </div>
                     )}
 
+                    {(() => {
+                      const countOverride =
+                        currentScene?.entity_counts?.[baseEntity.id];
+                      const copyCount =
+                        typeof countOverride === 'number' && countOverride > 0
+                          ? countOverride
+                          : Math.max(1, baseEntity.count || 1);
+                      return renderInspectorTracks(
+                        baseEntity.id,
+                        baseEntity.name,
+                        copyCount,
+                        baseEntity.tracks
+                      );
+                    })()}
+
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span
                         style={{
@@ -475,6 +633,12 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                     <div style={{ fontSize: '14px' }}>
                       {impEntity.summary || 'No summary provided.'}
                     </div>
+                    {renderInspectorTracks(
+                      impEntity.id,
+                      impEntity.name,
+                      1,
+                      impEntity.track ? [impEntity.track] : []
+                    )}
                   </div>
                 </>
               );

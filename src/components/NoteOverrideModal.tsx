@@ -193,7 +193,7 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
               color: 'var(--text)',
             }}
           >
-            {editingNote ? 'Edit Table Note' : 'Add Note / Override'}
+            {editingNote ? 'Edit Table Note' : 'Override Scene / Add Note'}
           </span>
           <button
             type="button"

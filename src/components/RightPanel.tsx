@@ -126,7 +126,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({ onOpenNoteModal }) => {
             cursor: 'pointer',
           }}
         >
-          Add note / override
+          Override Scene / Add Note
         </button>
         <button
           type="button"

@@ -552,10 +552,14 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           </div>
         </div>
       )}
+      </div>
 
       <div
         data-testid="in-this-scene-dock"
         style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
           borderTop: '1px solid var(--line)',
           padding: '12px',
           display: 'flex',
@@ -857,7 +861,6 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
             </div>
           ))
         )}
-      </div>
       </div>
     </aside>
   );
