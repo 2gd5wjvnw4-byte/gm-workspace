@@ -15,6 +15,9 @@ export interface ChunkRecord {
   campaignId: string;
   chunkId: string;
   chunkTitle: string;
+  chunkPages?: string;
+  complete?: boolean;
+  stoppedAtPage?: number | null;
   rawJson: Record<string, unknown>;
   importedAt: number;
 }

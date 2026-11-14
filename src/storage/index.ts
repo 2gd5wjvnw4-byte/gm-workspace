@@ -9,6 +9,7 @@ import {
   type LoadedCampaign,
 } from './types';
 import { defaultThemeForGenre } from '../store/themeStore';
+import { mergeRawChunkObjects, parseModuleChunk, reconcileLiveNotes } from '../lib/import';
 
 export * from './types';
 
@@ -45,6 +46,39 @@ const pendingLiveTimers = new Map<
 export async function listCampaigns(): Promise<CampaignRecord[]> {
   const rows = await db.campaigns.toArray();
   return rows.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export async function createCampaign(input: {
+  id?: string;
+  title: string;
+  system?: string;
+  genre?: string;
+  moduleId?: string;
+}): Promise<LoadedCampaign> {
+  const now = Date.now();
+  const title = input.title.trim() || 'Untitled Campaign';
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'campaign';
+  const id = input.id ?? `camp-${slug}-${now}`;
+  const genre = input.genre?.trim() || 'sci-fi';
+
+  const campaign: CampaignRecord = {
+    id,
+    moduleId: input.moduleId?.trim() || `mod-${slug}`,
+    title,
+    system: input.system?.trim() || '',
+    genre,
+    updatedAt: now,
+    lastBackupAt: null,
+  };
+
+  const live = createDefaultLiveState(id, defaultThemeForGenre(genre));
+  await db.campaigns.put(campaign);
+  await db.live.put(live);
+
+  return { campaign, chunks: [], live };
 }
 
 export async function loadCampaign(campaignId: string): Promise<LoadedCampaign | null> {
@@ -133,12 +167,133 @@ export async function requestPersist(): Promise<boolean> {
   return false;
 }
 
-export async function importChunk(_rawJsonText: string, _campaignId?: string): Promise<never> {
-  throw new Error('not implemented');
+export async function importChunk(
+  rawJsonText: string,
+  campaignId?: string
+): Promise<LoadedCampaign> {
+  const { chunk } = parseModuleChunk(rawJsonText);
+  const now = Date.now();
+  const targetCampaignId = campaignId ?? `camp-${chunk.meta.module_id}`;
+
+  const existingCampaign = await db.campaigns.get(targetCampaignId);
+  const existingChunksForCamp = existingCampaign
+    ? await db.chunks.where('campaignId').equals(targetCampaignId).toArray()
+    : [];
+
+  const isFirstChunk = existingChunksForCamp.length === 0;
+  const campaign: CampaignRecord = existingCampaign
+    ? {
+        ...existingCampaign,
+        moduleId:
+          isFirstChunk || existingCampaign.moduleId.startsWith('mod-')
+            ? chunk.meta.module_id
+            : existingCampaign.moduleId,
+        title:
+          isFirstChunk && existingCampaign.title === 'Untitled Campaign'
+            ? chunk.meta.title
+            : existingCampaign.title || chunk.meta.title,
+        system: existingCampaign.system || chunk.meta.system,
+        genre: existingCampaign.genre || chunk.meta.genre,
+        updatedAt: now,
+      }
+    : {
+        id: targetCampaignId,
+        moduleId: chunk.meta.module_id,
+        title: chunk.meta.title,
+        system: chunk.meta.system,
+        genre: chunk.meta.genre,
+        updatedAt: now,
+        lastBackupAt: null,
+      };
+
+  const chunkRecordId = `${targetCampaignId}:${chunk.meta.chunk_id}`;
+  const existingChunkRow = await db.chunks.get(chunkRecordId);
+
+  const chunkRecord: ChunkRecord = {
+    id: chunkRecordId,
+    campaignId: targetCampaignId,
+    chunkId: chunk.meta.chunk_id,
+    chunkTitle: chunk.meta.chunk_title,
+    chunkPages: chunk.meta.chunk_pages,
+    complete: chunk.meta.complete,
+    stoppedAtPage: chunk.meta.stopped_at_page,
+    rawJson: chunk.rawJson,
+    // Keep original importedAt order on re-import so chunk order stays stable, or update if new
+    importedAt: existingChunkRow ? existingChunkRow.importedAt : now,
+  };
+
+  await db.campaigns.put(campaign);
+  await db.chunks.put(chunkRecord);
+
+  const allChunks = await db.chunks.where('campaignId').equals(targetCampaignId).toArray();
+  allChunks.sort((a, b) => a.importedAt - b.importedAt);
+
+  const pending = pendingLiveTimers.get(targetCampaignId);
+  let live =
+    pending?.state ??
+    (await db.live.get(targetCampaignId)) ??
+    createDefaultLiveState(targetCampaignId, defaultThemeForGenre(campaign.genre));
+
+  const merged = mergeRawChunkObjects(allChunks.map((c) => c.rawJson));
+  live = reconcileLiveNotes(live, merged);
+  if (!live.currentSceneId && merged.scenes.length > 0) {
+    live = {
+      ...live,
+      currentSceneId: merged.scenes[0].id,
+    };
+  }
+  await db.live.put(live);
+
+  return {
+    campaign,
+    chunks: allChunks,
+    live,
+  };
 }
 
-export async function deleteChunk(_campaignId: string, _chunkId: string): Promise<never> {
-  throw new Error('not implemented');
+export async function deleteChunk(
+  campaignId: string,
+  chunkId: string
+): Promise<LoadedCampaign | null> {
+  const campaign = await db.campaigns.get(campaignId);
+  if (!campaign) {
+    return null;
+  }
+
+  const chunkRecordId = `${campaignId}:${chunkId}`;
+  await db.chunks.delete(chunkRecordId);
+
+  const remaining = await db.chunks.where('campaignId').equals(campaignId).toArray();
+  for (const row of remaining) {
+    if (row.chunkId === chunkId) {
+      await db.chunks.delete(row.id);
+    }
+  }
+
+  const updatedChunks = await db.chunks.where('campaignId').equals(campaignId).toArray();
+  updatedChunks.sort((a, b) => a.importedAt - b.importedAt);
+
+  const updatedCampaign: CampaignRecord = {
+    ...campaign,
+    updatedAt: Date.now(),
+  };
+  await db.campaigns.put(updatedCampaign);
+
+  const pending = pendingLiveTimers.get(campaignId);
+  let live =
+    pending?.state ??
+    (await db.live.get(campaignId)) ??
+    createDefaultLiveState(campaignId, defaultThemeForGenre(campaign.genre));
+
+  const merged = mergeRawChunkObjects(updatedChunks.map((c) => c.rawJson));
+  live = reconcileLiveNotes(live, merged);
+  await db.live.put(live);
+
+  return {
+    campaign: updatedCampaign,
+    chunks: updatedChunks,
+    live,
+  };
 }
 
 export async function exportBackup(_campaignId: string): Promise<BackupPayload> {

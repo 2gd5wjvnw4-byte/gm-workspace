@@ -2,6 +2,10 @@ import React from 'react';
 import type { MapDisplayMode } from '../storage/types';
 
 export interface TopBarProps {
+  campaignLabel?: string;
+  reviewCount?: number;
+  onOpenActSwitcher?: () => void;
+  onOpenReview?: () => void;
   mapMode: MapDisplayMode;
   onSelectMapMode: (mode: MapDisplayMode) => void;
   soloMask: boolean;
@@ -17,6 +21,10 @@ const MAP_MODES: Array<{ id: MapDisplayMode; label: string }> = [
 ];
 
 export const TopBar: React.FC<TopBarProps> = ({
+  campaignLabel = 'TopBar · No module loaded',
+  reviewCount = 0,
+  onOpenActSwitcher,
+  onOpenReview,
   mapMode,
   onSelectMapMode,
   soloMask,
@@ -53,6 +61,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         </span>
         <button
           type="button"
+          data-testid="act-switcher-btn"
+          onClick={onOpenActSwitcher}
           style={{
             all: 'unset',
             cursor: 'pointer',
@@ -65,7 +75,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             alignItems: 'center',
           }}
         >
-          TopBar · No module loaded ▾
+          {campaignLabel} ▾
         </button>
       </div>
 
@@ -173,6 +183,27 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* 4. Review button (hidden when count is 0) */}
+      {reviewCount > 0 && (
+        <button
+          type="button"
+          data-testid="review-btn"
+          onClick={onOpenReview}
+          style={{
+            height: '44px',
+            padding: '0 10px',
+            borderRadius: '10px',
+            border: '1px solid var(--goldLine)',
+            background: 'var(--goldBg)',
+            color: 'var(--gold)',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          Review {reviewCount}
+        </button>
+      )}
 
       {/* 5. Map mode segmented control */}
       <div

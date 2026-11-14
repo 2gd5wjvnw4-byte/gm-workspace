@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  createCampaign,
   createDefaultLiveState,
   db,
   deleteChunk,
@@ -15,6 +18,9 @@ import {
   type CampaignRecord,
   type ChunkRecord,
 } from './index';
+
+const samplePath = resolve(process.cwd(), 'samples/silent-relay-a1.json');
+const sampleRawText = readFileSync(samplePath, 'utf-8');
 
 describe('storage module (Dexie + fake-indexeddb)', () => {
   beforeEach(async () => {
@@ -132,9 +138,51 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
     expect(persistMock).toHaveBeenCalledTimes(1);
   });
 
-  it('throws "not implemented" for stubbed Phase 2 / Phase 7 functions', async () => {
-    await expect(importChunk('{}')).rejects.toThrow('not implemented');
-    await expect(deleteChunk('camp-1', 'a1')).rejects.toThrow('not implemented');
+  it('creates a campaign, imports a chunk, replaces on re-import, and deletes a chunk while moving orphaned notes to looseNotes', async () => {
+    const created = await createCampaign({
+      id: 'camp-relay',
+      title: 'The Silent Relay',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    expect(created.campaign.id).toBe('camp-relay');
+
+    const afterImport = await importChunk(sampleRawText, 'camp-relay');
+    expect(afterImport.chunks).toHaveLength(1);
+    expect(afterImport.chunks[0].chunkId).toBe('chunk-a1');
+    expect(afterImport.live.currentSceneId).toBe('a1-s01');
+
+    // Add a live note targeting scene a1-s01
+    const liveWithNote = {
+      ...afterImport.live,
+      notes: [
+        {
+          id: 'note-1',
+          targetId: 'a1-s01',
+          text: 'Airlock forced open',
+          createdAt: 1000,
+        },
+      ],
+    };
+    await db.live.put(liveWithNote);
+
+    // Re-import the same chunk_id with an updated title -> replaces existing chunk
+    const updatedObj = JSON.parse(sampleRawText) as Record<string, unknown>;
+    (updatedObj.meta as Record<string, unknown>).chunk_title = 'Act 1 Updated';
+    const afterReimport = await importChunk(JSON.stringify(updatedObj), 'camp-relay');
+    expect(afterReimport.chunks).toHaveLength(1);
+    expect(afterReimport.chunks[0].chunkTitle).toBe('Act 1 Updated');
+    expect(afterReimport.live.notes).toHaveLength(1);
+
+    // Delete the chunk -> live note targeting a1-s01 moves to looseNotes
+    const afterDelete = await deleteChunk('camp-relay', 'chunk-a1');
+    expect(afterDelete?.chunks).toHaveLength(0);
+    expect(afterDelete?.live.notes).toHaveLength(0);
+    expect(afterDelete?.live.looseNotes).toHaveLength(1);
+    expect(afterDelete?.live.looseNotes[0].text).toBe('Airlock forced open');
+  });
+
+  it('throws "not implemented" for stubbed Phase 7 backup functions', async () => {
     await expect(exportBackup('camp-1')).rejects.toThrow('not implemented');
     await expect(importBackup('{}')).rejects.toThrow('not implemented');
   });
