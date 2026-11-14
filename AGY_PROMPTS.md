@@ -59,7 +59,7 @@ Read docs/PROJECT_BRIEF.md and docs/DESIGN_SPEC.md first. Open docs/ui-reference
 
 Build the scene view and navigation.
 
-1. Center scene stage per DESIGN_SPEC "Center": header with code, archetype chip, Needs review chip, title, tags, Book page button (no action in this task); Table change banner from live notes; foldable read-aloud; Tier 1 list; Tier 2 cards; Tier 3 cards; escalation; GM tip. One component for all archetypes; labels from the archetype table in PROJECT_BRIEF.
+1. Center scene stage per DESIGN_SPEC "Center": header with code, archetype chip, Needs review chip, title, tags, Book page button (no action in this task); Table change banner from live notes; read-aloud card per DESIGN_SPEC (pointer line with page and first words, plus an Open in PDF button with no action in this task; plain-text fallback); Tier 1 list; Tier 2 cards; Tier 3 cards; escalation; GM tip. One component for all archetypes; labels from the archetype table in PROJECT_BRIEF.
 2. Exits bar: all connections from the current scene plus two_way connections into it. States and styles per DESIGN_SPEC. Tapping an open exit moves to that scene and marks it visited. Not-loaded targets are disabled.
 3. Live layer: currentSceneId, visited, revealed, connectionState. Reveal / Mark found buttons on items toggle revealed. Revealing an item with unlocks_connection_id opens that connection. Persist with saveLive.
 4. Solo Mask toggle in the top bar implementing every rule in PROJECT_BRIEF "Solo Mask rules" that applies to scenes, items, exits, and the scene list. Put the rules in src/lib/solo.ts as pure functions with unit tests (reachability, masking).
@@ -139,7 +139,7 @@ Build the PDF drawer and backup/restore.
 
 1. Attach PDF: in the act switcher sheet, "Attach PDF" stores the file as a blob keyed by meta.module_id. Show the attached file name and size.
 2. PDF drawer (480px) with pdfjs-dist: opens at printed page + meta.page_offset for the current scene (PDF button and Book p.N button). Prev/next page, "Go to page…" (printed page numbers), pinch zoom on the page canvas using src/lib/panzoom.ts. Render only the visible page. If no PDF is attached, the drawer shows "Attach the PDF for this module" with the attach button.
-3. Entity inspector and other records with a page field get a small "p.N" button that opens the drawer at that page. Scenes with encounter_page get a second button for that page.
+3. The read-aloud card's Open in PDF button opens the drawer at read_aloud.page. Entity inspector and other records with a page field get a small "p.N" button that opens the drawer at that page. Scenes with encounter_page get a second button for that page.
 4. Backup: implement exportBackup / importBackup in the storage module with the format in PROJECT_BRIEF. "Save Backup" uses navigator.share({ files }) when available, else a download. Record lastBackupAt. "Load Backup" in the Campaign screen uses a file picker, validates format/version, and restores as a new campaign or replaces the open one (ask with an in-app modal). After restore, prompt to re-attach the PDF if missing.
 5. Reminders: show "Last backup: X ago" in the Scratchpad; when the app goes to background (visibilitychange hidden) after changes since the last backup, show a gentle reminder banner on next open.
 6. Round-trip unit test: export then import gives an identical campaign and live layer.

@@ -66,6 +66,7 @@ The importer refuses a file **only** if it is not valid JSON. Everything else lo
 - Scene with no connection in or out (the module's first and final scenes excepted), or an `unlocks_connection_id` whose target connection starts `open` → loads, Review warning.
 - Link to a scene in an act that is not loaded → grey "not loaded" node/exit; works once that act loads.
 - Unknown extra fields → ignored but preserved in the stored raw JSON.
+- `read_aloud` is normally a pointer `{page, starts_with}`. A plain string (older files) is also accepted and shown as text. Anything else → `null`, Review entry.
 - `meta.complete === false` → warning banner on the chunk.
 - Live-layer notes pointing at IDs that disappear → moved to `looseNotes`, never deleted.
 

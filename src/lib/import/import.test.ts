@@ -31,7 +31,44 @@ describe('Module Import System (parser, linkChecker, merge, carryOver)', () => {
     expect(merged.linkCheck.notLoadedTargets.has('a2-s01')).toBe(true);
     expect(merged.linkCheck.brokenTargets.size).toBe(0);
     expect(merged.scenes).toHaveLength(4);
+    expect(merged.scenes[0].read_aloud).toEqual({
+      page: 6,
+      starts_with: 'Your ship locks onto the',
+    });
     expect(merged.entities).toHaveLength(3);
+  });
+
+  it('handles all three read_aloud cases: pointer object, plain string, and invalid value -> null with Review entry', () => {
+    const rawObj = JSON.parse(sampleRawText) as Record<string, unknown>;
+    const scenes = rawObj.scenes as Array<Record<string, unknown>>;
+
+    // Case 1: valid pointer object { page: number, starts_with: string }
+    scenes[0].read_aloud = { page: 6, starts_with: 'Your ship locks onto the' };
+
+    // Case 2: legacy plain string
+    scenes[1].read_aloud = 'The concourse curves away in both directions.';
+
+    // Case 3a: invalid object (missing starts_with)
+    scenes[2].read_aloud = { page: 12 };
+
+    // Case 3b: invalid primitive (number)
+    scenes[3].read_aloud = 42;
+
+    const { chunk, review } = parseModuleChunk(JSON.stringify(rawObj));
+    expect(chunk.scenes[0].read_aloud).toEqual({
+      page: 6,
+      starts_with: 'Your ship locks onto the',
+    });
+    expect(chunk.scenes[1].read_aloud).toBe(
+      'The concourse curves away in both directions.'
+    );
+    expect(chunk.scenes[2].read_aloud).toBeNull();
+    expect(chunk.scenes[3].read_aloud).toBeNull();
+
+    const readAloudWarnings = review.filter(
+      (r) => r.severity === 'warn' && r.field === 'read_aloud'
+    );
+    expect(readAloudWarnings.map((r) => r.recordId)).toEqual(['a1-s03', 'a1-s04']);
   });
 
   it('imports a broken copy of the sample without throwing and produces expected Review entries', () => {

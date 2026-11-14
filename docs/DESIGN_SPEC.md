@@ -55,7 +55,7 @@ Disposition colors: allied `--teal`, neutral `--muted`, suspicious `--gold`, hos
 | Headings `--head` | IBM Plex Sans 700 | Cinzel 600/700 |
 | Labels/codes `--mono` | IBM Plex Mono 400/600 | Alegreya Sans 500/700 |
 
-Self-host the fonts (offline PWA). Sizes: body 14, scene title 30/700, read-aloud 16 italic line-height 1.55, tier items 15, section labels 11–12 uppercase with letter-spacing .1em in `--mono`, chips 11/700 uppercase.
+Self-host the fonts (offline PWA). Sizes: body 14, scene title 30/700, read-aloud line 16 italic line-height 1.55, tier items 15, section labels 11–12 uppercase with letter-spacing .1em in `--mono`, chips 11/700 uppercase.
 
 ## 3. Layout (iPad landscape)
 
@@ -93,7 +93,7 @@ On widths < 1200px the right panel collapses to a 56px rail with icons that open
 ### Center
 - Scene header: `scene id · #code` (13 mono accent) + archetype chip (violet) + "Needs review" chip (gold, when flagged) / title 30px head font / tag pills (`--tagBg`). "Book p.N" button on the right.
 - **Table change banner** (live notes on this scene): `--deltaBg`, 1px `--gold` border, label "TABLE CHANGE" in gold mono. Always above the read-aloud.
-- **Read-aloud**: card with header button "READ-ALOUD … Tap to fold"; italic text.
+- **Read-aloud**: card with header "READ-ALOUD". For a pointer: one line "p.N — starts: “<starts_with>…”" (italic, `--readText`) and a 44px "Open in PDF" button that opens the PDF drawer at that page. For an old plain-text value: the text, foldable ("Tap to fold"). Hidden when `read_aloud` is null.
 - **Tier 1**: section label "TIER 1 · <label>" + bullet list 15px.
 - **Tier 2 cards** (`--panel`, 1px `--line`, radius 12, padding 12/14): row [kind chip][label 15/600][action button] / "Check: …" (13 mono `--blue`) / result (14 `--readText`) or "Result hidden. Roll, then tap Reveal."
 - **Tier 3 cards**: same; when masked use stripes `repeating-linear-gradient(135deg, --panel 0 10px, --stripe 10px 20px)` + dashed `--line2` border, chip "Hidden", title "Something is hidden here".

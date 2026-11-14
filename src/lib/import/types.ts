@@ -65,6 +65,13 @@ export interface SceneEscalation {
   text: string;
 }
 
+export interface ReadAloudPointer {
+  page: number;
+  starts_with: string;
+}
+
+export type SceneReadAloud = ReadAloudPointer | string | null;
+
 export interface ModuleScene {
   id: string;
   code: string;
@@ -76,7 +83,7 @@ export interface ModuleScene {
   encounter_page?: number | null;
   summary: string;
   tags: string[];
-  read_aloud: string | null;
+  read_aloud: SceneReadAloud;
   tier1_sensory: string[];
   tier2_interactive: SceneItem[];
   tier3_hidden: SceneItem[];

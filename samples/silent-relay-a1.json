@@ -62,7 +62,10 @@
         "Dim Light",
         "Zero-G"
       ],
-      "read_aloud": "Your ship locks onto the ring with a dull clang. No lights. No welcome message. Only the slow tick of cooling metal.",
+      "read_aloud": {
+        "page": 6,
+        "starts_with": "Your ship locks onto the"
+      },
       "tier1_sensory": [
         "Emergency strips glow red along the floor",
         "Frost on the inner airlock window",
@@ -113,7 +116,10 @@
       "tags": [
         "Low Power"
       ],
-      "read_aloud": "The concourse curves away in both directions. Meal trays sit half-eaten on the tables.",
+      "read_aloud": {
+        "page": 9,
+        "starts_with": "The concourse curves away in"
+      },
       "tier1_sensory": [
         "Half-eaten meals, about three days old",
         "A looping station announcement with a broken voice"
@@ -154,7 +160,10 @@
         "Evidence",
         "Sparking Consoles"
       ],
-      "read_aloud": "Every screen in the room is cracked. Someone took a fire axe to the main console.",
+      "read_aloud": {
+        "page": 12,
+        "starts_with": "Every screen in the room"
+      },
       "tier1_sensory": [
         "Burned plastic smell",
         "Fire axe stuck in the main console"
@@ -207,7 +216,10 @@
         "Alarms",
         "Timed"
       ],
-      "read_aloud": "Red lights. A voice counts down. The spine stretches ahead, two hundred meters of hot steel.",
+      "read_aloud": {
+        "page": 17,
+        "starts_with": "Red lights. A voice counts"
+      },
       "tier1_sensory": [
         "Heat comes in waves from the floor",
         "Alarm sirens drown out speech"

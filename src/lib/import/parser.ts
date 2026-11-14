@@ -27,6 +27,7 @@ import type {
   SceneEscalation,
   SceneItem,
   SceneItemKind,
+  SceneReadAloud,
   TruthImportance,
 } from './types';
 
@@ -127,6 +128,11 @@ export const SceneEscalationSchema = z.object({
   text: z.string().default('').catch(''),
 });
 
+export const ReadAloudPointerSchema = z.object({
+  page: z.number().finite(),
+  starts_with: z.string().min(1),
+});
+
 export const SceneSchema = z.object({
   id: z.string().min(1).default('scene-auto-1').catch('scene-auto-1'),
   code: z.string().default('1').catch('1'),
@@ -141,7 +147,11 @@ export const SceneSchema = z.object({
   encounter_page: z.number().finite().nullable().optional().catch(undefined),
   summary: z.string().default('').catch(''),
   tags: z.array(z.string()).default([]).catch([]),
-  read_aloud: z.string().nullable().default(null).catch(null),
+  read_aloud: z
+    .union([ReadAloudPointerSchema, z.string()])
+    .nullable()
+    .default(null)
+    .catch(null),
   tier1_sensory: z.array(z.string()).default([]).catch([]),
   tier2_interactive: z.array(SceneItemSchema).default([]).catch([]),
   tier3_hidden: z.array(SceneItemSchema).default([]).catch([]),
@@ -635,6 +645,25 @@ export function parseModuleChunk(rawText: string): ParseChunkResult {
         ? undefined
         : nullableNumField(obj, id, 'encounter_page', false);
 
+    const parseReadAloud = (): SceneReadAloud => {
+      const raw = obj.read_aloud;
+      if (raw === null) {
+        return null;
+      }
+      if (typeof raw === 'string') {
+        return raw;
+      }
+      const ptrRes = ReadAloudPointerSchema.safeParse(raw);
+      if (ptrRes.success) {
+        return {
+          page: ptrRes.data.page,
+          starts_with: ptrRes.data.starts_with,
+        };
+      }
+      warnMissingOrInvalid(id, 'read_aloud', 'null');
+      return null;
+    };
+
     const needs_review = boolField(obj, id, 'needs_review', false, false);
     checkNeedsReview(id, needs_review, `Scene "${title}"`);
 
@@ -649,7 +678,7 @@ export function parseModuleChunk(rawText: string): ParseChunkResult {
       ...(encounterPage !== undefined ? { encounter_page: encounterPage } : {}),
       summary: strField(obj, id, 'summary', ''),
       tags: parseStrArray('tags'),
-      read_aloud: nullableStrField(obj, id, 'read_aloud'),
+      read_aloud: parseReadAloud(),
       tier1_sensory: parseStrArray('tier1_sensory'),
       tier2_interactive: parseItemArray('tier2_interactive', 'i'),
       tier3_hidden: parseItemArray('tier3_hidden', 'h'),

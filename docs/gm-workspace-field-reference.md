@@ -15,7 +15,8 @@ The extraction prompt and the app both follow these rules.
 - `scope` = `global` or an act ID (`a1`). It controls where the app shows the item.
 - Use `null` for an empty single value. Use `[]` for an empty list.
 - `needs_review: true` = the AI is not sure. The app lists these items for you.
-- `source_quote` = about 10 words copied from the PDF, so the verifier can find the item.
+- `source_quote` = at most 8 words from the PDF, so the verifier can find the item.
+- The JSON never holds long passages from the book. Read-aloud text stays in the book; the JSON points to it.
 
 ## Tolerance (the app never breaks)
 
@@ -61,7 +62,7 @@ A tracker with label `Day` drives the timeline highlight.
 | `encounter_page` | Optional. Printed page of the scene's separate battle or encounter section, when the book splits it from the story text. |
 | `summary` | One line. Used by the node map and search. |
 | `tags` | Short badges ("Vacuum", "Dim Light"). |
-| `read_aloud` | Full boxed text, word for word. `null` if none. |
+| `read_aloud` | Pointer to the boxed text: `{"page": 14, "starts_with": "Cold water laps at your"}` (printed page + first 5 words). `null` if none. The app also accepts an old plain-text value. |
 | `tier1_sensory` | List of short strings. What players notice first. |
 | `tier2_interactive` | Items players can see. Check and result hidden in Solo Mode. |
 | `tier3_hidden` | Items fully hidden in Solo Mode. |
@@ -105,7 +106,7 @@ A connection named in an item's `unlocks_connection_id` must start `locked`, `se
 | `type` | `npc`, `creature`, `vehicle`, `hazard`. |
 | `summary` | One line. |
 | `count` | Number in the group. The app shows one set of tracks for each. |
-| `stat_line` | Stat block copied word for word. Display only. |
+| `stat_line` | Key numbers of the stat block in one short line. Display only. |
 | `tracks` | `{ "label", "max" }` boxes with − / + (HP, stress, hull). |
 | `roleplay` | `voice`, `goal`, `secret`. `secret` is hidden in Solo Mode. |
 | `clues` | List of `{ id, text, check, truth_id, hidden }`. What this NPC knows. |

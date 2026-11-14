@@ -41,7 +41,7 @@ So the JSON must be correct, complete, and follow the template exactly.
 
 1. **Do not invent.** Every fact must come from the PDF. If the PDF does not give a value, use `null` or `[]`.
 2. **Do not add mechanics.** If the book gives no check, `check` is `null`. Do not guess a DC.
-3. **Copy word for word** only these fields: `read_aloud`, `stat_line`, `source_quote`. Write everything else as short, plain summaries.
+3. **Do not copy long passages from the book.** Never copy boxed read-aloud text. Point to it with `read_aloud` (page + first 5 words), as the Scene rules say. `source_quote` is at most 8 words. `stat_line` lists the numbers in short form (see Entity rules). Write everything else as short, plain summaries in your own words.
 4. **Keep it short.** `summary` is one line. `tier1_sensory` items are a few words each. `result` is one or two sentences.
 5. **Use the template's field names and allowed values only.** Do not add new fields. Do not rename fields.
 6. **When you are not sure, say so.** Set `needs_review: true` on that item. Do not leave it out.
@@ -87,6 +87,7 @@ Do not invent values such as "path" or "skill". A hallway or path inside a site 
   - `open_hub`: a town, station, district, or sector with places to visit in any order.
   - `investigation`: a crime scene, interview, social event, or research scene.
   - `action_stage`: a chase, battle, timed escape, or set piece.
+- `read_aloud`: a pointer, not the text. Use `{"page": <printed page>, "starts_with": "<the first 5 words of the boxed text>"}`. If a scene has more than one boxed text, point to the first one. If the scene has no boxed text, use `null`.
 - `tier1_sensory`: what anyone notices on arrival.
 - `tier2_interactive`: things players can see and use. The label is not a spoiler. The check and result can be.
 - `tier3_hidden`: traps, ambushes, hidden loot, deep clues, secret doors. Anything that spoils the scene if seen early.
@@ -109,7 +110,7 @@ Do not invent values such as "path" or "skill". A hallway or path inside a site 
 
 - One entity for each named NPC, creature type, vehicle, or major hazard.
 - Groups of the same creature: one entity with `count`. `count` must match the number the text states. When different scenes use different numbers, set the most common number here and override per scene with `entity_counts`.
-- `stat_line`: copy the stat block as one line. Separate stats with " · ". Copy from this entity's own stat block only — a rider and his vehicle have separate blocks. Do not mix them.
+- `stat_line`: the key numbers of the stat block as one short line: defenses, HP, speed, main attacks, and ability scores. Separate stats with " · ". Do not copy talents, feats, or description text. Take the numbers from this entity's own stat block only — a rider and his vehicle have separate blocks. Do not mix them.
 - `tracks`: only HP, wounds, stress, hull, or similar values that change during play.
 - `roleplay.secret`: what the NPC hides.
 - `clues`: facts the NPC knows that point to a truth.
