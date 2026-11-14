@@ -5,6 +5,7 @@ import {
   createCampaign,
   createDefaultLiveState,
   db,
+  deleteCampaign,
   deleteChunk,
   exportBackup,
   getBlob,
@@ -180,6 +181,45 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
     expect(afterDelete?.live.notes).toHaveLength(0);
     expect(afterDelete?.live.looseNotes).toHaveLength(1);
     expect(afterDelete?.live.looseNotes[0].text).toBe('Airlock forced open');
+  });
+
+  it('deletes a campaign along with its chunks, live state, map blobs, and pending saveLive timer', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await createCampaign({
+        id: 'camp-del',
+        title: 'Doomed Expedition',
+        system: 'Mothership 1e',
+        genre: 'sci-fi horror',
+      });
+      await importChunk(sampleRawText, 'camp-del');
+      await putBlob('map:camp-del-1', new Uint8Array([9, 8, 7]), 'image/png');
+      await putBlob('map:other-camp', new Uint8Array([1, 2, 3]), 'image/png');
+
+      const pendingLive = createDefaultLiveState('camp-del', 'scifi');
+      pendingLive.maps = [
+        {
+          id: 'm1',
+          name: 'Deck 1',
+          blobKey: 'map:camp-del-1',
+          width: 800,
+          height: 600,
+        },
+      ];
+      const savePromise = saveLive(pendingLive);
+
+      await deleteCampaign('camp-del');
+      await vi.advanceTimersByTimeAsync(600);
+      await savePromise;
+
+      expect(await db.campaigns.get('camp-del')).toBeUndefined();
+      expect(await db.chunks.where('campaignId').equals('camp-del').count()).toBe(0);
+      expect(await db.live.get('camp-del')).toBeUndefined();
+      expect(await getBlob('map:camp-del-1')).toBeUndefined();
+      expect(await getBlob('map:other-camp')).toBeDefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('throws "not implemented" for stubbed Phase 7 backup functions', async () => {

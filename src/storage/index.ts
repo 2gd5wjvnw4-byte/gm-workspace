@@ -296,6 +296,28 @@ export async function deleteChunk(
   };
 }
 
+export async function deleteCampaign(campaignId: string): Promise<void> {
+  const pending = pendingLiveTimers.get(campaignId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingLiveTimers.delete(campaignId);
+    for (const r of pending.resolvers) r();
+  }
+
+  await db.transaction('rw', db.campaigns, db.chunks, db.live, db.blobs, async () => {
+    const live = pending?.state ?? (await db.live.get(campaignId));
+    if (live?.maps && live.maps.length > 0) {
+      const blobKeys = live.maps.map((m) => m.blobKey).filter(Boolean);
+      if (blobKeys.length > 0) {
+        await db.blobs.bulkDelete(blobKeys);
+      }
+    }
+    await db.chunks.where('campaignId').equals(campaignId).delete();
+    await db.live.delete(campaignId);
+    await db.campaigns.delete(campaignId);
+  });
+}
+
 export async function exportBackup(_campaignId: string): Promise<BackupPayload> {
   throw new Error('not implemented');
 }

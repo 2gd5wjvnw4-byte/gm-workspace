@@ -307,4 +307,50 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     ]);
     expect(useCampaignStore.getState().chunks).toHaveLength(0);
   });
+
+  it('deletes a campaign from the All Campaigns screen via the in-app confirmation modal', async () => {
+    const created = await useCampaignStore.getState().createNewCampaign({
+      title: 'Campaign To Delete',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    const campId = created.campaign.id;
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    useCampaignStore.getState().closeCampaign();
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId(`campaign-row-${campId}`)).toBeInTheDocument();
+    });
+
+    const deleteBtn = screen.getByTestId(`delete-campaign-${campId}`);
+    expect(deleteBtn).toHaveStyle({ height: '44px' });
+
+    // Open delete confirmation modal and cancel first
+    fireEvent.click(deleteBtn);
+    const modal = screen.getByTestId('delete-campaign-modal');
+    expect(modal).toBeInTheDocument();
+    expect(modal).toHaveTextContent('Campaign To Delete');
+
+    fireEvent.click(screen.getByTestId('cancel-delete-campaign'));
+    expect(screen.queryByTestId('delete-campaign-modal')).not.toBeInTheDocument();
+    expect(screen.getByTestId(`campaign-row-${campId}`)).toBeInTheDocument();
+
+    // Open delete confirmation modal again and confirm delete
+    fireEvent.click(screen.getByTestId(`delete-campaign-${campId}`));
+    expect(screen.getByTestId('delete-campaign-modal')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('confirm-delete-campaign'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId(`campaign-row-${campId}`)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('delete-campaign-modal')).not.toBeInTheDocument();
+    expect(screen.getByTestId('empty-campaigns')).toBeInTheDocument();
+
+    // Verify campaign, chunks, and live state are gone from IndexedDB
+    expect(await db.campaigns.get(campId)).toBeUndefined();
+    expect(await db.chunks.where('campaignId').equals(campId).count()).toBe(0);
+    expect(await db.live.get(campId)).toBeUndefined();
+  });
 });

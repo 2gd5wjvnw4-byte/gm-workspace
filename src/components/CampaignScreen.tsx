@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import type { CampaignRecord } from '../storage';
 import { useCampaignStore } from '../store/campaignStore';
 
 export const CampaignScreen: React.FC = () => {
@@ -7,6 +8,7 @@ export const CampaignScreen: React.FC = () => {
     refreshCampaigns,
     openCampaign,
     createNewCampaign,
+    deleteCampaign,
     errorMessage,
   } = useCampaignStore();
 
@@ -14,10 +16,23 @@ export const CampaignScreen: React.FC = () => {
   const [newTitle, setNewTitle] = useState('');
   const [newSystem, setNewSystem] = useState('');
   const [newGenre, setNewGenre] = useState('sci-fi');
+  const [confirmDeleteCamp, setConfirmDeleteCamp] = useState<CampaignRecord | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     void refreshCampaigns();
   }, [refreshCampaigns]);
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDeleteCamp || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await deleteCampaign(confirmDeleteCamp.id);
+      setConfirmDeleteCamp(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,30 +192,151 @@ export const CampaignScreen: React.FC = () => {
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  data-testid={`open-campaign-${camp.id}`}
-                  onClick={() => void openCampaign(camp.id)}
-                  style={{
-                    height: '44px',
-                    minWidth: '80px',
-                    padding: '0 16px',
-                    borderRadius: '10px',
-                    border: '1px solid var(--accent)',
-                    background: 'var(--accentBg)',
-                    color: 'var(--accent)',
-                    fontWeight: 600,
-                    fontSize: '14px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Open
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    data-testid={`delete-campaign-${camp.id}`}
+                    aria-label={`Delete ${camp.title}`}
+                    onClick={() => setConfirmDeleteCamp(camp)}
+                    style={{
+                      height: '44px',
+                      minWidth: '72px',
+                      padding: '0 14px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--redLine)',
+                      background: 'var(--redBg)',
+                      color: 'var(--red)',
+                      fontWeight: 600,
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Delete
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid={`open-campaign-${camp.id}`}
+                    onClick={() => void openCampaign(camp.id)}
+                    style={{
+                      height: '44px',
+                      minWidth: '80px',
+                      padding: '0 16px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--accent)',
+                      background: 'var(--accentBg)',
+                      color: 'var(--accent)',
+                      fontWeight: 600,
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Open
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Confirmation modal for deleting a campaign */}
+      {confirmDeleteCamp && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Delete campaign"
+          data-testid="delete-campaign-modal"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            paddingTop: '48px',
+            zIndex: 50,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '440px',
+              background: 'var(--panel)',
+              border: '1px solid var(--line2)',
+              borderRadius: '14px',
+              padding: '18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: 'var(--head)',
+                fontSize: '18px',
+                fontWeight: 700,
+                color: 'var(--text)',
+              }}
+            >
+              Delete campaign
+            </div>
+
+            <div style={{ fontSize: '14px', color: 'var(--muted)', lineHeight: 1.5 }}>
+              Delete <strong style={{ color: 'var(--text)' }}>{confirmDeleteCamp.title}</strong>?
+              This removes its loaded chunks and table state from this device.
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                marginTop: '4px',
+              }}
+            >
+              <button
+                type="button"
+                data-testid="cancel-delete-campaign"
+                disabled={isDeleting}
+                onClick={() => setConfirmDeleteCamp(null)}
+                style={{
+                  height: '44px',
+                  padding: '0 16px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--p3)',
+                  color: 'var(--text)',
+                  fontWeight: 600,
+                  cursor: isDeleting ? 'default' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-delete-campaign"
+                disabled={isDeleting}
+                onClick={() => void handleConfirmDelete()}
+                style={{
+                  height: '44px',
+                  padding: '0 18px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--redLine)',
+                  background: 'var(--redBg)',
+                  color: 'var(--red)',
+                  fontWeight: 700,
+                  cursor: isDeleting ? 'default' : 'pointer',
+                  opacity: isDeleting ? 0.6 : 1,
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top-anchored modal for New campaign (iPad keyboard safe) */}
       {showNewModal && (

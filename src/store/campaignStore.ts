@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   createCampaign as storageCreateCampaign,
+  deleteCampaign as storageDeleteCampaign,
   deleteChunk as storageDeleteChunk,
   importChunk as storageImportChunk,
   listCampaigns as storageListCampaigns,
@@ -29,6 +30,7 @@ export interface CampaignStoreState {
     genre?: string;
   }) => Promise<LoadedCampaign>;
   closeCampaign: () => void;
+  deleteCampaign: (campaignId: string) => Promise<void>;
   importJsonChunk: (rawJsonText: string) => Promise<LoadedCampaign>;
   removeChunk: (chunkId: string) => Promise<void>;
   setActiveLoadedCampaign: (loaded: LoadedCampaign | null) => void;
@@ -129,6 +131,27 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => ({
       ...applyLoaded(null),
       errorMessage: null,
     });
+  },
+
+  deleteCampaign: async (campaignId: string) => {
+    sessionEpoch += 1;
+    set({ errorMessage: null });
+    try {
+      await storageDeleteCampaign(campaignId);
+      const campaigns = await storageListCampaigns();
+      if (get().activeCampaign?.id === campaignId) {
+        set({
+          ...applyLoaded(null),
+          campaigns,
+        });
+      } else {
+        set({ campaigns });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete campaign';
+      set({ errorMessage: msg });
+      throw err;
+    }
   },
 
   importJsonChunk: async (rawJsonText: string) => {
