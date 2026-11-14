@@ -5,6 +5,6 @@ Read docs/PROJECT_BRIEF.md and docs/DESIGN_SPEC.md before any task. Follow them 
 - **What:** GM Workspace — offline iPad PWA that shows a prewritten RPG module's scenes from JSON and tracks table state. Details in `docs/PROJECT_BRIEF.md`.
 - **Stack:** Vite + React + TypeScript (`strict: true`), Zustand, Dexie, Zod, pdfjs-dist, vite-plugin-pwa, Vitest.
 - **Run / test:** `npm run dev`, `npm run build`, `npm run preview`, `npm run test`.
-- **Hosting:** GitHub Pages, source = GitHub Actions (`.github/workflows/deploy.yml`).
+- **Hosting:** GitHub Pages, source = GitHub Actions (`.github/workflows/deploy.yml`). Push `main` to `origin` after every phase commit so iPad testing runs live.
 - **Do not touch:** `private/` and `campaigns/` hold real module data and stay out of git.
 - **Running state:** vault folder `829 GM Workspace`.
