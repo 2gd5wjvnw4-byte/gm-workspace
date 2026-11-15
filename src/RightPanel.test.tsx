@@ -317,4 +317,40 @@ describe('RightPanel Phase 5 sections', () => {
     expect(screen.queryByTestId('delete-loose-note-modal')).toBeNull();
     expect(useCampaignStore.getState().live?.looseNotes).toHaveLength(0);
   });
+
+  it('uses grid accordion wrappers, calm empty states, and toggles opt-in tactile clicks', () => {
+    const baseMerged = useCampaignStore.getState().merged;
+    useCampaignStore.setState({
+      merged: {
+        ...baseMerged,
+        clocks: [],
+        timeline: [],
+        truths: [],
+        factions: [],
+        random_tables: [],
+      },
+    });
+
+    render(<RightPanel />);
+
+    expect(screen.getByText('No clocks ticking yet.')).toBeTruthy();
+    expect(screen.getByText('Nothing on the timeline yet.')).toBeTruthy();
+    expect(screen.getByText('No truths tucked away here.')).toBeTruthy();
+    expect(screen.getByText('No factions in play yet.')).toBeTruthy();
+    expect(screen.getByText('No random tables loaded.')).toBeTruthy();
+
+    const clocksSection = screen.getByTestId('section-clocks');
+    const accordion = clocksSection.querySelector('.gm-accordion');
+    expect(accordion?.getAttribute('data-open')).toBe('true');
+    fireEvent.click(within(clocksSection).getByRole('button', { name: /CLOCKS/i }));
+    expect(accordion?.getAttribute('data-open')).toBe('false');
+    expect(accordion?.getAttribute('aria-hidden')).toBe('true');
+
+    const soundToggle = screen.getByTestId('sound-clicks-toggle');
+    expect(soundToggle.getAttribute('aria-pressed')).toBe('false');
+    expect(soundToggle.textContent).toContain('Off');
+    fireEvent.click(soundToggle);
+    expect(soundToggle.getAttribute('aria-pressed')).toBe('true');
+    expect(soundToggle.textContent).toContain('On');
+  });
 });

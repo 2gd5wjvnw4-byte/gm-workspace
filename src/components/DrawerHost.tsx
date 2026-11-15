@@ -1,6 +1,7 @@
 import React from 'react';
 import type { DispositionState } from '../storage/types';
 import { getEffectiveScenes } from '../lib/improvised';
+import { useFlashConfirm } from '../lib/useFlashConfirm';
 import { useCampaignStore } from '../store/campaignStore';
 
 export type DrawerMode = 'pdf' | 'entity' | null;
@@ -32,6 +33,7 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
     setEntityTrackValue,
     setEntityTrackMax,
   } = useCampaignStore();
+  const { flashedIds, triggerFlash } = useFlashConfirm();
   const [editingTrackCell, setEditingTrackCell] = React.useState<{
     key: string;
     field: 'current' | 'max';
@@ -256,6 +258,7 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                   ) : (
                     <button
                       type="button"
+                      className="gm-tabular"
                       data-testid={`inspector-track-current-btn-${entityId}-${copyIdx}-${trackIdx}`}
                       aria-label={`Edit ${entityName} ${rowLabel} current value (${currentVal})`}
                       onClick={() =>
@@ -299,6 +302,7 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                   ) : (
                     <button
                       type="button"
+                      className="gm-tabular"
                       data-testid={`inspector-track-max-btn-${entityId}-${copyIdx}-${trackIdx}`}
                       aria-label={`Edit ${entityName} ${rowLabel} max value (${effectiveMax})`}
                       onClick={() =>
@@ -703,7 +707,11 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                           <button
                             type="button"
                             data-testid={`inspector-clue-btn-${clue.id}`}
-                            onClick={() => toggleRevealedItem(clue.id)}
+                            className={flashedIds[clue.id] ? 'gm-flash-confirm' : undefined}
+                            onClick={() => {
+                              if (!isClueRevealed) triggerFlash(clue.id);
+                              toggleRevealedItem(clue.id);
+                            }}
                             style={{
                               alignSelf: 'flex-start',
                               height: '44px',
@@ -716,7 +724,7 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                               cursor: 'pointer',
                             }}
                           >
-                            {btnLabel}
+                            {flashedIds[clue.id] && isClueRevealed ? `${btnLabel} ✓` : btnLabel}
                           </button>
                         </div>
                       );

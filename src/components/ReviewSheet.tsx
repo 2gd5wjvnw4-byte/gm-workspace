@@ -126,7 +126,7 @@ export const ReviewSheet: React.FC<ReviewSheetProps> = ({ open, onClose }) => {
                 padding: '24px',
               }}
             >
-              No review items.
+              All clear — nothing to review.
             </div>
           ) : (
             Array.from(grouped.entries()).map(([chunkId, entries]) => (

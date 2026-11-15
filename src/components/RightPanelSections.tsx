@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { parseRollableTable, rollOnTable } from '../lib/dice';
+import { playTactileClick } from '../lib/sound';
+import { useFlashConfirm } from '../lib/useFlashConfirm';
 import type {
   ModuleClock,
   ModuleEntity,
@@ -57,7 +59,18 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           {open ? '▾' : '▸'}
         </span>
       </button>
-      {open && children}
+      <div
+        className="gm-accordion"
+        data-open={open ? 'true' : 'false'}
+        aria-hidden={!open}
+      >
+        <div
+          className="gm-accordion-inner"
+          style={{ visibility: open ? 'visible' : 'hidden' }}
+        >
+          {children}
+        </div>
+      </div>
     </section>
   );
 };
@@ -107,7 +120,7 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
   return (
     <CollapsibleSection title="CLOCKS" testId="section-clocks">
       {visibleClocks.length === 0 ? (
-        <div style={emptyStateStyle}>No clocks in this scope.</div>
+        <div style={emptyStateStyle}>No clocks ticking yet.</div>
       ) : (
         visibleClocks.map((clock) => {
           const segments = Math.max(1, clock.segments || 4);
@@ -138,7 +151,10 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <button
                   type="button"
-                  onClick={() => onAdjustClock(clock.id, 1, clock.start ?? 0, segments)}
+                  onClick={() => {
+                    playTactileClick();
+                    onAdjustClock(clock.id, 1, clock.start ?? 0, segments);
+                  }}
                   aria-label={`Advance ${clock.name} clock`}
                   style={{
                     width: '84px',
@@ -155,6 +171,7 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
                   }}
                 >
                   <span
+                    className="gm-tabular"
                     style={{
                       width: '58px',
                       height: '58px',
@@ -189,7 +206,10 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
                   )}
                   <button
                     type="button"
-                    onClick={() => onAdjustClock(clock.id, -1, clock.start ?? 0, segments)}
+                    onClick={() => {
+                      playTactileClick();
+                      onAdjustClock(clock.id, -1, clock.start ?? 0, segments);
+                    }}
                     style={{
                       alignSelf: 'flex-start',
                       height: '44px',
@@ -261,7 +281,7 @@ export const TimelineSection: React.FC<TimelineSectionProps> = ({
   return (
     <CollapsibleSection title="TIMELINE" testId="section-timeline">
       {sorted.length === 0 ? (
-        <div style={emptyStateStyle}>No timeline events.</div>
+        <div style={emptyStateStyle}>Nothing on the timeline yet.</div>
       ) : (
         sorted.map((ev) => {
           const isDone = Boolean(timelineDone[ev.id]);
@@ -288,6 +308,7 @@ export const TimelineSection: React.FC<TimelineSectionProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span
+                  className="gm-tabular"
                   style={{
                     fontFamily: 'var(--mono)',
                     fontSize: '12px',
@@ -432,7 +453,7 @@ export const ClueMatrixSection: React.FC<ClueMatrixSectionProps> = ({
   return (
     <CollapsibleSection title="CLUE MATRIX" testId="section-clue-matrix">
       {truths.length === 0 ? (
-        <div style={emptyStateStyle}>No truths defined.</div>
+        <div style={emptyStateStyle}>No truths tucked away here.</div>
       ) : (
         truths.map((truth) => {
           const clues = cluesByTruth.get(truth.id) ?? [];
@@ -471,6 +492,7 @@ export const ClueMatrixSection: React.FC<ClueMatrixSectionProps> = ({
                   {truth.title}
                 </span>
                 <span
+                  className="gm-tabular"
                   style={{
                     fontFamily: 'var(--mono)',
                     fontSize: '11px',
@@ -585,7 +607,7 @@ export const FactionsSection: React.FC<FactionsSectionProps> = ({
   return (
     <CollapsibleSection title="FACTIONS" testId="section-factions">
       {factions.length === 0 ? (
-        <div style={emptyStateStyle}>No factions defined.</div>
+        <div style={emptyStateStyle}>No factions in play yet.</div>
       ) : (
         factions.map((faction) => {
           const attitude = factionAttitude[faction.id] ?? faction.attitude;
@@ -675,13 +697,14 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
     Record<string, { roll: number; text: string; entityId: string | null; noteAdded?: boolean }>
   >({});
   const [logOpen, setLogOpen] = useState(false);
+  const { flashedIds, triggerFlash } = useFlashConfirm();
 
   const visibleLog = rollLog.slice(0, 10);
 
   return (
     <CollapsibleSection title="RANDOM TABLES" testId="section-random-tables">
       {tables.length === 0 ? (
-        <div style={emptyStateStyle}>No random tables defined.</div>
+        <div style={emptyStateStyle}>No random tables loaded.</div>
       ) : (
         tables.map((table) => {
           const rollable = parseRollableTable(table.dice, table.entries) !== null;
@@ -716,6 +739,7 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                     onClick={() => {
                       const res = rollOnTable(table.dice, table.entries);
                       if (!res) return;
+                      playTactileClick();
                       const text = res.entry ? res.entry.text : `No matching entry for ${res.roll}`;
                       const entityId = res.entry?.entity_id ?? null;
                       setLatestByTable((prev) => ({
@@ -760,7 +784,10 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                     gap: '6px',
                   }}
                 >
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: 'var(--gold)', fontWeight: 700 }}>
+                  <div
+                    className="gm-tabular"
+                    style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: 'var(--gold)', fontWeight: 700 }}
+                  >
                     Rolled {latest.roll}
                   </div>
                   <div style={{ fontSize: '13px', color: 'var(--text)' }}>{latest.text}</div>
@@ -795,7 +822,11 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                       {latest.entityId && (
                         <button
                           type="button"
-                          onClick={() => onSummonEntity(currentSceneId, latest.entityId!)}
+                          className={flashedIds[`summon-${table.id}`] ? 'gm-flash-confirm' : undefined}
+                          onClick={() => {
+                            onSummonEntity(currentSceneId, latest.entityId!);
+                            triggerFlash(`summon-${table.id}`);
+                          }}
                           style={{
                             height: '44px',
                             padding: '0 12px',
@@ -808,7 +839,7 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                             cursor: 'pointer',
                           }}
                         >
-                          Add to scene
+                          {flashedIds[`summon-${table.id}`] ? 'Added ✓' : 'Add to scene'}
                         </button>
                       )}
                     </div>
@@ -862,14 +893,21 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
             cursor: 'pointer',
           }}
         >
-          <span>Roll log ({visibleLog.length})</span>
+          <span className="gm-tabular">Roll log ({visibleLog.length})</span>
           <span aria-hidden="true">{logOpen ? '▾' : '▸'}</span>
         </button>
 
-        {logOpen && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div
+          className="gm-accordion"
+          data-open={logOpen ? 'true' : 'false'}
+          aria-hidden={!logOpen}
+        >
+          <div
+            className="gm-accordion-inner"
+            style={{ gap: '4px', visibility: logOpen ? 'visible' : 'hidden' }}
+          >
             {visibleLog.length === 0 ? (
-              <div style={emptyStateStyle}>No rolls yet.</div>
+              <div style={emptyStateStyle}>No rolls yet — tap Roll above when ready.</div>
             ) : (
               visibleLog.map((item) => (
                 <div
@@ -891,7 +929,7 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
               ))
             )}
           </div>
-        )}
+        </div>
       </div>
     </CollapsibleSection>
   );

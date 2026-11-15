@@ -3,6 +3,7 @@ import { ExitsBar } from './ExitsBar';
 import type { MapDisplayMode, TableNote } from '../storage/types';
 import { getEffectiveScenes } from '../lib/improvised';
 import { getArchetypeLabels, getMaskedItemView } from '../lib/solo';
+import { useFlashConfirm } from '../lib/useFlashConfirm';
 import { useCampaignStore } from '../store/campaignStore';
 import type { SceneItemKind } from '../lib/import/types';
 
@@ -22,9 +23,24 @@ const KIND_COLOR_VARS: Record<SceneItemKind | 'hidden', string> = {
   hidden: 'var(--muted)',
 };
 
+const ANCHOR_PREFIX_RE = /^(Trigger|Check|Loot|Secret):\s*(.+)$/i;
+
+function renderAnchoredLine(line: string): React.ReactNode {
+  const match = ANCHOR_PREFIX_RE.exec(line);
+  if (!match) return line;
+  const [, anchor, rest] = match;
+  return (
+    <>
+      <strong style={{ fontWeight: 700, color: 'var(--text)' }}>{anchor}</strong>{' '}
+      <span>{rest}</span>
+    </>
+  );
+}
+
 export const Center: React.FC<CenterProps> = ({ mapMode, onEditNote }) => {
   const { merged, live, toggleRevealedItem } = useCampaignStore();
   const [readOpen, setReadOpen] = useState(true);
+  const { flashedIds, triggerFlash } = useFlashConfirm();
 
   const effectiveScenes = getEffectiveScenes(merged.scenes, live);
   const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? null;
@@ -519,7 +535,7 @@ export const Center: React.FC<CenterProps> = ({ mapMode, onEditNote }) => {
                   TIER 1 · {labels.tier1}
                 </h2>
                 {currentScene.tier1_sensory.length === 0 ? (
-                  <div style={{ fontSize: '13px', color: 'var(--muted)' }}>None.</div>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)' }}>Nothing noted here.</div>
                 ) : (
                   <ul
                     style={{
@@ -529,10 +545,12 @@ export const Center: React.FC<CenterProps> = ({ mapMode, onEditNote }) => {
                       flexDirection: 'column',
                       gap: '4px',
                       fontSize: '15px',
+                      lineHeight: 1.5,
+                      maxWidth: '68ch',
                     }}
                   >
                     {currentScene.tier1_sensory.map((line, idx) => (
-                      <li key={idx}>{line}</li>
+                      <li key={idx}>{renderAnchoredLine(line)}</li>
                     ))}
                   </ul>
                 )}
@@ -585,12 +603,16 @@ export const Center: React.FC<CenterProps> = ({ mapMode, onEditNote }) => {
                           <button
                             type="button"
                             data-testid={`reveal-btn-${item.id}`}
-                            onClick={() =>
-                              toggleRevealedItem(item.id, item.unlocks_connection_id)
-                            }
+                            className={flashedIds[item.id] ? 'gm-flash-confirm' : undefined}
+                            onClick={() => {
+                              if (!view.isRevealed) triggerFlash(item.id);
+                              toggleRevealedItem(item.id, item.unlocks_connection_id);
+                            }}
                             style={actionBtnStyle(view.isRevealed)}
                           >
-                            {view.actionButtonLabel}
+                            {flashedIds[item.id] && view.isRevealed
+                              ? `${view.actionButtonLabel} ✓`
+                              : view.actionButtonLabel}
                           </button>
                         </div>
                         <div
@@ -600,12 +622,12 @@ export const Center: React.FC<CenterProps> = ({ mapMode, onEditNote }) => {
                             color: 'var(--blue)',
                           }}
                         >
-                          Check: {view.checkText}
+                          <strong style={{ fontWeight: 700 }}>Check</strong> {view.checkText}
                         </div>
                         {view.showResult && (
                           <div
                             data-testid={`item-result-${item.id}`}
-                            style={{ fontSize: '14px', color: 'var(--readText)' }}
+                            style={{ fontSize: '14px', color: 'var(--readText)', maxWidth: '68ch' }}
                           >
                             {view.resultText}
                           </div>
@@ -675,12 +697,16 @@ export const Center: React.FC<CenterProps> = ({ mapMode, onEditNote }) => {
                           <button
                             type="button"
                             data-testid={`reveal-btn-${item.id}`}
-                            onClick={() =>
-                              toggleRevealedItem(item.id, item.unlocks_connection_id)
-                            }
+                            className={flashedIds[item.id] ? 'gm-flash-confirm' : undefined}
+                            onClick={() => {
+                              if (!view.isRevealed) triggerFlash(item.id);
+                              toggleRevealedItem(item.id, item.unlocks_connection_id);
+                            }}
                             style={actionBtnStyle(view.isRevealed)}
                           >
-                            {view.actionButtonLabel}
+                            {flashedIds[item.id] && view.isRevealed
+                              ? `${view.actionButtonLabel} ✓`
+                              : view.actionButtonLabel}
                           </button>
                         </div>
                         <div
@@ -690,12 +716,12 @@ export const Center: React.FC<CenterProps> = ({ mapMode, onEditNote }) => {
                             color: 'var(--blue)',
                           }}
                         >
-                          Check: {view.checkText}
+                          <strong style={{ fontWeight: 700 }}>Check</strong> {view.checkText}
                         </div>
                         {view.showResult && (
                           <div
                             data-testid={`item-result-${item.id}`}
-                            style={{ fontSize: '14px', color: 'var(--readText)' }}
+                            style={{ fontSize: '14px', color: 'var(--readText)', maxWidth: '68ch' }}
                           >
                             {view.resultText}
                           </div>

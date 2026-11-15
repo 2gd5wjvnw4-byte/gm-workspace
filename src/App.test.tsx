@@ -1133,4 +1133,45 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(screen.getByTestId(`map-node-${createdNodeScene!.id}`)).toBeInTheDocument();
     expect(useCampaignStore.getState().live?.improvisedConnections).toHaveLength(2);
   });
+
+  it('renders bold anchor tags in Tier 1/2/3 and shows in-place ✓ feedback on reveal', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 6d Polish Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    const baseMerged = useCampaignStore.getState().merged;
+    const firstScene = baseMerged.scenes[0];
+    useCampaignStore.setState({
+      merged: {
+        ...baseMerged,
+        scenes: [
+          {
+            ...firstScene,
+            tier1_sensory: ['Trigger: Airlock pressure drops.', 'Loot: Emergency flare kit.'],
+          },
+          ...baseMerged.scenes.slice(1),
+        ],
+      },
+    });
+
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByTestId('reveal-btn-a1-s01-i1')).toBeInTheDocument();
+    });
+
+    // Bold anchors in Tier 1 bullets
+    const triggerStrong = screen.getByText('Trigger');
+    expect(triggerStrong.tagName).toBe('STRONG');
+    const lootStrong = screen.getByText('Loot');
+    expect(lootStrong.tagName).toBe('STRONG');
+
+    // In-place micro-feedback on reveal tap
+    const revealBtn = screen.getByTestId('reveal-btn-a1-s01-i1');
+    fireEvent.click(revealBtn);
+    expect(revealBtn.textContent).toBe('Found ✓');
+    expect(revealBtn.className).toContain('gm-flash-confirm');
+  });
 });

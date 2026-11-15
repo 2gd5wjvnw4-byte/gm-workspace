@@ -803,6 +803,7 @@ export const NodeMapCanvas: React.FC<NodeMapCanvasProps> = ({
       {/* Bottom-left caption */}
       <div
         data-testid="node-map-caption"
+        className="gm-tabular"
         style={{
           position: 'absolute',
           left: '10px',

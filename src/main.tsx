@@ -16,6 +16,9 @@ import '@fontsource/alegreya-sans/700.css';
 import './styles/themes.css';
 import { App } from './App';
 
+// Enable iPad Safari :active pseudo-class on touch taps
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

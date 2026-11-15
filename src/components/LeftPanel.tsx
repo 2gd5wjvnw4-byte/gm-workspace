@@ -900,6 +900,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                           </button>
                           <span
                             data-testid={`entity-track-val-${card.id}-${copyIdx}-${trackIdx}`}
+                            className="gm-tabular"
                             style={{
                               flex: 1,
                               textAlign: 'center',
@@ -964,7 +965,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           >
             {merged.entities.some((e) => e.roaming)
               ? 'All roaming threats are in this scene.'
-              : 'No roaming entities loaded yet.'}
+              : 'No roaming threats waiting.'}
           </div>
         ) : (
           roamingEntities.map((roamer) => (

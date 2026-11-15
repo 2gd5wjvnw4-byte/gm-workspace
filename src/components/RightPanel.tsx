@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { TableNote } from '../storage/types';
 import { THEMES, THEME_ORDER, useThemeStore } from '../store/themeStore';
 import { getEffectiveScenes } from '../lib/improvised';
+import { isSoundEnabled, playTactileClick, setSoundEnabled } from '../lib/sound';
 import { useCampaignStore } from '../store/campaignStore';
 import {
   ClocksSection,
@@ -53,6 +54,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   const [looseNotesOpen, setLooseNotesOpen] = useState(false);
   const [newLooseNoteText, setNewLooseNoteText] = useState('');
   const [confirmDeleteNote, setConfirmDeleteNote] = useState<TableNote | null>(null);
+  const [soundClicks, setSoundClicks] = useState<boolean>(() => isSoundEnabled());
   const [isCompact, setIsCompact] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1200 : false
   );
@@ -229,11 +231,18 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             cursor: 'pointer',
           }}
         >
-          <span>Loose Notes ({looseNotes.length})</span>
+          <span className="gm-tabular">Loose Notes ({looseNotes.length})</span>
           <span aria-hidden="true">{looseNotesOpen ? '▾' : '▸'}</span>
         </button>
-        {looseNotesOpen && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div
+          className="gm-accordion"
+          data-open={looseNotesOpen ? 'true' : 'false'}
+          aria-hidden={!looseNotesOpen}
+        >
+          <div
+            className="gm-accordion-inner"
+            style={{ gap: '6px', visibility: looseNotesOpen ? 'visible' : 'hidden' }}
+          >
             <div style={{ display: 'flex', gap: '6px' }}>
               <input
                 type="text"
@@ -285,7 +294,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                   color: 'var(--muted)',
                 }}
               >
-                No loose notes.
+                Nothing tucked away here.
               </div>
             ) : (
               looseNotes.map((note) => (
@@ -327,7 +336,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               ))
             )}
           </div>
-        )}
+        </div>
         <div
           style={{
             display: 'flex',
@@ -404,6 +413,34 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               </button>
             );
           })}
+          <button
+            type="button"
+            data-testid="sound-clicks-toggle"
+            aria-pressed={soundClicks}
+            onClick={() => {
+              const next = !soundClicks;
+              setSoundClicks(next);
+              setSoundEnabled(next);
+              if (next) playTactileClick();
+            }}
+            style={{
+              height: '44px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 10px',
+              marginTop: '4px',
+              borderRadius: '10px',
+              fontSize: '13px',
+              fontWeight: 600,
+              border: soundClicks ? '1px solid var(--tealLine)' : '1px solid var(--line)',
+              background: soundClicks ? 'var(--tealBg)' : 'var(--p2)',
+              color: soundClicks ? 'var(--teal)' : 'var(--muted)',
+            }}
+          >
+            <span>Tactile Clicks</span>
+            <span>{soundClicks ? 'On' : 'Off'}</span>
+          </button>
         </div>
       </CollapsibleSection>
 

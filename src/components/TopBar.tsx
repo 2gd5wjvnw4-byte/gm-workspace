@@ -213,6 +213,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 </span>
                 <span
                   data-testid={`tracker-val-${tr.id}`}
+                  className="gm-tabular"
                   style={{
                     fontFamily: 'var(--mono)',
                     fontSize: '18px',
@@ -347,7 +348,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   color: 'var(--muted)',
                 }}
               >
-                No matches found.
+                Nothing matches that.
               </div>
             ) : (
               SEARCH_TYPE_ORDER.map((typeKey) => {

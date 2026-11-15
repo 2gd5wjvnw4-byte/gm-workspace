@@ -146,6 +146,39 @@ body,
 button {
   font-family: inherit;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 100ms ease-out;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.gm-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.gm-accordion {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 180ms ease-out;
+}
+
+.gm-accordion[data-open='false'] {
+  grid-template-rows: 0fr;
+}
+
+.gm-accordion-inner {
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gm-flash-confirm {
+  box-shadow: 0 0 0 2px var(--tealLine);
 }
 
 @keyframes gmpulse {
@@ -163,6 +196,10 @@ button {
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;
+    transition: none !important;
+  }
+  button:active:not(:disabled) {
+    transform: none !important;
   }
 }
 
