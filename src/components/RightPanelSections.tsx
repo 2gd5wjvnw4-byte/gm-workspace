@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { parseRollableTable, rollOnTable } from '../lib/dice';
-import { playTactileClick } from '../lib/sound';
 import { useFlashConfirm } from '../lib/useFlashConfirm';
 import type {
   ModuleClock,
@@ -152,7 +151,6 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    playTactileClick();
                     onAdjustClock(clock.id, 1, clock.start ?? 0, segments);
                   }}
                   aria-label={`Advance ${clock.name} clock`}
@@ -207,7 +205,6 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      playTactileClick();
                       onAdjustClock(clock.id, -1, clock.start ?? 0, segments);
                     }}
                     style={{
@@ -739,7 +736,6 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                     onClick={() => {
                       const res = rollOnTable(table.dice, table.entries);
                       if (!res) return;
-                      playTactileClick();
                       const text = res.entry ? res.entry.text : `No matching entry for ${res.roll}`;
                       const entityId = res.entry?.entity_id ?? null;
                       setLatestByTable((prev) => ({

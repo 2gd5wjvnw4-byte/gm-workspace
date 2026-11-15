@@ -79,3 +79,39 @@ export function playTactileClick(): void {
     // AudioContext unavailable or blocked in test/headless environments
   }
 }
+
+const INTERACTIVE_SELECTOR = [
+  'button:not(:disabled)',
+  'a[href]',
+  'summary',
+  '[role="button"]:not([aria-disabled="true"])',
+  '[role="tab"]:not([aria-disabled="true"])',
+  '[role="menuitem"]:not([aria-disabled="true"])',
+  '[role="switch"]:not([aria-disabled="true"])',
+  '[role="checkbox"]:not([aria-disabled="true"])',
+  '[role="radio"]:not([aria-disabled="true"])',
+  'input[type="button"]:not(:disabled)',
+  'input[type="submit"]:not(:disabled)',
+  'input[type="reset"]:not(:disabled)',
+  'input[type="checkbox"]:not(:disabled)',
+  'input[type="radio"]:not(:disabled)',
+  'select:not(:disabled)',
+].join(', ');
+
+/**
+ * Attaches a global capture-phase click listener so every enabled button or
+ * interactive item plays a tactile click when sound is enabled.
+ */
+export function installGlobalTactileClicks(doc: Document = document): () => void {
+  const handleClick = (event: MouseEvent) => {
+    if (!isSoundEnabled()) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('[data-testid="sound-clicks-toggle"]')) return;
+    const interactive = target.closest(INTERACTIVE_SELECTOR);
+    if (!interactive || interactive.closest('[aria-disabled="true"]')) return;
+    playTactileClick();
+  };
+  doc.addEventListener('click', handleClick, true);
+  return () => doc.removeEventListener('click', handleClick, true);
+}
