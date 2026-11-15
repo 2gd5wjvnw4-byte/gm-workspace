@@ -148,6 +148,12 @@ export const App: React.FC = () => {
                   setEditingNote(note);
                   setNoteModalOpen(true);
                 }}
+                onOpenEntityInspector={(entityId) => {
+                  setInspectedEntityId(entityId);
+                  setDrawer((d) =>
+                    d === 'entity' && inspectedEntityId === entityId ? null : 'entity'
+                  );
+                }}
               />
 
               {nodeMapExpanded && (

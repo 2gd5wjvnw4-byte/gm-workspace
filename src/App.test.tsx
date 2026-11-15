@@ -855,7 +855,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     );
   });
 
-  it('splits LeftPanel into independent top/bottom scroll halves, renames Scratchpad button to Override Scene / Add Note, and steps entity tracks inside the Entity Inspector drawer', async () => {
+  it('renders full-height LeftPanel without split handle, renames Scratchpad button to Override Scene / Add Note, and steps entity tracks inside the Entity Inspector drawer', async () => {
     await useCampaignStore.getState().createNewCampaign({
       title: 'Stage 4a Test Campaign',
       system: 'Mothership 1e',
@@ -864,16 +864,17 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
     render(<App />);
 
-    // 1. LeftPanel split: left-panel-scroll and in-this-scene-dock are sibling flex: 1 scroll containers
+    // 1. LeftPanel has full-height left-panel-scroll while in-this-scene-dock lives inside Center Stage
     const leftPanel = screen.getByTestId('zone-left-panel');
     const topScroll = screen.getByTestId('left-panel-scroll');
-    const bottomDock = screen.getByTestId('in-this-scene-dock');
+    const sceneStage = screen.getByTestId('zone-scene-stage');
+    const inlineDock = screen.getByTestId('in-this-scene-dock');
 
     expect(leftPanel.contains(topScroll)).toBe(true);
-    expect(leftPanel.contains(bottomDock)).toBe(true);
-    expect(topScroll.contains(bottomDock)).toBe(false);
+    expect(leftPanel.contains(inlineDock)).toBe(false);
+    expect(sceneStage.contains(inlineDock)).toBe(true);
+    expect(screen.queryByTestId('left-split-handle')).not.toBeInTheDocument();
     expect(topScroll).toHaveStyle({ flex: '1', minHeight: '0', overflowY: 'auto' });
-    expect(bottomDock).toHaveStyle({ flex: '0 0 50%', minHeight: '0', overflowY: 'auto' });
 
     // 2. Scratchpad button and modal heading read "Override Scene / Add Note"
     const overrideBtn = screen.getByTestId('add-note-override-btn');
@@ -895,7 +896,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.click(screen.getByTestId('add-improvised-npc-btn'));
     fireEvent.click(screen.getByTestId('close-note-modal-btn'));
 
-    // 3. Inspect improvised NPC from left panel and step its HP track inside the Entity Inspector drawer
+    // 3. Inspect improvised NPC from Center Stage and step its HP track inside the Entity Inspector drawer
     const impNpc = useCampaignStore.getState().live?.improvisedEntities[0]!;
     fireEvent.click(screen.getByTestId(`inspect-entity-${impNpc.id}`));
     expect(screen.getByTestId('inspector-entity-name')).toHaveTextContent(
@@ -913,12 +914,12 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(
       screen.getByTestId(`inspector-track-val-${impNpc.id}-0-0`)
     ).toHaveTextContent('13 / 14');
-    // Left panel card updates in lockstep
+    // Inline NPC strip updates in lockstep
     expect(screen.getByTestId(`entity-track-val-${impNpc.id}-0-0`)).toHaveTextContent(
       '13 / 14'
     );
 
-    // 4. Walk to Scene 2 (where Chief Dana Okafor and Maintenance Drones are in scene) and inspect Okafor
+    // 4. Walk to Scene 2 (where Chief Dana Okafor is in scene) and inspect Okafor
     fireEvent.click(screen.getByTestId('scene-row-a1-s02'));
     fireEvent.click(screen.getByTestId('inspect-entity-e-okafor'));
     expect(screen.getByTestId('inspector-entity-name')).toHaveTextContent(
@@ -952,9 +953,9 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     );
   });
 
-  it('resizes the In This Scene lower-left panel when dragging its top edge handle', async () => {
+  it('renders inline NPC stat strips inside Center Stage and toggles collapsible roleplay details with Solo Mask protection', async () => {
     await useCampaignStore.getState().createNewCampaign({
-      title: 'Stage 4b Split Test',
+      title: 'Stage 6e Inline NPC Test',
       system: 'Mothership 1e',
       genre: 'sci-fi horror',
     });
@@ -962,29 +963,37 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
 
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByTestId('left-split-handle')).toBeInTheDocument();
+      expect(screen.getByTestId('scene-row-a1-s02')).toBeInTheDocument();
     });
 
-    const handle = screen.getByTestId('left-split-handle');
-    const dock = screen.getByTestId('in-this-scene-dock');
-    expect(handle).toHaveAttribute('aria-valuenow', '50');
-    expect(dock).toHaveStyle({ flex: '0 0 50%' });
+    // LeftPanel has no split handle; Center Stage contains in-this-scene-dock
+    expect(screen.queryByTestId('left-split-handle')).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId('zone-scene-stage').contains(screen.getByTestId('in-this-scene-dock'))
+    ).toBe(true);
 
-    // Drag up by 120px (fallback container height 600px => +20% => 70%)
-    fireEvent(handle, new MouseEvent('pointerdown', { bubbles: true, clientY: 300 }));
-    fireEvent(window, new MouseEvent('pointermove', { bubbles: true, clientY: 180 }));
-    fireEvent(window, new MouseEvent('pointerup', { bubbles: true, clientY: 180 }));
+    // Navigate to Scene 2 where Chief Dana Okafor is active
+    fireEvent.click(screen.getByTestId('scene-row-a1-s02'));
+    expect(screen.getByTestId('entity-inline-stats-e-okafor')).toHaveTextContent(
+      'Combat 25 · Instinct 35 · Wounds 2 · HP 12 · Revolver 3d10'
+    );
 
-    expect(handle).toHaveAttribute('aria-valuenow', '70');
-    expect(dock).toHaveStyle({ flex: '0 0 70%' });
+    const accordion = screen.getByTestId('entity-details-accordion-e-okafor');
+    const toggleBtn = screen.getByTestId('entity-details-toggle-e-okafor');
+    expect(accordion).toHaveAttribute('data-open', 'false');
 
-    // Drag far down to test clamping at 15%
-    fireEvent(handle, new MouseEvent('pointerdown', { bubbles: true, clientY: 180 }));
-    fireEvent(window, new MouseEvent('pointermove', { bubbles: true, clientY: 900 }));
-    fireEvent(window, new MouseEvent('pointerup', { bubbles: true, clientY: 900 }));
+    // Expand roleplay details
+    fireEvent.click(toggleBtn);
+    expect(accordion).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('entity-inline-secret-e-okafor')).toHaveTextContent(
+      'He let the Helix tech into the reactor and did not report it.'
+    );
 
-    expect(handle).toHaveAttribute('aria-valuenow', '15');
-    expect(dock).toHaveStyle({ flex: '0 0 15%' });
+    // Enable Solo Mask -> inline secret is masked
+    fireEvent.click(screen.getByTestId('solo-mask-toggle'));
+    expect(screen.getByTestId('entity-inline-secret-e-okafor')).toHaveTextContent(
+      'Hidden in Solo Mode.'
+    );
   });
 
   it('edits current and max track numbers in the right Entity Inspector drawer while keeping steppers', async () => {
@@ -1173,5 +1182,103 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.click(revealBtn);
     expect(revealBtn.textContent).toBe('Found ✓');
     expect(revealBtn.className).toContain('gm-flash-confirm');
+  });
+
+  it('toggles between Run Mode and Full Text and folds or expands Tier 2/3 item details', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 6e Run Mode Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-view-mode-toggle')).toBeInTheDocument();
+    });
+
+    // Starts in Run Mode with clear badge and folded unrevealed Tier 2/3 results
+    expect(screen.getByTestId('scene-mode-badge')).toHaveTextContent('Run Mode · 5s Scan');
+    expect(screen.queryByTestId('item-result-a1-s01-i1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('item-result-a1-s01-h1')).not.toBeInTheDocument();
+
+    // Tapping per-card Details toggle in Run Mode expands that card's result
+    fireEvent.click(screen.getByTestId('item-expand-btn-a1-s01-i1'));
+    expect(screen.getByTestId('item-result-a1-s01-i1')).toHaveTextContent(
+      'The panel accepts a manual override. The hab airlock opens.'
+    );
+
+    // Collapse it back in Run Mode
+    fireEvent.click(screen.getByTestId('item-expand-btn-a1-s01-i1'));
+    expect(screen.queryByTestId('item-result-a1-s01-i1')).not.toBeInTheDocument();
+
+    // Switch to Full Text -> all unmasked Tier 2 and Tier 3 results expand automatically
+    fireEvent.click(screen.getByTestId('scene-mode-full'));
+    expect(screen.getByTestId('scene-mode-badge')).toHaveTextContent('Full Text · Expanded');
+    expect(screen.getByTestId('item-result-a1-s01-i1')).toBeInTheDocument();
+    expect(screen.getByTestId('item-result-a1-s01-h1')).toHaveTextContent(
+      'Claw marks inside the vent. Something left this way.'
+    );
+  });
+
+  it('opens and closes inline keyword peek popovers for entities and truths with Solo Mask protection', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 6e Keyword Peek Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-row-a1-s02')).toBeInTheDocument();
+    });
+
+    // Navigate to Scene 2 where "Okafor" appears as an inline keyword in GM tip and Tier 2 result
+    fireEvent.click(screen.getByTestId('scene-row-a1-s02'));
+    const okaforLinks = screen.getAllByTestId('keyword-link-entity-e-okafor');
+    expect(okaforLinks.length).toBeGreaterThan(0);
+
+    fireEvent.click(okaforLinks[0]);
+    expect(screen.getByTestId('keyword-peek-popover')).toBeInTheDocument();
+    expect(screen.getByTestId('keyword-peek-title')).toHaveTextContent('Chief Dana Okafor');
+    expect(screen.getByTestId('keyword-peek-stat-line')).toHaveTextContent(
+      'Combat 25 · Instinct 35 · Wounds 2 · HP 12 · Revolver 3d10'
+    );
+    expect(screen.getByTestId('keyword-peek-secret')).toHaveTextContent(
+      'He let the Helix tech into the reactor and did not report it.'
+    );
+
+    // Enable Solo Mask -> entity secret inside popover is masked
+    fireEvent.click(screen.getByTestId('solo-mask-toggle'));
+    expect(screen.getByTestId('keyword-peek-secret')).toHaveTextContent(
+      'Hidden in Solo Mode.'
+    );
+
+    // Close entity popover via close button
+    fireEvent.click(screen.getByTestId('keyword-peek-close'));
+    expect(screen.queryByTestId('keyword-peek-popover')).not.toBeInTheDocument();
+
+    // Navigate to Scene 3 and tap the linked Truth pill on Backup log terminal (a1-s03-i1)
+    fireEvent.click(screen.getByTestId('exit-btn-a1-x02'));
+    fireEvent.click(screen.getByTestId('truth-link-a1-s03-i1'));
+    expect(screen.getByTestId('keyword-peek-popover')).toBeInTheDocument();
+    expect(screen.getByTestId('keyword-peek-title')).toHaveTextContent(
+      'Who caused the reactor failure?'
+    );
+    // In Solo Mode with 0 clues revealed, truth answer is masked
+    expect(screen.getByTestId('keyword-peek-truth-answer')).toHaveTextContent(
+      'Hidden in Solo Mode until a linked clue is revealed.'
+    );
+
+    // Close via backdrop click, reveal the clue, and reopen truth peek -> answer is now visible
+    fireEvent.click(screen.getByTestId('keyword-peek-backdrop'));
+    expect(screen.queryByTestId('keyword-peek-popover')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('reveal-btn-a1-s03-i1'));
+    fireEvent.click(screen.getByTestId('truth-link-a1-s03-i1'));
+    expect(screen.getByTestId('keyword-peek-truth-answer')).toHaveTextContent(
+      'A Helix technician turned off reactor cooling on purpose.'
+    );
   });
 });
