@@ -95,6 +95,23 @@ const DISPOSITION_COLORS: Record<
 
 /* ---------------- 1. Clocks ---------------- */
 
+function buildClockSlicePath(
+  cx: number,
+  cy: number,
+  r: number,
+  index: number,
+  total: number
+): string {
+  const startAngle = (index / total) * Math.PI * 2 - Math.PI / 2;
+  const endAngle = ((index + 1) / total) * Math.PI * 2 - Math.PI / 2;
+  const x1 = cx + r * Math.cos(startAngle);
+  const y1 = cy + r * Math.sin(startAngle);
+  const x2 = cx + r * Math.cos(endAngle);
+  const y2 = cy + r * Math.sin(endAngle);
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+  return `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`;
+}
+
 export interface ClocksSectionProps {
   clocks: ModuleClock[];
   clockValues: Record<string, number>;
@@ -126,12 +143,6 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
           const value = Math.max(0, Math.min(segments, clockValues[clock.id] ?? clock.start ?? 0));
           const isMasked = soloMask && clock.hidden;
           const isFull = !isMasked && value >= segments;
-          const deg = (value / segments) * 360;
-          const stepDeg = 360 / segments;
-
-          const ringBackground = isMasked
-            ? 'var(--line2)'
-            : `repeating-conic-gradient(from -1.5deg, var(--p2) 0deg 3deg, transparent 3deg ${stepDeg}deg), conic-gradient(var(--gold) 0deg ${deg}deg, var(--line2) ${deg}deg 360deg)`;
 
           return (
             <div
@@ -155,6 +166,7 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
                   }}
                   aria-label={`Advance ${clock.name} clock`}
                   style={{
+                    position: 'relative',
                     width: '84px',
                     height: '84px',
                     flexShrink: 0,
@@ -164,13 +176,50 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    background: ringBackground,
+                    background: 'transparent',
                     cursor: 'pointer',
                   }}
                 >
+                  <svg
+                    width="84"
+                    height="84"
+                    viewBox="0 0 84 84"
+                    aria-hidden="true"
+                    data-testid={`clock-svg-${clock.id}`}
+                    style={{ position: 'absolute', inset: 0 }}
+                  >
+                    {segments === 1 ? (
+                      <circle
+                        cx="42"
+                        cy="42"
+                        r="40"
+                        fill={!isMasked && value >= 1 ? 'var(--gold)' : 'var(--line2)'}
+                        stroke="var(--p2)"
+                        strokeWidth="2"
+                        style={{ transition: 'fill 250ms ease-out' }}
+                      />
+                    ) : (
+                      Array.from({ length: segments }, (_, i) => {
+                        const filled = !isMasked && i < value;
+                        return (
+                          <path
+                            key={i}
+                            d={buildClockSlicePath(42, 42, 40, i, segments)}
+                            fill={filled ? 'var(--gold)' : 'var(--line2)'}
+                            stroke="var(--p2)"
+                            strokeWidth="2"
+                            strokeLinejoin="round"
+                            style={{ transition: 'fill 250ms ease-out' }}
+                          />
+                        );
+                      })
+                    )}
+                  </svg>
                   <span
                     className="gm-tabular"
                     style={{
+                      position: 'relative',
+                      zIndex: 1,
                       width: '58px',
                       height: '58px',
                       borderRadius: '50%',
@@ -691,10 +740,55 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
   onAddSceneNote,
 }) => {
   const [latestByTable, setLatestByTable] = useState<
-    Record<string, { roll: number; text: string; entityId: string | null; noteAdded?: boolean }>
+    Record<
+      string,
+      {
+        roll: number;
+        displayRoll?: number;
+        settling?: boolean;
+        text: string;
+        entityId: string | null;
+        noteAdded?: boolean;
+      }
+    >
   >({});
   const [logOpen, setLogOpen] = useState(false);
   const { flashedIds, triggerFlash } = useFlashConfirm();
+  const rollTimersRef = React.useRef<
+    Record<string, { interval: ReturnType<typeof setInterval>; timeout: ReturnType<typeof setTimeout> }>
+  >({});
+
+  const clearTableTimers = React.useCallback((tableId: string) => {
+    const active = rollTimersRef.current[tableId];
+    if (active) {
+      clearInterval(active.interval);
+      clearTimeout(active.timeout);
+      delete rollTimersRef.current[tableId];
+    }
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      for (const tableId of Object.keys(rollTimersRef.current)) {
+        clearTableTimers(tableId);
+      }
+    };
+  }, [clearTableTimers]);
+
+  const settleNow = React.useCallback(
+    (tableId: string) => {
+      clearTableTimers(tableId);
+      setLatestByTable((prev) => {
+        const cur = prev[tableId];
+        if (!cur || !cur.settling) return prev;
+        return {
+          ...prev,
+          [tableId]: { ...cur, settling: false, displayRoll: cur.roll },
+        };
+      });
+    },
+    [clearTableTimers]
+  );
 
   const visibleLog = rollLog.slice(0, 10);
 
@@ -736,12 +830,14 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                     onClick={() => {
                       const res = rollOnTable(table.dice, table.entries);
                       if (!res) return;
+                      clearTableTimers(table.id);
                       const text = res.entry ? res.entry.text : `No matching entry for ${res.roll}`;
                       const entityId = res.entry?.entity_id ?? null;
-                      setLatestByTable((prev) => ({
-                        ...prev,
-                        [table.id]: { roll: res.roll, text, entityId },
-                      }));
+                      const reduceMotion =
+                        typeof window !== 'undefined' &&
+                        typeof window.matchMedia === 'function' &&
+                        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
                       onAppendRollLog({
                         tableId: table.id,
                         tableName: table.name,
@@ -749,6 +845,44 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                         text,
                         entityId,
                       });
+
+                      if (reduceMotion) {
+                        setLatestByTable((prev) => ({
+                          ...prev,
+                          [table.id]: { roll: res.roll, displayRoll: res.roll, settling: false, text, entityId },
+                        }));
+                        return;
+                      }
+
+                      const maxDisplay = Math.max(2, res.roll + 2);
+                      setLatestByTable((prev) => ({
+                        ...prev,
+                        [table.id]: {
+                          roll: res.roll,
+                          displayRoll: ((res.roll % maxDisplay) + 1),
+                          settling: true,
+                          text,
+                          entityId,
+                        },
+                      }));
+
+                      const interval = setInterval(() => {
+                        setLatestByTable((prev) => {
+                          const cur = prev[table.id];
+                          if (!cur || !cur.settling) return prev;
+                          const nextDisplay = ((cur.displayRoll ?? 1) % maxDisplay) + 1;
+                          return {
+                            ...prev,
+                            [table.id]: { ...cur, displayRoll: nextDisplay },
+                          };
+                        });
+                      }, 50);
+
+                      const timeout = setTimeout(() => {
+                        settleNow(table.id);
+                      }, 350);
+
+                      rollTimersRef.current[table.id] = { interval, timeout };
                     }}
                     style={{
                       height: '48px',
@@ -770,6 +904,10 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
               {rollable && latest && (
                 <div
                   data-testid={`random-table-result-${table.id}`}
+                  data-settling={latest.settling ? 'true' : 'false'}
+                  onClick={() => {
+                    if (latest.settling) settleNow(table.id);
+                  }}
                   style={{
                     background: 'var(--p3)',
                     border: '1px solid var(--line2)',
@@ -778,15 +916,20 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '6px',
+                    cursor: latest.settling ? 'pointer' : 'default',
                   }}
                 >
                   <div
                     className="gm-tabular"
                     style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: 'var(--gold)', fontWeight: 700 }}
                   >
-                    Rolled {latest.roll}
+                    {latest.settling
+                      ? `Rolling ${latest.displayRoll ?? latest.roll}… (tap to skip)`
+                      : `Rolled ${latest.roll}`}
                   </div>
-                  <div style={{ fontSize: '13px', color: 'var(--text)' }}>{latest.text}</div>
+                  {!latest.settling && (
+                    <>
+                      <div style={{ fontSize: '13px', color: 'var(--text)' }}>{latest.text}</div>
                   {currentSceneId && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                       <button
@@ -839,6 +982,8 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                         </button>
                       )}
                     </div>
+                  )}
+                    </>
                   )}
                 </div>
               )}

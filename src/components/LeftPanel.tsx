@@ -9,6 +9,7 @@ import { NodeMapCanvas } from './NodeMapCanvas';
 export interface LeftPanelProps {
   navView: NavViewMode;
   onSelectNavView: (view: NavViewMode) => void;
+  focusMode?: boolean;
   onOpenEntityInspector?: (entityId: string) => void;
   onExpandNodeMap?: () => void;
   onOpenAddModal?: (mode: AddModalMode, defaultArea?: string) => void;
@@ -31,9 +32,17 @@ function getUnloadedActHeading(actId: string): string {
 export const LeftPanel: React.FC<LeftPanelProps> = ({
   navView,
   onSelectNavView,
+  focusMode = false,
   onExpandNodeMap,
   onOpenAddModal,
 }) => {
+  const [overlayOpen, setOverlayOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!focusMode) {
+      setOverlayOpen(false);
+    }
+  }, [focusMode]);
   const {
     merged,
     live,
@@ -138,22 +147,49 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     flexShrink: 0,
   });
 
-  return (
-    <aside
-      ref={leftPanelRef}
-      data-testid="zone-left-panel"
-      style={{
-        width: '300px',
-        flexShrink: 0,
-        background: 'var(--panel)',
-        borderRight: '1px solid var(--line)',
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 0,
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-      }}
-    >
+  const panelContent = (
+    <>
+      {focusMode && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 12px 6px',
+            borderBottom: '1px solid var(--line)',
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: 'var(--mono)',
+              fontSize: '11px',
+              letterSpacing: '.1em',
+              color: 'var(--muted)',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+            }}
+          >
+            NAVIGATION
+          </span>
+          <button
+            type="button"
+            onClick={() => setOverlayOpen(false)}
+            style={{
+              height: '44px',
+              padding: '0 14px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'var(--p3)',
+              color: 'var(--text)',
+              fontSize: '13px',
+              fontWeight: 600,
+            }}
+          >
+            Close
+          </button>
+        </div>
+      )}
       <div
         data-testid="left-panel-tabs"
         style={{
@@ -552,6 +588,122 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         />
       )}
       </div>
+    </>
+  );
+
+  if (focusMode) {
+    return (
+      <>
+        <aside
+          data-testid="zone-left-rail"
+          style={{
+            width: '56px',
+            flexShrink: 0,
+            background: 'var(--panel)',
+            borderRight: '1px solid var(--line)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '10px 0',
+            gap: '8px',
+            boxSizing: 'border-box',
+          }}
+        >
+          {[
+            { view: 'list' as const, label: 'Open Scene List', icon: '☰' },
+            { view: 'nodes' as const, label: 'Open Node Map', icon: '◎' },
+          ].map((item) => {
+            const active = overlayOpen && navView === item.view;
+            return (
+              <button
+                key={item.view}
+                type="button"
+                aria-label={item.label}
+                aria-expanded={active}
+                onClick={() => {
+                  if (overlayOpen && navView === item.view) {
+                    setOverlayOpen(false);
+                  } else {
+                    onSelectNavView(item.view);
+                    setOverlayOpen(true);
+                  }
+                }}
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '10px',
+                  border: active ? '1px solid var(--accent)' : '1px solid var(--line)',
+                  background: active ? 'var(--accentBg)' : 'var(--p2)',
+                  color: active ? 'var(--accent)' : 'var(--text)',
+                  fontSize: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {item.icon}
+              </button>
+            );
+          })}
+        </aside>
+        {overlayOpen && (
+          <>
+            <div
+              data-testid="left-panel-backdrop"
+              aria-hidden="true"
+              onClick={() => setOverlayOpen(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.25)',
+                zIndex: 14,
+              }}
+            />
+            <aside
+              ref={leftPanelRef}
+              data-testid="zone-left-panel"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: '56px',
+                bottom: 0,
+                width: '300px',
+                background: 'var(--panel)',
+                borderRight: '1px solid var(--line2)',
+                boxShadow: '16px 0 40px rgba(0,0,0,.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+                overflow: 'hidden',
+                zIndex: 15,
+                boxSizing: 'border-box',
+              }}
+            >
+              {panelContent}
+            </aside>
+          </>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <aside
+      ref={leftPanelRef}
+      data-testid="zone-left-panel"
+      style={{
+        width: '300px',
+        flexShrink: 0,
+        background: 'var(--panel)',
+        borderRight: '1px solid var(--line)',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      }}
+    >
+      {panelContent}
     </aside>
   );
 };

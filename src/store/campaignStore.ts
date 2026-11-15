@@ -57,6 +57,7 @@ export interface CampaignStoreState {
   setSoloMask: (soloMask: boolean) => void;
   setNavView: (navView: NavViewMode) => void;
   setMapMode: (mapMode: MapDisplayMode) => void;
+  setFocusMode: (focusMode: boolean) => void;
   addTableNote: (targetId: string, text: string) => TableNote | null;
   updateTableNote: (noteId: string, text: string, targetId?: string) => void;
   deleteTableNote: (noteId: string) => void;
@@ -416,6 +417,16 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
         ui: {
           ...prev.ui,
           mapMode,
+        },
+      }));
+    },
+
+    setFocusMode: (focusMode: boolean) => {
+      commitLive((prev) => ({
+        ...prev,
+        ui: {
+          ...prev.ui,
+          focusMode,
         },
       }));
     },

@@ -46,9 +46,9 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     });
   });
 
-  it('defines all 35 color tokens and 3 font tokens for all 3 themes', () => {
+  it('defines all 35 color tokens and 3 font tokens for all 4 themes', () => {
     expect(TOKEN_KEYS).toHaveLength(38);
-    for (const themeKey of ['scifi', 'fantasy', 'fantasyDark'] as const) {
+    for (const themeKey of ['scifi', 'fantasy', 'fantasyDark', 'warmPaper'] as const) {
       const theme = THEMES[themeKey];
       for (const token of TOKEN_KEYS) {
         expect(theme[token]).toBeTruthy();
@@ -57,11 +57,13 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(THEMES.scifi.bg).toBe('#0D1117');
     expect(THEMES.fantasy.bg).toBe('#EFE6D4');
     expect(THEMES.fantasyDark.bg).toBe('#15120E');
+    expect(THEMES.warmPaper.bg).toBe('#F9F7F2');
   });
 
   it('renders the five layout zones and switches themes via RightPanel buttons when a campaign is open', () => {
     seedOpenCampaign();
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
 
     expect(screen.getByTestId('zone-topbar')).toBeInTheDocument();
     expect(screen.getByTestId('zone-left-panel')).toBeInTheDocument();
@@ -82,6 +84,13 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
 
     expect(fantasyDarkBtn).toHaveAttribute('aria-pressed', 'true');
     expect(document.documentElement.style.getPropertyValue('--bg')).toBe('#15120E');
+
+    const warmPaperBtn = screen.getByRole('button', { name: 'Warm Paper' });
+    fireEvent.click(warmPaperBtn);
+
+    expect(warmPaperBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(document.documentElement.dataset.theme).toBe('warmPaper');
+    expect(document.documentElement.style.getPropertyValue('--bg')).toBe('#F9F7F2');
   });
 
   it('collapses RightPanel to a 56px rail at 1180x820 and opens overlay on tap', () => {
@@ -363,6 +372,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
 
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
 
     // Starts at Scene 1: Docking Ring (physical_zone)
     expect(screen.getByTestId('scene-title')).toHaveTextContent('Docking Ring');
@@ -533,6 +543,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     });
 
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
 
     // 1. Left panel tabs are fixed outside the scrolling container
     const leftPanel = screen.getByTestId('zone-left-panel');
@@ -609,6 +620,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     });
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
 
     // Edge case 1: Open Add Note, type text, then clear all text before closing -> no note saved
     fireEvent.click(screen.getByTestId('add-note-override-btn'));
@@ -679,6 +691,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     });
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
 
     // 1. Multiline Table change note preserves line breaks (whiteSpace: pre-line)
     fireEvent.click(screen.getByTestId('add-note-override-btn'));
@@ -863,6 +876,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     });
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
 
     // 1. LeftPanel has full-height left-panel-scroll while in-this-scene-dock lives inside Center Stage
     const leftPanel = screen.getByTestId('zone-left-panel');
@@ -962,6 +976,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
 
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
     await waitFor(() => {
       expect(screen.getByTestId('scene-row-a1-s02')).toBeInTheDocument();
     });
@@ -1005,6 +1020,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
 
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
     await waitFor(() => {
       expect(screen.getByTestId('scene-row-a1-s02')).toBeInTheDocument();
     });
@@ -1059,6 +1075,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
 
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
     await waitFor(() => {
       expect(screen.getByTestId('scene-row-a1-s02')).toBeInTheDocument();
     });
@@ -1089,6 +1106,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
 
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
     await waitFor(() => {
       expect(screen.getByTestId('add-area-btn')).toBeInTheDocument();
     });
@@ -1230,6 +1248,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     await useCampaignStore.getState().importJsonChunk(sampleRawText);
 
     render(<App />);
+    fireEvent.click(screen.getByTestId('focus-mode-toggle'));
     await waitFor(() => {
       expect(screen.getByTestId('scene-row-a1-s02')).toBeInTheDocument();
     });
@@ -1279,6 +1298,53 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.click(screen.getByTestId('truth-link-a1-s03-i1'));
     expect(screen.getByTestId('keyword-peek-truth-answer')).toHaveTextContent(
       'A Helix technician turned off reactor cooling on purpose.'
+    );
+  });
+
+  it('defaults to Table Focus Mode single-spread view, opens rail overlays, and toggles back to 3-column mode', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 6f Focus Mode Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+
+    // Live default is Focus Mode ON -> rails visible, sidebars tucked
+    const focusToggle = screen.getByTestId('focus-mode-toggle');
+    expect(focusToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('zone-left-rail')).toBeInTheDocument();
+    expect(screen.getByTestId('zone-right-rail')).toBeInTheDocument();
+    expect(screen.queryByTestId('zone-left-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('zone-right-panel')).not.toBeInTheDocument();
+
+    // Tap left rail button -> LeftPanel opens as overlay; tap backdrop -> closes
+    fireEvent.click(screen.getByRole('button', { name: 'Open Scene List' }));
+    expect(screen.getByTestId('zone-left-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('left-panel-backdrop'));
+    expect(screen.queryByTestId('zone-left-panel')).not.toBeInTheDocument();
+
+    // Tap right rail button -> RightPanel opens as overlay; tap backdrop -> closes
+    fireEvent.click(screen.getByRole('button', { name: 'Open Clocks and Timeline' }));
+    expect(screen.getByTestId('zone-right-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('right-panel-backdrop'));
+    expect(screen.queryByTestId('zone-right-panel')).not.toBeInTheDocument();
+
+    // Toggle Focus Mode OFF -> both 300px sidebars restore and persist to live.ui.focusMode
+    fireEvent.click(focusToggle);
+    expect(focusToggle).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('zone-left-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('zone-right-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('zone-left-rail')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('zone-right-rail')).not.toBeInTheDocument();
+
+    await waitFor(
+      async () => {
+        const stored = await db.live.get(useCampaignStore.getState().activeCampaign!.id);
+        expect(stored?.ui.focusMode).toBe(false);
+      },
+      { timeout: 1500 }
     );
   });
 });

@@ -14,6 +14,7 @@ import {
 } from './RightPanelSections';
 
 export interface RightPanelProps {
+  focusMode?: boolean;
   onOpenNoteModal?: () => void;
   onOpenEntityInspector?: (entityId: string) => void;
 }
@@ -31,6 +32,7 @@ function formatLastBackup(lastBackupAt?: number | null): string {
 }
 
 export const RightPanel: React.FC<RightPanelProps> = ({
+  focusMode = false,
   onOpenNoteModal,
   onOpenEntityInspector,
 }) => {
@@ -88,13 +90,18 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     ? (live?.trackerValues?.[dayTracker.id] ?? dayTracker.start)
     : null;
 
+  const showRail = isCompact || focusMode;
+
+  useEffect(() => {
+    if (!showRail) {
+      setOverlayOpen(false);
+    }
+  }, [showRail]);
+
   useEffect(() => {
     const handleResize = () => {
       const compact = window.innerWidth < 1200;
       setIsCompact(compact);
-      if (!compact) {
-        setOverlayOpen(false);
-      }
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -112,7 +119,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
   const panelContent = (
     <>
-      {isCompact && (
+      {showRail && (
         <div
           style={{
             display: 'flex',
@@ -556,7 +563,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     </>
   );
 
-  if (isCompact) {
+  if (showRail) {
     return (
       <>
         <aside

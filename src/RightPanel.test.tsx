@@ -269,6 +269,12 @@ describe('RightPanel Phase 5 sections', () => {
     expect(useCampaignStore.getState().live?.rollLog.length).toBe(50);
     expect(screen.getByRole('button', { name: /Roll log \(10\)/i })).toBeTruthy();
 
+    // Tap settling result card to skip 350ms settle immediately
+    const resultCard = screen.getByTestId('random-table-result-rt-relay');
+    expect(resultCard.getAttribute('data-settling')).toBe('true');
+    fireEvent.click(resultCard);
+    expect(resultCard.getAttribute('data-settling')).toBe('false');
+
     // Any roll result (even without entity_id) has Add as scene note
     const addNoteBtn = within(relayCard).getByRole('button', { name: 'Add as scene note' });
     fireEvent.click(addNoteBtn);
@@ -352,5 +358,32 @@ describe('RightPanel Phase 5 sections', () => {
     fireEvent.click(soundToggle);
     expect(soundToggle.getAttribute('aria-pressed')).toBe('true');
     expect(soundToggle.textContent).toContain('On');
+  });
+
+  it('renders radial SVG clocks with segment wedge paths and supports 350ms instant-settle dice', () => {
+    vi.useFakeTimers();
+    try {
+      render(<RightPanel />);
+
+      const svg = screen.getByTestId('clock-svg-k-reactor');
+      expect(svg.tagName.toLowerCase()).toBe('svg');
+      const slices = svg.querySelectorAll('path');
+      expect(slices.length).toBe(6);
+
+      const relayCard = screen.getByTestId('random-table-rt-relay');
+      fireEvent.click(within(relayCard).getByRole('button', { name: 'Roll' }));
+      const resultCard = screen.getByTestId('random-table-result-rt-relay');
+      expect(resultCard.getAttribute('data-settling')).toBe('true');
+      expect(resultCard.textContent).toContain('Rolling');
+
+      act(() => {
+        vi.advanceTimersByTime(350);
+      });
+
+      expect(resultCard.getAttribute('data-settling')).toBe('false');
+      expect(resultCard.textContent).toContain('Rolled');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

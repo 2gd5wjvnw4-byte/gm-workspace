@@ -109,6 +109,7 @@ export interface LiveState {
     navView: NavViewMode;
     mapMode: MapDisplayMode;
     soloMask: boolean;
+    focusMode?: boolean;
   };
   updatedAt?: number;
 }
@@ -167,6 +168,7 @@ export function createDefaultLiveState(campaignId: string, theme: ThemeId = 'sci
       navView: 'list',
       mapMode: 'off',
       soloMask: false,
+      focusMode: true,
     },
     updatedAt: Date.now(),
   };

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ThemeId = 'scifi' | 'fantasy' | 'fantasyDark';
+export type ThemeId = 'scifi' | 'fantasy' | 'fantasyDark' | 'warmPaper';
 
 export interface ThemeTokens {
   label: string;
@@ -168,9 +168,50 @@ export const THEMES: Record<ThemeId, ThemeTokens> = {
     head: "'Cinzel', Georgia, serif",
     mono: "'Alegreya Sans', system-ui, sans-serif",
   },
+  warmPaper: {
+    label: 'Warm Paper',
+    bg: '#F9F7F2',
+    panel: '#FDFCF9',
+    p2: '#F3EFE6',
+    p3: '#E8E3D8',
+    line: '#DFDAD0',
+    line2: '#C5BEB2',
+    text: '#242320',
+    muted: '#5F5B53',
+    faint: '#8C867B',
+    accent: '#3D5A6C',
+    accentBg: '#E8EFF3',
+    onAccent: '#FFFFFF',
+    gold: '#7D5A18',
+    goldBg: '#F5EEDB',
+    goldLine: '#C9B486',
+    deltaBg: '#F5EAD0',
+    deltaText: '#4A3814',
+    red: '#9B3B3B',
+    redBg: '#F6E5E5',
+    redLine: '#D8B0B0',
+    escBg: '#F8EBEB',
+    teal: '#2D6652',
+    tealBg: '#E3EFEA',
+    tealLine: '#A3C6B8',
+    blue: '#2C5982',
+    violet: '#624C80',
+    violetBg: '#EDE8F4',
+    violetLine: '#C2B5D6',
+    readText: '#32302B',
+    mapBg: '#F4F1EA',
+    grid: '#E6E1D6',
+    edge: '#9E978B',
+    stripe: '#EFECE4',
+    tagBg: '#242320',
+    tagText: '#F9F7F2',
+    body: "'IBM Plex Sans', system-ui, sans-serif",
+    head: "'IBM Plex Sans', system-ui, sans-serif",
+    mono: "'IBM Plex Mono', ui-monospace, monospace",
+  },
 };
 
-export const THEME_ORDER: ThemeId[] = ['scifi', 'fantasy', 'fantasyDark'];
+export const THEME_ORDER: ThemeId[] = ['scifi', 'fantasy', 'fantasyDark', 'warmPaper'];
 
 export const TOKEN_KEYS: Array<Exclude<keyof ThemeTokens, 'label'>> = [
   'bg',

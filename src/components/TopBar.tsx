@@ -17,6 +17,8 @@ export interface TopBarProps {
   onSelectMapMode: (mode: MapDisplayMode) => void;
   soloMask: boolean;
   onToggleSoloMask: () => void;
+  focusMode?: boolean;
+  onToggleFocusMode?: () => void;
   onOpenPdf: () => void;
   onOpenEntityInspector?: (entityId: string) => void;
 }
@@ -55,6 +57,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onSelectMapMode,
   soloMask,
   onToggleSoloMask,
+  focusMode = true,
+  onToggleFocusMode,
   onOpenPdf,
   onOpenEntityInspector,
 }) => {
@@ -515,6 +519,44 @@ export const TopBar: React.FC<TopBarProps> = ({
         </svg>
         <span>{soloMask ? 'Solo' : 'GM'}</span>
       </button>
+
+      {/* 6b. Table Focus Mode toggle */}
+      {onToggleFocusMode && (
+        <button
+          type="button"
+          data-testid="focus-mode-toggle"
+          onClick={onToggleFocusMode}
+          aria-pressed={focusMode}
+          aria-label={focusMode ? 'Exit Focus Mode' : 'Enter Focus Mode'}
+          style={{
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '0 12px',
+            borderRadius: '10px',
+            fontSize: '13px',
+            fontWeight: 600,
+            border: focusMode ? '1px solid var(--accent)' : '1px solid var(--line)',
+            background: focusMode ? 'var(--accentBg)' : 'var(--p2)',
+            color: focusMode ? 'var(--accent)' : 'var(--text)',
+          }}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16M15 4v16" opacity={focusMode ? 0.3 : 1} />
+          </svg>
+          <span>Focus</span>
+        </button>
+      )}
 
       {/* 7. PDF button */}
       <button

@@ -33,6 +33,7 @@ export const App: React.FC = () => {
     setNavView,
     setMapMode,
     setSoloMask,
+    setFocusMode,
     goToScene,
     setNodePosition,
     resetNodePositions,
@@ -55,6 +56,7 @@ export const App: React.FC = () => {
   const navView = live?.ui?.navView ?? 'list';
   const mapMode = live?.ui?.mapMode ?? 'off';
   const soloMask = Boolean(live?.ui?.soloMask);
+  const focusMode = live?.ui?.focusMode ?? true;
 
   const standalone = isRunningStandalone();
   const [showStandaloneBanner, setShowStandaloneBanner] = useState<boolean>(
@@ -117,6 +119,8 @@ export const App: React.FC = () => {
             onSelectMapMode={setMapMode}
             soloMask={soloMask}
             onToggleSoloMask={() => setSoloMask(!soloMask)}
+            focusMode={focusMode}
+            onToggleFocusMode={() => setFocusMode(!focusMode)}
             onOpenPdf={() => setDrawer((d) => (d === 'pdf' ? null : 'pdf'))}
             onOpenEntityInspector={(entityId) => {
               setInspectedEntityId(entityId);
@@ -128,6 +132,7 @@ export const App: React.FC = () => {
             <LeftPanel
               navView={navView}
               onSelectNavView={setNavView}
+              focusMode={focusMode}
               onOpenEntityInspector={(entityId) => {
                 setInspectedEntityId(entityId);
                 setDrawer((d) =>
@@ -194,6 +199,7 @@ export const App: React.FC = () => {
             </div>
 
             <RightPanel
+              focusMode={focusMode}
               onOpenNoteModal={() => {
                 setEditingNote(null);
                 setNoteModalOpen(true);
