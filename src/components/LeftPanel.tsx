@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import type { NavViewMode } from '../storage/types';
 import { getEffectiveConnections, getEffectiveScenes, makeAreaKey } from '../lib/improvised';
 import { computeReachableSceneIds, getSceneVisibility } from '../lib/solo';
@@ -688,9 +689,10 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         />
       )}
       </div>
-      {confirmDelete && (
-        <div
-          data-testid="confirm-delete-left-modal"
+      {confirmDelete &&
+        createPortal(
+          <div
+            data-testid="confirm-delete-left-modal"
           onClick={() => setConfirmDelete(null)}
           style={{
             position: 'fixed',
@@ -772,8 +774,9 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
     </>
   );
 

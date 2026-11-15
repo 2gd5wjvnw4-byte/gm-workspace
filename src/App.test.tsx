@@ -1383,7 +1383,25 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     const areaDeleteBtn = await screen.findByTestId('delete-area-a1:temp sector');
     fireEvent.click(areaDeleteBtn);
     expect(screen.getByTestId('confirm-delete-left-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('confirm-delete-left-modal').parentElement).toBe(document.body);
     fireEvent.click(screen.getByTestId('confirm-delete-left-btn'));
     expect(screen.queryByTestId('delete-area-a1:temp sector')).not.toBeInTheDocument();
+  });
+
+  it('portals AddRightItemModal to document.body when opened from Focus Mode RightPanel', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Focus Portal Campaign',
+      system: 'Mothership 1e',
+      genre: 'sci-fi',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Clocks and Timeline' }));
+    fireEvent.click(screen.getByTestId('add-clock-btn'));
+    const modalBackdrop = screen.getByTestId('add-right-item-backdrop');
+    expect(modalBackdrop).toBeInTheDocument();
+    expect(modalBackdrop.parentElement).toBe(document.body);
   });
 });

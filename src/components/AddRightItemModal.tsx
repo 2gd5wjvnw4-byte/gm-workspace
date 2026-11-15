@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { FactionAttitude, ModuleTruth } from '../lib/import/types';
 
 export type AddRightItemMode = 'clock' | 'clue' | 'faction';
@@ -164,7 +165,7 @@ export const AddRightItemModal: React.FC<AddRightItemModalProps> = ({
         ? Boolean(clueText.trim())
         : Boolean(factionName.trim());
 
-  return (
+  return createPortal(
     <div
       data-testid="add-right-item-backdrop"
       onClick={onClose}
@@ -230,7 +231,6 @@ export const AddRightItemModal: React.FC<AddRightItemModalProps> = ({
                 id="clock-name-input"
                 data-testid="clock-name-input"
                 type="text"
-                autoFocus
                 placeholder="e.g. Patrol Alert"
                 value={clockName}
                 onChange={(e) => setClockName(e.target.value)}
@@ -348,7 +348,6 @@ export const AddRightItemModal: React.FC<AddRightItemModalProps> = ({
                 id="clue-text-input"
                 data-testid="clue-text-input"
                 type="text"
-                autoFocus
                 placeholder="What did the players discover?"
                 value={clueText}
                 onChange={(e) => setClueText(e.target.value)}
@@ -381,7 +380,6 @@ export const AddRightItemModal: React.FC<AddRightItemModalProps> = ({
                 id="faction-name-input"
                 data-testid="faction-name-input"
                 type="text"
-                autoFocus
                 placeholder="e.g. Dockworkers Guild"
                 value={factionName}
                 onChange={(e) => setFactionName(e.target.value)}
@@ -487,6 +485,7 @@ export const AddRightItemModal: React.FC<AddRightItemModalProps> = ({
           </button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body
   );
 };
