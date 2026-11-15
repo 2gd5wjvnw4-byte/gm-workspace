@@ -131,6 +131,7 @@ export interface LiveState {
     mapMode: MapDisplayMode;
     soloMask: boolean;
     focusMode?: boolean;
+    rightSectionsOpen?: Record<string, boolean>;
   };
   updatedAt?: number;
 }
@@ -196,6 +197,7 @@ export function createDefaultLiveState(campaignId: string, theme: ThemeId = 'sci
       mapMode: 'off',
       soloMask: false,
       focusMode: true,
+      rightSectionsOpen: {},
     },
     updatedAt: Date.now(),
   };

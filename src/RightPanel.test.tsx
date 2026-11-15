@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { RightPanel } from './components/RightPanel';
 import { useCampaignStore } from './store/campaignStore';
-import { createDefaultLiveState } from './storage/types';
+import { createDefaultLiveState, db } from './storage';
 import { mergeRawChunkObjects } from './lib/import';
 import sampleJson from '../samples/silent-relay-a1.json';
 
@@ -442,5 +442,68 @@ describe('RightPanel Phase 5 sections', () => {
     expect(factionSection.textContent).toContain('Void Salvagers');
     fireEvent.click(within(factionSection).getByRole('button', { name: 'suspicious' }));
     expect(factionSection.textContent).toContain('hostile');
+  });
+
+  it('persists right-panel section open/closed state to live.ui.rightSectionsOpen across reload', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Section State Campaign',
+      system: 'Mothership 1e',
+      genre: 'sci-fi',
+    });
+    await useCampaignStore.getState().importJsonChunk(JSON.stringify(sampleJson));
+    const campaignId = useCampaignStore.getState().activeCampaign!.id;
+
+    const { unmount } = render(<RightPanel />);
+
+    const timelineToggle = within(screen.getByTestId('section-timeline')).getByRole('button', {
+      name: /TIMELINE/i,
+    });
+    const themeToggle = within(screen.getByTestId('section-theme')).getByRole('button', {
+      name: /THEME/i,
+    });
+    const clocksToggle = within(screen.getByTestId('section-clocks')).getByRole('button', {
+      name: /CLOCKS/i,
+    });
+
+    expect(timelineToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(themeToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(clocksToggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(timelineToggle);
+    fireEvent.click(themeToggle);
+
+    expect(timelineToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(themeToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(useCampaignStore.getState().live?.ui.rightSectionsOpen).toEqual({
+      timeline: false,
+      theme: false,
+    });
+
+    await waitFor(
+      async () => {
+        const stored = await db.live.get(campaignId);
+        expect(stored?.ui.rightSectionsOpen).toEqual({
+          timeline: false,
+          theme: false,
+        });
+      },
+      { timeout: 1500 }
+    );
+
+    unmount();
+    useCampaignStore.getState().closeCampaign();
+    await useCampaignStore.getState().openCampaign(campaignId);
+
+    render(<RightPanel />);
+
+    expect(
+      within(screen.getByTestId('section-timeline')).getByRole('button', { name: /TIMELINE/i })
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      within(screen.getByTestId('section-theme')).getByRole('button', { name: /THEME/i })
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      within(screen.getByTestId('section-clocks')).getByRole('button', { name: /CLOCKS/i })
+    ).toHaveAttribute('aria-expanded', 'true');
   });
 });

@@ -67,6 +67,7 @@ export interface CampaignStoreState {
   setNavView: (navView: NavViewMode) => void;
   setMapMode: (mapMode: MapDisplayMode) => void;
   setFocusMode: (focusMode: boolean) => void;
+  setRightSectionOpen: (sectionKey: string, open: boolean) => void;
   addTableNote: (targetId: string, text: string) => TableNote | null;
   updateTableNote: (noteId: string, text: string, targetId?: string) => void;
   deleteTableNote: (noteId: string) => void;
@@ -459,6 +460,19 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
         ui: {
           ...prev.ui,
           focusMode,
+        },
+      }));
+    },
+
+    setRightSectionOpen: (sectionKey: string, open: boolean) => {
+      commitLive((prev) => ({
+        ...prev,
+        ui: {
+          ...prev.ui,
+          rightSectionsOpen: {
+            ...(prev.ui.rightSectionsOpen ?? {}),
+            [sectionKey]: open,
+          },
         },
       }));
     },

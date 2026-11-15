@@ -60,7 +60,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     addImprovisedClock,
     addImprovisedClue,
     addImprovisedFaction,
+    setRightSectionOpen,
   } = useCampaignStore();
+  const isSectionOpen = (key: string) => live?.ui.rightSectionsOpen?.[key] ?? true;
   const looseNotes = live?.looseNotes ?? [];
   const [looseNotesOpen, setLooseNotesOpen] = useState(false);
   const [newLooseNoteText, setNewLooseNoteText] = useState('');
@@ -181,6 +183,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         clockValues={live?.clockValues ?? {}}
         currentActId={currentActId}
         soloMask={soloMask}
+        open={isSectionOpen('clocks')}
+        onToggleOpen={(open) => setRightSectionOpen('clocks', open)}
         onAdjustClock={adjustClockValue}
         onOpenAddClock={() => setAddItemModal({ open: true, mode: 'clock' })}
       />
@@ -193,6 +197,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         currentDayValue={currentDayValue}
         soloMask={soloMask}
         sceneTitleById={sceneTitleById}
+        open={isSectionOpen('timeline')}
+        onToggleOpen={(open) => setRightSectionOpen('timeline', open)}
         onToggleDone={toggleTimelineDone}
         onToggleReveal={(id) => toggleRevealedItem(id)}
         onJumpToScene={goToScene}
@@ -206,6 +212,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         improvisedClues={live?.improvisedClues ?? []}
         revealed={live?.revealed ?? {}}
         soloMask={soloMask}
+        open={isSectionOpen('clue-matrix')}
+        onToggleOpen={(open) => setRightSectionOpen('clue-matrix', open)}
         onJumpToScene={goToScene}
         onOpenEntityInspector={onOpenEntityInspector}
         onToggleClueRevealed={(id) => toggleRevealedItem(id)}
@@ -217,6 +225,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         factions={effectiveFactions}
         factionAttitude={live?.factionAttitude ?? {}}
         soloMask={soloMask}
+        open={isSectionOpen('factions')}
+        onToggleOpen={(open) => setRightSectionOpen('factions', open)}
         onCycleAttitude={cycleFactionAttitude}
         onOpenAddFaction={() => setAddItemModal({ open: true, mode: 'faction' })}
       />
@@ -226,13 +236,20 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         tables={merged.random_tables}
         rollLog={live?.rollLog ?? []}
         currentSceneId={currentSceneId}
+        open={isSectionOpen('random-tables')}
+        onToggleOpen={(open) => setRightSectionOpen('random-tables', open)}
         onAppendRollLog={appendRollLog}
         onSummonEntity={summonEntityToScene}
         onAddSceneNote={(sceneId, text) => addTableNote(sceneId, text)}
       />
 
       {/* 6. Scratchpad */}
-      <CollapsibleSection title="SCRATCHPAD" testId="section-scratchpad">
+      <CollapsibleSection
+        title="SCRATCHPAD"
+        testId="section-scratchpad"
+        open={isSectionOpen('scratchpad')}
+        onToggleOpen={(open) => setRightSectionOpen('scratchpad', open)}
+      >
         <button
           type="button"
           data-testid="add-note-override-btn"
@@ -407,7 +424,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       </CollapsibleSection>
 
       {/* 7. Theme */}
-      <CollapsibleSection title="THEME" testId="section-theme">
+      <CollapsibleSection
+        title="THEME"
+        testId="section-theme"
+        open={isSectionOpen('theme')}
+        onToggleOpen={(open) => setRightSectionOpen('theme', open)}
+      >
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
           role="group"

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { App } from './App';
 import { THEMES, TOKEN_KEYS, useThemeStore } from './store/themeStore';
 import { useCampaignStore } from './store/campaignStore';
@@ -1403,5 +1403,52 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     const modalBackdrop = screen.getByTestId('add-right-item-backdrop');
     expect(modalBackdrop).toBeInTheDocument();
     expect(modalBackdrop.parentElement).toBe(document.body);
+  });
+
+  it('keeps right-panel sections collapsed across Focus Mode overlay close/reopen and persists to db', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Overlay Section State Campaign',
+      system: 'Mothership 1e',
+      genre: 'sci-fi',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    const campaignId = useCampaignStore.getState().activeCampaign!.id;
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Clocks and Timeline' }));
+    const timelineBtn = within(screen.getByTestId('section-timeline')).getByRole('button', {
+      name: /TIMELINE/i,
+    });
+    const factionsBtn = within(screen.getByTestId('section-factions')).getByRole('button', {
+      name: /FACTIONS/i,
+    });
+    fireEvent.click(timelineBtn);
+    fireEvent.click(factionsBtn);
+    expect(timelineBtn).toHaveAttribute('aria-expanded', 'false');
+    expect(factionsBtn).toHaveAttribute('aria-expanded', 'false');
+
+    // Close overlay and reopen it
+    fireEvent.click(screen.getByTestId('right-panel-backdrop'));
+    expect(screen.queryByTestId('zone-right-panel')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Clocks and Timeline' }));
+    expect(
+      within(screen.getByTestId('section-timeline')).getByRole('button', { name: /TIMELINE/i })
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      within(screen.getByTestId('section-factions')).getByRole('button', { name: /FACTIONS/i })
+    ).toHaveAttribute('aria-expanded', 'false');
+
+    await waitFor(
+      async () => {
+        const stored = await db.live.get(campaignId);
+        expect(stored?.ui.rightSectionsOpen).toEqual({
+          timeline: false,
+          factions: false,
+        });
+      },
+      { timeout: 1500 }
+    );
   });
 });

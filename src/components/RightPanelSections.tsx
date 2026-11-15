@@ -28,6 +28,8 @@ const minimalAddButtonStyle: React.CSSProperties = {
 export interface CollapsibleSectionProps {
   title: string;
   testId?: string;
+  open?: boolean;
+  onToggleOpen?: (nextOpen: boolean) => void;
   headerAction?: React.ReactNode;
   children: React.ReactNode;
 }
@@ -35,10 +37,22 @@ export interface CollapsibleSectionProps {
 export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   title,
   testId,
+  open: controlledOpen,
+  onToggleOpen,
   headerAction,
   children,
 }) => {
-  const [open, setOpen] = useState(true);
+  const [localOpen, setLocalOpen] = useState(true);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : localOpen;
+
+  const handleToggle = () => {
+    const next = !open;
+    if (!isControlled) {
+      setLocalOpen(next);
+    }
+    onToggleOpen?.(next);
+  };
 
   return (
     <section
@@ -55,7 +69,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
       >
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={handleToggle}
           aria-expanded={open}
           style={{
             display: 'flex',
@@ -142,6 +156,8 @@ export interface ClocksSectionProps {
   clockValues: Record<string, number>;
   currentActId: string | null;
   soloMask: boolean;
+  open?: boolean;
+  onToggleOpen?: (nextOpen: boolean) => void;
   onAdjustClock: (clockId: string, delta: number, start: number, maxSegments: number) => void;
   onOpenAddClock?: () => void;
 }
@@ -151,6 +167,8 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
   clockValues,
   currentActId,
   soloMask,
+  open,
+  onToggleOpen,
   onAdjustClock,
   onOpenAddClock,
 }) => {
@@ -164,6 +182,8 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
     <CollapsibleSection
       title="CLOCKS"
       testId="section-clocks"
+      open={open}
+      onToggleOpen={onToggleOpen}
       headerAction={
         onOpenAddClock ? (
           <button
@@ -348,6 +368,8 @@ export interface TimelineSectionProps {
   currentDayValue: number | null;
   soloMask: boolean;
   sceneTitleById: Map<string, string>;
+  open?: boolean;
+  onToggleOpen?: (nextOpen: boolean) => void;
   onToggleDone: (eventId: string) => void;
   onToggleReveal: (eventId: string) => void;
   onJumpToScene: (sceneId: string) => void;
@@ -360,6 +382,8 @@ export const TimelineSection: React.FC<TimelineSectionProps> = ({
   currentDayValue,
   soloMask,
   sceneTitleById,
+  open,
+  onToggleOpen,
   onToggleDone,
   onToggleReveal,
   onJumpToScene,
@@ -367,7 +391,12 @@ export const TimelineSection: React.FC<TimelineSectionProps> = ({
   const sorted = [...timeline].sort((a, b) => a.order - b.order);
 
   return (
-    <CollapsibleSection title="TIMELINE" testId="section-timeline">
+    <CollapsibleSection
+      title="TIMELINE"
+      testId="section-timeline"
+      open={open}
+      onToggleOpen={onToggleOpen}
+    >
       {sorted.length === 0 ? (
         <div style={emptyStateStyle}>Nothing on the timeline yet.</div>
       ) : (
@@ -494,6 +523,8 @@ export interface ClueMatrixSectionProps {
   improvisedClues?: ImprovisedClueRecord[];
   revealed: Record<string, boolean>;
   soloMask: boolean;
+  open?: boolean;
+  onToggleOpen?: (nextOpen: boolean) => void;
   onJumpToScene: (sceneId: string) => void;
   onOpenEntityInspector?: (entityId: string) => void;
   onToggleClueRevealed?: (clueId: string) => void;
@@ -507,6 +538,8 @@ export const ClueMatrixSection: React.FC<ClueMatrixSectionProps> = ({
   improvisedClues = [],
   revealed,
   soloMask,
+  open,
+  onToggleOpen,
   onJumpToScene,
   onOpenEntityInspector,
   onToggleClueRevealed,
@@ -559,6 +592,8 @@ export const ClueMatrixSection: React.FC<ClueMatrixSectionProps> = ({
     <CollapsibleSection
       title="CLUE MATRIX"
       testId="section-clue-matrix"
+      open={open}
+      onToggleOpen={onToggleOpen}
       headerAction={
         onOpenAddClue ? (
           <button
@@ -717,6 +752,8 @@ export interface FactionsSectionProps {
   factions: ModuleFaction[];
   factionAttitude: Record<string, DispositionState>;
   soloMask: boolean;
+  open?: boolean;
+  onToggleOpen?: (nextOpen: boolean) => void;
   onCycleAttitude: (factionId: string, defaultAttitude: DispositionState) => void;
   onOpenAddFaction?: () => void;
 }
@@ -725,6 +762,8 @@ export const FactionsSection: React.FC<FactionsSectionProps> = ({
   factions,
   factionAttitude,
   soloMask,
+  open,
+  onToggleOpen,
   onCycleAttitude,
   onOpenAddFaction,
 }) => {
@@ -732,6 +771,8 @@ export const FactionsSection: React.FC<FactionsSectionProps> = ({
     <CollapsibleSection
       title="FACTIONS"
       testId="section-factions"
+      open={open}
+      onToggleOpen={onToggleOpen}
       headerAction={
         onOpenAddFaction ? (
           <button
@@ -819,6 +860,8 @@ export interface RandomTablesSectionProps {
   tables: ModuleRandomTable[];
   rollLog: RollLogEntry[];
   currentSceneId: string | null;
+  open?: boolean;
+  onToggleOpen?: (nextOpen: boolean) => void;
   onAppendRollLog: (entry: Omit<RollLogEntry, 'id' | 'createdAt'>) => RollLogEntry;
   onSummonEntity: (sceneId: string, entityId: string) => void;
   onAddSceneNote: (sceneId: string, text: string) => void;
@@ -828,6 +871,8 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
   tables,
   rollLog,
   currentSceneId,
+  open,
+  onToggleOpen,
   onAppendRollLog,
   onSummonEntity,
   onAddSceneNote,
@@ -886,7 +931,12 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
   const visibleLog = rollLog.slice(0, 10);
 
   return (
-    <CollapsibleSection title="RANDOM TABLES" testId="section-random-tables">
+    <CollapsibleSection
+      title="RANDOM TABLES"
+      testId="section-random-tables"
+      open={open}
+      onToggleOpen={onToggleOpen}
+    >
       {tables.length === 0 ? (
         <div style={emptyStateStyle}>No random tables loaded.</div>
       ) : (
