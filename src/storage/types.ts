@@ -1,10 +1,25 @@
 import type { ThemeId } from '../store/themeStore';
-import type { ModuleConnection, ModuleScene } from '../lib/import/types';
+import type {
+  ModuleClock,
+  ModuleConnection,
+  ModuleFaction,
+  ModuleScene,
+  ModuleTruth,
+} from '../lib/import/types';
 
 export interface ImprovisedAreaRecord {
   id: string;
   actId: string;
   name: string;
+  createdAt: number;
+}
+
+export interface ImprovisedClueRecord {
+  id: string;
+  truthId: string;
+  text: string;
+  sourceLabel?: string;
+  sceneId?: string | null;
   createdAt: number;
 }
 
@@ -97,6 +112,12 @@ export interface LiveState {
   improvisedAreas?: ImprovisedAreaRecord[];
   improvisedScenes?: ModuleScene[];
   improvisedConnections?: ModuleConnection[];
+  improvisedClocks?: ModuleClock[];
+  improvisedTruths?: ModuleTruth[];
+  improvisedClues?: ImprovisedClueRecord[];
+  improvisedFactions?: ModuleFaction[];
+  deletedSceneIds?: string[];
+  deletedAreaKeys?: string[];
   notes: TableNote[];
   looseNotes: TableNote[];
   nodePositions: Record<string, { x: number; y: number }>;
@@ -156,6 +177,12 @@ export function createDefaultLiveState(campaignId: string, theme: ThemeId = 'sci
     improvisedAreas: [],
     improvisedScenes: [],
     improvisedConnections: [],
+    improvisedClocks: [],
+    improvisedTruths: [],
+    improvisedClues: [],
+    improvisedFactions: [],
+    deletedSceneIds: [],
+    deletedAreaKeys: [],
     notes: [],
     looseNotes: [],
     nodePositions: {},

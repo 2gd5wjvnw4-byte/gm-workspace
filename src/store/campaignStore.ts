@@ -12,6 +12,7 @@ import {
   type ConnectionOverrideState,
   type DispositionState,
   type ImprovisedAreaRecord,
+  type ImprovisedClueRecord,
   type ImprovisedEntityRecord,
   type LiveState,
   type LoadedCampaign,
@@ -22,12 +23,20 @@ import {
 } from '../storage';
 import {
   mergeRawChunkObjects,
+  type FactionAttitude,
   type MergedCampaignData,
+  type ModuleClock,
   type ModuleConnection,
+  type ModuleFaction,
   type ModuleScene,
+  type ModuleTruth,
   type SceneArchetype,
 } from '../lib/import';
-import { getEffectiveScenes, nextImprovisedSceneCode } from '../lib/improvised';
+import {
+  getEffectiveScenes,
+  makeAreaKey,
+  nextImprovisedSceneCode,
+} from '../lib/improvised';
 import { useThemeStore } from './themeStore';
 
 export interface CampaignStoreState {
@@ -125,6 +134,29 @@ export interface CampaignStoreState {
     nodePosition?: { x: number; y: number } | null;
     selectScene?: boolean;
   }) => { scene: ModuleScene; connection: ModuleConnection | null } | null;
+  addImprovisedClock: (input: {
+    name: string;
+    segments: number;
+    whenFull?: string;
+    scope?: string;
+  }) => ModuleClock | null;
+  addImprovisedClue: (input: {
+    text: string;
+    truthId?: string;
+    newTruthTitle?: string;
+    newTruthAnswer?: string;
+    sceneId?: string | null;
+    sourceLabel?: string;
+  }) => { clue: ImprovisedClueRecord; truth: ModuleTruth | null } | null;
+  addImprovisedFaction: (input: {
+    name: string;
+    goal?: string;
+    summary?: string;
+    attitude?: FactionAttitude;
+    secret?: string | null;
+  }) => ModuleFaction | null;
+  deleteScene: (sceneId: string) => void;
+  deleteArea: (actId: string, areaName: string) => void;
 }
 
 const emptyMerged = (): MergedCampaignData => mergeRawChunkObjects([]);
@@ -948,6 +980,159 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
       }));
 
       return { scene: newScene, connection: newConnection };
+    },
+
+    addImprovisedClock: (input) => {
+      const name = input.name.trim();
+      if (!name) return null;
+      const state = get();
+      if (!state.live) return null;
+      const segments = Math.max(2, Math.min(12, Math.round(input.segments || 4)));
+      const clock: ModuleClock = {
+        id: `imp-clock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        segments,
+        start: 0,
+        when_full: input.whenFull?.trim() ?? '',
+        hidden: false,
+        scope: input.scope?.trim() || 'global',
+      };
+      commitLive((prev) => ({
+        ...prev,
+        improvisedClocks: [...(prev.improvisedClocks ?? []), clock],
+      }));
+      return clock;
+    },
+
+    addImprovisedClue: (input) => {
+      const text = input.text.trim();
+      if (!text) return null;
+      const state = get();
+      if (!state.live) return null;
+
+      let truthId = input.truthId?.trim() ?? '';
+      let createdTruth: ModuleTruth | null = null;
+      if (!truthId) {
+        const truthTitle = input.newTruthTitle?.trim() || 'Improvised Mystery';
+        truthId = `imp-truth-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        createdTruth = {
+          id: truthId,
+          title: truthTitle,
+          text: input.newTruthAnswer?.trim() || '',
+          importance: 'optional',
+          scope: 'global',
+          page: 0,
+        };
+      }
+
+      const clue: ImprovisedClueRecord = {
+        id: `imp-clue-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        truthId,
+        text,
+        sourceLabel: input.sourceLabel?.trim() || undefined,
+        sceneId: input.sceneId ?? null,
+        createdAt: Date.now(),
+      };
+
+      commitLive((prev) => ({
+        ...prev,
+        improvisedTruths: createdTruth
+          ? [...(prev.improvisedTruths ?? []), createdTruth]
+          : prev.improvisedTruths,
+        improvisedClues: [...(prev.improvisedClues ?? []), clue],
+      }));
+      return { clue, truth: createdTruth };
+    },
+
+    addImprovisedFaction: (input) => {
+      const name = input.name.trim();
+      if (!name) return null;
+      const state = get();
+      if (!state.live) return null;
+      const faction: ModuleFaction = {
+        id: `imp-faction-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        summary: input.summary?.trim() ?? '',
+        goal: input.goal?.trim() ?? '',
+        attitude: input.attitude ?? 'neutral',
+        secret: input.secret?.trim() || null,
+        scope: 'global',
+        page: 0,
+      };
+      commitLive((prev) => ({
+        ...prev,
+        improvisedFactions: [...(prev.improvisedFactions ?? []), faction],
+      }));
+      return faction;
+    },
+
+    deleteScene: (sceneId) => {
+      const state = get();
+      if (!state.live) return;
+      const isBaseScene = state.merged.scenes.some((s) => s.id === sceneId);
+      const remaining = getEffectiveScenes(state.merged.scenes, state.live).filter(
+        (s) => s.id !== sceneId
+      );
+      commitLive((prev) => {
+        const orphaned = prev.notes.filter((n) => n.targetId === sceneId);
+        const keptNotes = prev.notes.filter((n) => n.targetId !== sceneId);
+        const deletedIds = isBaseScene
+          ? Array.from(new Set([...(prev.deletedSceneIds ?? []), sceneId]))
+          : (prev.deletedSceneIds ?? []);
+        const nextCurrent =
+          prev.currentSceneId === sceneId
+            ? (remaining[0]?.id ?? null)
+            : prev.currentSceneId;
+        return {
+          ...prev,
+          improvisedScenes: (prev.improvisedScenes ?? []).filter((s) => s.id !== sceneId),
+          improvisedConnections: (prev.improvisedConnections ?? []).filter(
+            (c) => c.from !== sceneId && c.to !== sceneId
+          ),
+          deletedSceneIds: deletedIds,
+          notes: keptNotes,
+          looseNotes: orphaned.length > 0 ? [...prev.looseNotes, ...orphaned] : prev.looseNotes,
+          currentSceneId: nextCurrent,
+        };
+      });
+    },
+
+    deleteArea: (actId, areaName) => {
+      const state = get();
+      if (!state.live) return;
+      const areaKey = makeAreaKey(actId, areaName);
+      const effectiveBefore = getEffectiveScenes(state.merged.scenes, state.live);
+      const affectedSceneIds = new Set(
+        effectiveBefore
+          .filter((s) => makeAreaKey(s.act_id, s.group) === areaKey)
+          .map((s) => s.id)
+      );
+      const remaining = effectiveBefore.filter((s) => !affectedSceneIds.has(s.id));
+
+      commitLive((prev) => {
+        const orphaned = prev.notes.filter((n) => affectedSceneIds.has(n.targetId));
+        const keptNotes = prev.notes.filter((n) => !affectedSceneIds.has(n.targetId));
+        const nextCurrent =
+          prev.currentSceneId && affectedSceneIds.has(prev.currentSceneId)
+            ? (remaining[0]?.id ?? null)
+            : prev.currentSceneId;
+        return {
+          ...prev,
+          improvisedAreas: (prev.improvisedAreas ?? []).filter(
+            (a) => makeAreaKey(a.actId, a.name) !== areaKey
+          ),
+          improvisedScenes: (prev.improvisedScenes ?? []).filter(
+            (s) => !affectedSceneIds.has(s.id)
+          ),
+          improvisedConnections: (prev.improvisedConnections ?? []).filter(
+            (c) => !affectedSceneIds.has(c.from) && !affectedSceneIds.has(c.to)
+          ),
+          deletedAreaKeys: Array.from(new Set([...(prev.deletedAreaKeys ?? []), areaKey])),
+          notes: keptNotes,
+          looseNotes: orphaned.length > 0 ? [...prev.looseNotes, ...orphaned] : prev.looseNotes,
+          currentSceneId: nextCurrent,
+        };
+      });
     },
   };
 });

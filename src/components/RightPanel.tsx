@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { TableNote } from '../storage/types';
 import { THEMES, THEME_ORDER, useThemeStore } from '../store/themeStore';
-import { getEffectiveScenes } from '../lib/improvised';
+import {
+  getEffectiveClocks,
+  getEffectiveFactions,
+  getEffectiveScenes,
+  getEffectiveTruths,
+} from '../lib/improvised';
 import { isSoundEnabled, playTactileClick, setSoundEnabled } from '../lib/sound';
 import { useCampaignStore } from '../store/campaignStore';
+import { AddRightItemModal, type AddRightItemMode } from './AddRightItemModal';
 import {
   ClocksSection,
   ClueMatrixSection,
@@ -51,11 +57,18 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     addTableNote,
     addLooseNote,
     deleteLooseNote,
+    addImprovisedClock,
+    addImprovisedClue,
+    addImprovisedFaction,
   } = useCampaignStore();
   const looseNotes = live?.looseNotes ?? [];
   const [looseNotesOpen, setLooseNotesOpen] = useState(false);
   const [newLooseNoteText, setNewLooseNoteText] = useState('');
   const [confirmDeleteNote, setConfirmDeleteNote] = useState<TableNote | null>(null);
+  const [addItemModal, setAddItemModal] = useState<{ open: boolean; mode: AddRightItemMode }>({
+    open: false,
+    mode: 'clock',
+  });
   const [soundClicks, setSoundClicks] = useState<boolean>(() => isSoundEnabled());
   const [isCompact, setIsCompact] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1200 : false
@@ -73,6 +86,19 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     [effectiveScenes, currentSceneId]
   );
   const currentActId = currentScene?.act_id ?? merged.acts[0]?.id ?? null;
+
+  const effectiveClocks = useMemo(
+    () => getEffectiveClocks(merged.clocks, live),
+    [merged.clocks, live]
+  );
+  const effectiveTruths = useMemo(
+    () => getEffectiveTruths(merged.truths, live),
+    [merged.truths, live]
+  );
+  const effectiveFactions = useMemo(
+    () => getEffectiveFactions(merged.factions, live),
+    [merged.factions, live]
+  );
 
   const sceneTitleById = useMemo(() => {
     const map = new Map<string, string>();
@@ -151,11 +177,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
       {/* 1. Clocks */}
       <ClocksSection
-        clocks={merged.clocks}
+        clocks={effectiveClocks}
         clockValues={live?.clockValues ?? {}}
         currentActId={currentActId}
         soloMask={soloMask}
         onAdjustClock={adjustClockValue}
+        onOpenAddClock={() => setAddItemModal({ open: true, mode: 'clock' })}
       />
 
       {/* 2. Timeline */}
@@ -173,21 +200,25 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
       {/* 3. Clue Matrix */}
       <ClueMatrixSection
-        truths={merged.truths}
+        truths={effectiveTruths}
         scenes={effectiveScenes}
         entities={merged.entities}
+        improvisedClues={live?.improvisedClues ?? []}
         revealed={live?.revealed ?? {}}
         soloMask={soloMask}
         onJumpToScene={goToScene}
         onOpenEntityInspector={onOpenEntityInspector}
+        onToggleClueRevealed={(id) => toggleRevealedItem(id)}
+        onOpenAddClue={() => setAddItemModal({ open: true, mode: 'clue' })}
       />
 
       {/* 4. Factions */}
       <FactionsSection
-        factions={merged.factions}
+        factions={effectiveFactions}
         factionAttitude={live?.factionAttitude ?? {}}
         soloMask={soloMask}
         onCycleAttitude={cycleFactionAttitude}
+        onOpenAddFaction={() => setAddItemModal({ open: true, mode: 'faction' })}
       />
 
       {/* 5. Random Tables */}
@@ -560,6 +591,19 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           </div>
         </div>
       )}
+
+      <AddRightItemModal
+        open={addItemModal.open}
+        mode={addItemModal.mode}
+        truths={effectiveTruths}
+        currentActId={currentActId}
+        currentSceneId={currentSceneId}
+        currentSceneTitle={currentScene?.title ?? null}
+        onClose={() => setAddItemModal((prev) => ({ ...prev, open: false }))}
+        onAddClock={addImprovisedClock}
+        onAddClue={addImprovisedClue}
+        onAddFaction={addImprovisedFaction}
+      />
     </>
   );
 

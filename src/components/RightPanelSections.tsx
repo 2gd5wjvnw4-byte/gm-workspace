@@ -10,17 +10,32 @@ import type {
   ModuleTimelineEvent,
   ModuleTruth,
 } from '../lib/import/types';
-import type { DispositionState, RollLogEntry } from '../storage';
+import type { DispositionState, ImprovisedClueRecord, RollLogEntry } from '../storage';
+
+const minimalAddButtonStyle: React.CSSProperties = {
+  height: '26px',
+  padding: '0 8px',
+  borderRadius: '8px',
+  border: '1px solid var(--line)',
+  background: 'transparent',
+  color: 'var(--muted)',
+  fontSize: '11px',
+  fontWeight: 600,
+  cursor: 'pointer',
+  flexShrink: 0,
+};
 
 export interface CollapsibleSectionProps {
   title: string;
   testId?: string;
+  headerAction?: React.ReactNode;
   children: React.ReactNode;
 }
 
 export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   title,
   testId,
+  headerAction,
   children,
 }) => {
   const [open, setOpen] = useState(true);
@@ -30,34 +45,44 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
       data-testid={testId}
       style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
     >
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
+      <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          width: '100%',
-          minHeight: '36px',
-          padding: '4px 0',
-          border: 'none',
-          background: 'transparent',
-          cursor: 'pointer',
-          fontFamily: 'var(--mono)',
-          fontSize: '11px',
-          letterSpacing: '.1em',
-          color: 'var(--muted)',
-          fontWeight: 600,
-          textTransform: 'uppercase',
-          textAlign: 'left',
+          gap: '8px',
         }}
       >
-        <span>{title}</span>
-        <span aria-hidden="true" style={{ fontSize: '12px' }}>
-          {open ? '▾' : '▸'}
-        </span>
-      </button>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flex: 1,
+            minHeight: '36px',
+            padding: '4px 0',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            fontFamily: 'var(--mono)',
+            fontSize: '11px',
+            letterSpacing: '.1em',
+            color: 'var(--muted)',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            textAlign: 'left',
+          }}
+        >
+          <span>{title}</span>
+          <span aria-hidden="true" style={{ fontSize: '12px' }}>
+            {open ? '▾' : '▸'}
+          </span>
+        </button>
+        {headerAction}
+      </div>
       <div
         className="gm-accordion"
         data-open={open ? 'true' : 'false'}
@@ -118,6 +143,7 @@ export interface ClocksSectionProps {
   currentActId: string | null;
   soloMask: boolean;
   onAdjustClock: (clockId: string, delta: number, start: number, maxSegments: number) => void;
+  onOpenAddClock?: () => void;
 }
 
 export const ClocksSection: React.FC<ClocksSectionProps> = ({
@@ -126,6 +152,7 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
   currentActId,
   soloMask,
   onAdjustClock,
+  onOpenAddClock,
 }) => {
   const visibleClocks = clocks.filter((c) => {
     const scope = (c.scope || 'global').trim();
@@ -134,7 +161,22 @@ export const ClocksSection: React.FC<ClocksSectionProps> = ({
   });
 
   return (
-    <CollapsibleSection title="CLOCKS" testId="section-clocks">
+    <CollapsibleSection
+      title="CLOCKS"
+      testId="section-clocks"
+      headerAction={
+        onOpenAddClock ? (
+          <button
+            type="button"
+            data-testid="add-clock-btn"
+            onClick={onOpenAddClock}
+            style={minimalAddButtonStyle}
+          >
+            + Clock
+          </button>
+        ) : undefined
+      }
+    >
       {visibleClocks.length === 0 ? (
         <div style={emptyStateStyle}>No clocks ticking yet.</div>
       ) : (
@@ -441,7 +483,7 @@ export const TimelineSection: React.FC<TimelineSectionProps> = ({
 interface CollectedClue {
   id: string;
   label: string;
-  targetType: 'scene' | 'entity';
+  targetType: 'scene' | 'entity' | 'improvised';
   targetId: string;
 }
 
@@ -449,20 +491,26 @@ export interface ClueMatrixSectionProps {
   truths: ModuleTruth[];
   scenes: ModuleScene[];
   entities: ModuleEntity[];
+  improvisedClues?: ImprovisedClueRecord[];
   revealed: Record<string, boolean>;
   soloMask: boolean;
   onJumpToScene: (sceneId: string) => void;
   onOpenEntityInspector?: (entityId: string) => void;
+  onToggleClueRevealed?: (clueId: string) => void;
+  onOpenAddClue?: () => void;
 }
 
 export const ClueMatrixSection: React.FC<ClueMatrixSectionProps> = ({
   truths,
   scenes,
   entities,
+  improvisedClues = [],
   revealed,
   soloMask,
   onJumpToScene,
   onOpenEntityInspector,
+  onToggleClueRevealed,
+  onOpenAddClue,
 }) => {
   const cluesByTruth = new Map<string, CollectedClue[]>();
 
@@ -496,8 +544,34 @@ export const ClueMatrixSection: React.FC<ClueMatrixSectionProps> = ({
     }
   }
 
+  for (const impClue of improvisedClues) {
+    const list = cluesByTruth.get(impClue.truthId) ?? [];
+    list.push({
+      id: impClue.id,
+      label: impClue.sourceLabel ? `${impClue.sourceLabel} · ${impClue.text}` : impClue.text,
+      targetType: 'improvised',
+      targetId: impClue.id,
+    });
+    cluesByTruth.set(impClue.truthId, list);
+  }
+
   return (
-    <CollapsibleSection title="CLUE MATRIX" testId="section-clue-matrix">
+    <CollapsibleSection
+      title="CLUE MATRIX"
+      testId="section-clue-matrix"
+      headerAction={
+        onOpenAddClue ? (
+          <button
+            type="button"
+            data-testid="add-clue-btn"
+            onClick={onOpenAddClue}
+            style={minimalAddButtonStyle}
+          >
+            + Clue
+          </button>
+        ) : undefined
+      }
+    >
       {truths.length === 0 ? (
         <div style={emptyStateStyle}>No truths tucked away here.</div>
       ) : (
@@ -586,6 +660,8 @@ export const ClueMatrixSection: React.FC<ClueMatrixSectionProps> = ({
                     onClick={() => {
                       if (clue.targetType === 'scene') {
                         onJumpToScene(clue.targetId);
+                      } else if (clue.targetType === 'improvised') {
+                        onToggleClueRevealed?.(clue.id);
                       } else {
                         onOpenEntityInspector?.(clue.targetId);
                       }
@@ -642,6 +718,7 @@ export interface FactionsSectionProps {
   factionAttitude: Record<string, DispositionState>;
   soloMask: boolean;
   onCycleAttitude: (factionId: string, defaultAttitude: DispositionState) => void;
+  onOpenAddFaction?: () => void;
 }
 
 export const FactionsSection: React.FC<FactionsSectionProps> = ({
@@ -649,9 +726,25 @@ export const FactionsSection: React.FC<FactionsSectionProps> = ({
   factionAttitude,
   soloMask,
   onCycleAttitude,
+  onOpenAddFaction,
 }) => {
   return (
-    <CollapsibleSection title="FACTIONS" testId="section-factions">
+    <CollapsibleSection
+      title="FACTIONS"
+      testId="section-factions"
+      headerAction={
+        onOpenAddFaction ? (
+          <button
+            type="button"
+            data-testid="add-faction-btn"
+            onClick={onOpenAddFaction}
+            style={minimalAddButtonStyle}
+          >
+            + Faction
+          </button>
+        ) : undefined
+      }
+    >
       {factions.length === 0 ? (
         <div style={emptyStateStyle}>No factions in play yet.</div>
       ) : (

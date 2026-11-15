@@ -386,4 +386,61 @@ describe('RightPanel Phase 5 sections', () => {
       vi.useRealTimers();
     }
   });
+
+  it('adds improvised clocks, clues (with new or existing truth), and factions via minimal 26px buttons', () => {
+    render(<RightPanel />);
+
+    const addClockBtn = screen.getByTestId('add-clock-btn');
+    const addClueBtn = screen.getByTestId('add-clue-btn');
+    const addFactionBtn = screen.getByTestId('add-faction-btn');
+    expect(addClockBtn.style.height).toBe('26px');
+    expect(addClueBtn.style.height).toBe('26px');
+    expect(addFactionBtn.style.height).toBe('26px');
+
+    // Add Clock
+    fireEvent.click(addClockBtn);
+    fireEvent.change(screen.getByTestId('clock-name-input'), {
+      target: { value: 'Reactor Breach' },
+    });
+    fireEvent.change(screen.getByTestId('clock-segments-input'), {
+      target: { value: '6' },
+    });
+    fireEvent.click(screen.getByTestId('add-right-item-submit'));
+    expect(screen.getByTestId('section-clocks').textContent).toContain('Reactor Breach');
+
+    // Add Clue under a new Truth and toggle it Found
+    fireEvent.click(addClueBtn);
+    fireEvent.change(screen.getByTestId('clue-truth-select'), {
+      target: { value: '__new__' },
+    });
+    fireEvent.change(screen.getByTestId('clue-new-truth-title'), {
+      target: { value: 'Who bribed the dockmaster?' },
+    });
+    fireEvent.change(screen.getByTestId('clue-text-input'), {
+      target: { value: 'Encrypted ledger in locker' },
+    });
+    fireEvent.click(screen.getByTestId('add-right-item-submit'));
+    const clueSection = screen.getByTestId('section-clue-matrix');
+    expect(clueSection.textContent).toContain('Who bribed the dockmaster?');
+    const clueBtn = within(clueSection).getByRole('button', {
+      name: /Encrypted ledger in locker/i,
+    });
+    expect(clueBtn.textContent).toContain('Not yet');
+    fireEvent.click(clueBtn);
+    expect(clueBtn.textContent).toContain('Found');
+
+    // Add Faction and cycle its attitude
+    fireEvent.click(addFactionBtn);
+    fireEvent.change(screen.getByTestId('faction-name-input'), {
+      target: { value: 'Void Salvagers' },
+    });
+    fireEvent.change(screen.getByTestId('faction-attitude-select'), {
+      target: { value: 'suspicious' },
+    });
+    fireEvent.click(screen.getByTestId('add-right-item-submit'));
+    const factionSection = screen.getByTestId('section-factions');
+    expect(factionSection.textContent).toContain('Void Salvagers');
+    fireEvent.click(within(factionSection).getByRole('button', { name: 'suspicious' }));
+    expect(factionSection.textContent).toContain('hostile');
+  });
 });

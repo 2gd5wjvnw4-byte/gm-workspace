@@ -1347,4 +1347,43 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       { timeout: 1500 }
     );
   });
+
+  it('uses minimal 26px scene-list add buttons and supports deleting scenes and areas with confirmation', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Delete Flow Campaign',
+      system: 'Mothership 1e',
+      genre: 'sci-fi',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    useCampaignStore.getState().setFocusMode(false);
+    useCampaignStore.getState().addTableNote('a1-s02', 'Keep this note when scene is deleted');
+
+    render(<App />);
+
+    const addAreaBtn = screen.getByTestId('add-area-btn');
+    const addSceneBtn = screen.getByTestId('add-scene-btn');
+    expect(addAreaBtn.style.height).toBe('26px');
+    expect(addSceneBtn.style.height).toBe('26px');
+    expect(addAreaBtn.style.flex).toBe('');
+    expect(addSceneBtn.style.flex).toBe('');
+
+    // Delete a scene with confirmation and verify orphaned note moves to looseNotes
+    fireEvent.click(screen.getByTestId('delete-scene-a1-s02'));
+    expect(screen.getByTestId('confirm-delete-left-modal')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('confirm-delete-left-btn'));
+    expect(screen.queryByTestId('scene-row-a1-s02')).not.toBeInTheDocument();
+    expect(
+      useCampaignStore
+        .getState()
+        .live?.looseNotes.some((n) => n.text === 'Keep this note when scene is deleted')
+    ).toBe(true);
+
+    // Add an improvised area and delete it with confirmation
+    useCampaignStore.getState().addImprovisedArea({ name: 'Temp Sector', actId: 'a1' });
+    const areaDeleteBtn = await screen.findByTestId('delete-area-a1:temp sector');
+    fireEvent.click(areaDeleteBtn);
+    expect(screen.getByTestId('confirm-delete-left-modal')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('confirm-delete-left-btn'));
+    expect(screen.queryByTestId('delete-area-a1:temp sector')).not.toBeInTheDocument();
+  });
 });

@@ -1,4 +1,10 @@
-import type { ModuleConnection, ModuleScene } from './import/types';
+import type {
+  ModuleClock,
+  ModuleConnection,
+  ModuleFaction,
+  ModuleScene,
+  ModuleTruth,
+} from './import/types';
 import type { LiveState } from '../storage/types';
 import {
   LAYOUT_PADDING,
@@ -10,28 +16,74 @@ import {
   type NodePosition,
 } from './nodeMap';
 
-/** Merge base module scenes with any improvised scenes saved in live state. */
+/** Build a normalized key for an act + area name pair. */
+export function makeAreaKey(actId: string, areaName: string): string {
+  return `${actId}:${areaName.trim().toLowerCase()}`;
+}
+
+function mergeById<T extends { id: string }>(
+  base: T[],
+  extra: T[] | undefined
+): T[] {
+  if (!extra || extra.length === 0) return base;
+  const seen = new Set(base.map((item) => item.id));
+  const uniqueExtra = extra.filter((item) => !seen.has(item.id));
+  return uniqueExtra.length > 0 ? [...base, ...uniqueExtra] : base;
+}
+
+/** Merge base module scenes with improvised scenes and exclude deleted scenes/areas. */
 export function getEffectiveScenes(
   baseScenes: ModuleScene[],
   live: LiveState | null | undefined
 ): ModuleScene[] {
-  const imp = live?.improvisedScenes ?? [];
-  if (imp.length === 0) return baseScenes;
-  const seen = new Set(baseScenes.map((s) => s.id));
-  const extra = imp.filter((s) => !seen.has(s.id));
-  return extra.length > 0 ? [...baseScenes, ...extra] : baseScenes;
+  const combined = mergeById(baseScenes, live?.improvisedScenes);
+  const deletedScenes = new Set(live?.deletedSceneIds ?? []);
+  const deletedAreas = new Set(live?.deletedAreaKeys ?? []);
+  if (deletedScenes.size === 0 && deletedAreas.size === 0) {
+    return combined;
+  }
+  return combined.filter((s) => {
+    if (deletedScenes.has(s.id)) return false;
+    if (s.group && deletedAreas.has(makeAreaKey(s.act_id, s.group))) return false;
+    return true;
+  });
 }
 
-/** Merge base module connections with any improvised connections saved in live state. */
+/** Merge base module connections with improvised connections and exclude deleted scenes. */
 export function getEffectiveConnections(
   baseConnections: ModuleConnection[],
   live: LiveState | null | undefined
 ): ModuleConnection[] {
-  const imp = live?.improvisedConnections ?? [];
-  if (imp.length === 0) return baseConnections;
-  const seen = new Set(baseConnections.map((c) => c.id));
-  const extra = imp.filter((c) => !seen.has(c.id));
-  return extra.length > 0 ? [...baseConnections, ...extra] : baseConnections;
+  const combined = mergeById(baseConnections, live?.improvisedConnections);
+  const deletedScenes = new Set(live?.deletedSceneIds ?? []);
+  if (deletedScenes.size === 0) return combined;
+  return combined.filter(
+    (c) => !deletedScenes.has(c.from) && !deletedScenes.has(c.to)
+  );
+}
+
+/** Merge base module clocks with any improvised clocks saved in live state. */
+export function getEffectiveClocks(
+  baseClocks: ModuleClock[],
+  live: LiveState | null | undefined
+): ModuleClock[] {
+  return mergeById(baseClocks, live?.improvisedClocks);
+}
+
+/** Merge base module truths with any improvised truths saved in live state. */
+export function getEffectiveTruths(
+  baseTruths: ModuleTruth[],
+  live: LiveState | null | undefined
+): ModuleTruth[] {
+  return mergeById(baseTruths, live?.improvisedTruths);
+}
+
+/** Merge base module factions with any improvised factions saved in live state. */
+export function getEffectiveFactions(
+  baseFactions: ModuleFaction[],
+  live: LiveState | null | undefined
+): ModuleFaction[] {
+  return mergeById(baseFactions, live?.improvisedFactions);
 }
 
 /** Return unique area (group) names for an act across scenes and improvised areas. */
@@ -40,16 +92,27 @@ export function getAreasForAct(
   scenes: ModuleScene[],
   live: LiveState | null | undefined
 ): string[] {
+  const deletedAreas = new Set(live?.deletedAreaKeys ?? []);
   const seen = new Set<string>();
   const result: string[] = [];
   for (const scene of scenes) {
-    if (scene.act_id === actId && scene.group && !seen.has(scene.group)) {
+    if (
+      scene.act_id === actId &&
+      scene.group &&
+      !seen.has(scene.group) &&
+      !deletedAreas.has(makeAreaKey(actId, scene.group))
+    ) {
       seen.add(scene.group);
       result.push(scene.group);
     }
   }
   for (const area of live?.improvisedAreas ?? []) {
-    if (area.actId === actId && area.name && !seen.has(area.name)) {
+    if (
+      area.actId === actId &&
+      area.name &&
+      !seen.has(area.name) &&
+      !deletedAreas.has(makeAreaKey(actId, area.name))
+    ) {
       seen.add(area.name);
       result.push(area.name);
     }

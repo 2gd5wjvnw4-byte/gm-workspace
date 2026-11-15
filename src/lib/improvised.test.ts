@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   getAreasForAct,
+  getEffectiveClocks,
   getEffectiveConnections,
+  getEffectiveFactions,
   getEffectiveScenes,
+  getEffectiveTruths,
+  makeAreaKey,
   nextImprovisedSceneCode,
   pickNextNodePosition,
 } from './improvised';
@@ -103,5 +107,56 @@ describe('improvised helpers', () => {
         makeNode('n3', 312, 24),
       ])
     ).toEqual({ x: 24, y: 104 });
+  });
+
+  it('merges improvised clocks, truths, and factions and filters deleted scenes and areas', () => {
+    const live = createDefaultLiveState('camp-1');
+    live.improvisedClocks = [
+      {
+        id: 'ic-1',
+        name: 'Alarm',
+        segments: 4,
+        start: 0,
+        when_full: 'Guards arrive',
+        hidden: false,
+        scope: 'global',
+      },
+    ];
+    live.improvisedTruths = [
+      {
+        id: 'it-1',
+        title: 'Who cut the cable?',
+        text: 'The quartermaster.',
+        importance: 'optional',
+        scope: 'global',
+        page: 0,
+      },
+    ];
+    live.improvisedFactions = [
+      {
+        id: 'if-1',
+        name: 'Dockworkers',
+        summary: 'Union crew',
+        goal: 'Strike',
+        attitude: 'neutral',
+        secret: null,
+        scope: 'global',
+        page: 0,
+      },
+    ];
+    live.deletedSceneIds = ['s1'];
+    live.deletedAreaKeys = [makeAreaKey('a1', 'Docks')];
+
+    expect(getEffectiveClocks([], live).map((c) => c.id)).toEqual(['ic-1']);
+    expect(getEffectiveTruths([], live).map((t) => t.id)).toEqual(['it-1']);
+    expect(getEffectiveFactions([], live).map((f) => f.id)).toEqual(['if-1']);
+
+    const scenes = [
+      makeScene('s1', '1', 'Core'),
+      makeScene('s2', '2', 'Docks'),
+      makeScene('s3', '3', 'Core'),
+    ];
+    expect(getEffectiveScenes(scenes, live).map((s) => s.id)).toEqual(['s3']);
+    expect(getAreasForAct('a1', scenes, live)).toEqual(['Core']);
   });
 });

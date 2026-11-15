@@ -1,6 +1,6 @@
 import React from 'react';
 import type { NavViewMode } from '../storage/types';
-import { getEffectiveConnections, getEffectiveScenes } from '../lib/improvised';
+import { getEffectiveConnections, getEffectiveScenes, makeAreaKey } from '../lib/improvised';
 import { computeReachableSceneIds, getSceneVisibility } from '../lib/solo';
 import { useCampaignStore } from '../store/campaignStore';
 import type { AddModalMode } from './AddSceneModal';
@@ -37,6 +37,11 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   onOpenAddModal,
 }) => {
   const [overlayOpen, setOverlayOpen] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState<
+    | { type: 'scene'; id: string; label: string }
+    | { type: 'area'; actId: string; areaName: string; sceneCount: number }
+    | null
+  >(null);
 
   React.useEffect(() => {
     if (!focusMode) {
@@ -50,6 +55,8 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     toggleSceneVisited,
     setNodePosition,
     resetNodePositions,
+    deleteScene,
+    deleteArea,
   } = useCampaignStore();
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
@@ -242,19 +249,19 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           }}
         >
           {onOpenAddModal && (
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginBottom: '4px' }}>
               <button
                 type="button"
                 data-testid="add-area-btn"
                 onClick={() => onOpenAddModal('area')}
                 style={{
-                  flex: 1,
-                  minHeight: '44px',
-                  borderRadius: '10px',
+                  height: '26px',
+                  padding: '0 8px',
+                  borderRadius: '8px',
                   border: '1px dashed var(--line2)',
-                  background: 'var(--p2)',
-                  color: 'var(--text)',
-                  fontSize: '13px',
+                  background: 'transparent',
+                  color: 'var(--muted)',
+                  fontSize: '11px',
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
@@ -266,13 +273,13 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                 data-testid="add-scene-btn"
                 onClick={() => onOpenAddModal('scene')}
                 style={{
-                  flex: 1,
-                  minHeight: '44px',
-                  borderRadius: '10px',
-                  border: '1px solid var(--accent)',
-                  background: 'var(--accentBg)',
+                  height: '26px',
+                  padding: '0 8px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: 'transparent',
                   color: 'var(--accent)',
-                  fontSize: '13px',
+                  fontSize: '11px',
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
@@ -365,15 +372,54 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                           {showGroup && (
                             <div
                               style={{
-                                fontFamily: 'var(--mono)',
-                                fontSize: '11px',
-                                letterSpacing: '.1em',
-                                color: 'var(--muted)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '6px',
                                 padding: '6px 4px 2px',
-                                textTransform: 'uppercase',
                               }}
                             >
-                              {scene.group}
+                              <span
+                                style={{
+                                  fontFamily: 'var(--mono)',
+                                  fontSize: '11px',
+                                  letterSpacing: '.1em',
+                                  color: 'var(--muted)',
+                                  textTransform: 'uppercase',
+                                }}
+                              >
+                                {scene.group}
+                              </span>
+                              <button
+                                type="button"
+                                data-testid={`delete-area-${makeAreaKey(actId, scene.group)}`}
+                                aria-label={`Delete area ${scene.group}`}
+                                onClick={() =>
+                                  setConfirmDelete({
+                                    type: 'area',
+                                    actId,
+                                    areaName: scene.group,
+                                    sceneCount: actScenes.filter(
+                                      (s) =>
+                                        makeAreaKey(s.act_id, s.group) ===
+                                        makeAreaKey(actId, scene.group)
+                                    ).length,
+                                  })
+                                }
+                                style={{
+                                  height: '22px',
+                                  minWidth: '22px',
+                                  padding: '0 5px',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  background: 'transparent',
+                                  color: 'var(--muted)',
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                ×
+                              </button>
                             </div>
                           )}
                           <div
@@ -451,6 +497,32 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                                 {statusLabel}
                               </button>
                             )}
+                            <button
+                              type="button"
+                              data-testid={`delete-scene-${scene.id}`}
+                              aria-label={`Delete scene ${displayTitle}`}
+                              onClick={() =>
+                                setConfirmDelete({
+                                  type: 'scene',
+                                  id: scene.id,
+                                  label: displayTitle,
+                                })
+                              }
+                              style={{
+                                height: '24px',
+                                minWidth: '24px',
+                                padding: '0 5px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                background: 'transparent',
+                                color: 'var(--muted)',
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                                flexShrink: 0,
+                              }}
+                            >
+                              ×
+                            </button>
                           </div>
                         </React.Fragment>
                       );
@@ -478,25 +550,53 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                         >
                           {area.name}
                         </span>
-                        {onOpenAddModal && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          {onOpenAddModal && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenAddModal('scene', area.name)}
+                              style={{
+                                height: '26px',
+                                padding: '0 8px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--line)',
+                                background: 'transparent',
+                                color: 'var(--accent)',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              + Scene
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => onOpenAddModal('scene', area.name)}
+                            data-testid={`delete-area-${makeAreaKey(actId, area.name)}`}
+                            aria-label={`Delete area ${area.name}`}
+                            onClick={() =>
+                              setConfirmDelete({
+                                type: 'area',
+                                actId,
+                                areaName: area.name,
+                                sceneCount: 0,
+                              })
+                            }
                             style={{
-                              minHeight: '32px',
-                              padding: '0 8px',
-                              borderRadius: '8px',
-                              border: '1px solid var(--line)',
-                              background: 'var(--p2)',
-                              color: 'var(--accent)',
-                              fontSize: '11px',
-                              fontWeight: 600,
+                              height: '24px',
+                              minWidth: '24px',
+                              padding: '0 5px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              background: 'transparent',
+                              color: 'var(--muted)',
+                              fontSize: '12px',
                               cursor: 'pointer',
                             }}
                           >
-                            + Scene
+                            ×
                           </button>
-                        )}
+                        </div>
                       </div>
                     ))}
                   </React.Fragment>
@@ -588,6 +688,92 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         />
       )}
       </div>
+      {confirmDelete && (
+        <div
+          data-testid="confirm-delete-left-modal"
+          onClick={() => setConfirmDelete(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 60,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            padding: '24px 16px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              background: 'var(--panel)',
+              border: '1px solid var(--line2)',
+              borderRadius: '14px',
+              padding: '18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
+            }}
+          >
+            <div style={{ fontFamily: 'var(--head)', fontSize: '18px', fontWeight: 700 }}>
+              {confirmDelete.type === 'scene' ? 'Delete scene' : 'Delete area'}
+            </div>
+            <div style={{ fontSize: '14px', color: 'var(--muted)', lineHeight: 1.5 }}>
+              {confirmDelete.type === 'scene'
+                ? `Delete "${confirmDelete.label}" from this campaign?`
+                : confirmDelete.sceneCount > 0
+                  ? `Delete area "${confirmDelete.areaName}" and its ${confirmDelete.sceneCount} scene(s)?`
+                  : `Delete area "${confirmDelete.areaName}"?`}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                data-testid="cancel-delete-left-btn"
+                onClick={() => setConfirmDelete(null)}
+                style={{
+                  height: '40px',
+                  padding: '0 14px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--p3)',
+                  color: 'var(--text)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-delete-left-btn"
+                onClick={() => {
+                  if (confirmDelete.type === 'scene') {
+                    deleteScene(confirmDelete.id);
+                  } else {
+                    deleteArea(confirmDelete.actId, confirmDelete.areaName);
+                  }
+                  setConfirmDelete(null);
+                }}
+                style={{
+                  height: '40px',
+                  padding: '0 16px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--redLine)',
+                  background: 'var(--redBg)',
+                  color: 'var(--red)',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 
