@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { TableNote } from '../storage/types';
 import { THEMES, THEME_ORDER, useThemeStore } from '../store/themeStore';
+import { getEffectiveScenes } from '../lib/improvised';
 import { useCampaignStore } from '../store/campaignStore';
 import {
   ClocksSection,
@@ -58,20 +59,24 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   const [overlayOpen, setOverlayOpen] = useState(false);
 
   const soloMask = Boolean(live?.ui.soloMask);
+  const effectiveScenes = useMemo(
+    () => getEffectiveScenes(merged.scenes, live),
+    [merged.scenes, live]
+  );
   const currentSceneId = live?.currentSceneId ?? null;
   const currentScene = useMemo(
-    () => merged.scenes.find((s) => s.id === currentSceneId) ?? null,
-    [merged.scenes, currentSceneId]
+    () => effectiveScenes.find((s) => s.id === currentSceneId) ?? null,
+    [effectiveScenes, currentSceneId]
   );
   const currentActId = currentScene?.act_id ?? merged.acts[0]?.id ?? null;
 
   const sceneTitleById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const s of merged.scenes) {
+    for (const s of effectiveScenes) {
       map.set(s.id, s.title);
     }
     return map;
-  }, [merged.scenes]);
+  }, [effectiveScenes]);
 
   const dayTracker = useMemo(
     () => merged.trackers.find((t) => t.label.trim().toLowerCase() === 'day') ?? null,
@@ -160,7 +165,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       {/* 3. Clue Matrix */}
       <ClueMatrixSection
         truths={merged.truths}
-        scenes={merged.scenes}
+        scenes={effectiveScenes}
         entities={merged.entities}
         revealed={live?.revealed ?? {}}
         soloMask={soloMask}

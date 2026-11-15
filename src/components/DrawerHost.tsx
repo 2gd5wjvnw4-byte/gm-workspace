@@ -1,5 +1,6 @@
 import React from 'react';
 import type { DispositionState } from '../storage/types';
+import { getEffectiveScenes } from '../lib/improvised';
 import { useCampaignStore } from '../store/campaignStore';
 
 export type DrawerMode = 'pdf' | 'entity' | null;
@@ -47,9 +48,10 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
   const entityTracks = live?.entityTracks ?? {};
   const entityTrackMax = live?.entityTrackMax ?? {};
   const improvisedEntities = live?.improvisedEntities ?? [];
-  const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
+  const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+  const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? null;
   const currentScene =
-    merged.scenes.find((s) => s.id === currentSceneId) ?? merged.scenes[0] ?? null;
+    effectiveScenes.find((s) => s.id === currentSceneId) ?? effectiveScenes[0] ?? null;
 
   React.useEffect(() => {
     setEditingTrackCell(null);

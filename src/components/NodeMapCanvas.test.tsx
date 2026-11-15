@@ -254,4 +254,30 @@ describe('NodeMapCanvas', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close expanded node map' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('renders + Node button when onAddNode is provided and calls it on tap', () => {
+    const onAddNode = vi.fn();
+    render(
+      <NodeMapCanvas
+        scenes={scenes}
+        connections={connections}
+        notLoadedTargets={new Set()}
+        currentSceneId="s1"
+        visited={{ s1: true }}
+        revealed={{}}
+        connectionState={{}}
+        soloMask={false}
+        nodePositions={{}}
+        onSelectScene={vi.fn()}
+        onMoveNode={vi.fn()}
+        onResetLayout={vi.fn()}
+        onAddNode={onAddNode}
+      />
+    );
+
+    const addBtn = screen.getByTestId('node-map-add-btn');
+    expect(addBtn).toBeInTheDocument();
+    fireEvent.click(addBtn);
+    expect(onAddNode).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,7 +1,9 @@
 import React from 'react';
 import type { DispositionState, NavViewMode } from '../storage/types';
+import { getEffectiveConnections, getEffectiveScenes } from '../lib/improvised';
 import { computeReachableSceneIds, getSceneVisibility } from '../lib/solo';
 import { useCampaignStore } from '../store/campaignStore';
+import type { AddModalMode } from './AddSceneModal';
 import { NodeMapCanvas } from './NodeMapCanvas';
 
 export interface LeftPanelProps {
@@ -9,6 +11,7 @@ export interface LeftPanelProps {
   onSelectNavView: (view: NavViewMode) => void;
   onOpenEntityInspector: (entityId: string) => void;
   onExpandNodeMap?: () => void;
+  onOpenAddModal?: (mode: AddModalMode, defaultArea?: string) => void;
 }
 
 const DISPOSITION_COLORS: Record<DispositionState, string> = {
@@ -49,6 +52,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   onSelectNavView,
   onOpenEntityInspector,
   onExpandNodeMap,
+  onOpenAddModal,
 }) => {
   const {
     merged,
@@ -75,9 +79,11 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     cursor: 'pointer',
   });
 
-  const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
+  const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+  const effectiveConnections = getEffectiveConnections(merged.connections, live);
+  const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? null;
   const currentScene =
-    merged.scenes.find((s) => s.id === currentSceneId) ?? merged.scenes[0] ?? null;
+    effectiveScenes.find((s) => s.id === currentSceneId) ?? effectiveScenes[0] ?? null;
   const visited = live?.visited ?? {};
   const revealed = live?.revealed ?? {};
   const connectionState = live?.connectionState ?? {};
@@ -185,10 +191,10 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   const reachable = computeReachableSceneIds({
     visited,
     currentSceneId,
-    connections: merged.connections,
+    connections: effectiveConnections,
     connectionState,
     revealed,
-    scenes: merged.scenes,
+    scenes: effectiveScenes,
   });
 
   // Group loaded scenes by act, then by scene.group
@@ -199,17 +205,22 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       actOrder.push(act.id);
     }
   }
-  for (const scene of merged.scenes) {
+  for (const scene of effectiveScenes) {
     if (!actOrder.includes(scene.act_id)) {
       actOrder.push(scene.act_id);
     }
   }
+  for (const area of live?.improvisedAreas ?? []) {
+    if (area.actId && !actOrder.includes(area.actId)) {
+      actOrder.push(area.actId);
+    }
+  }
 
   // Collect unloaded target scene IDs from connections
-  const loadedSceneIds = new Set(merged.scenes.map((s) => s.id));
+  const loadedSceneIds = new Set(effectiveScenes.map((s) => s.id));
   const unloadedScenes: UnloadedActSceneItem[] = [];
   const seenUnloaded = new Set<string>();
-  for (const conn of merged.connections) {
+  for (const conn of effectiveConnections) {
     for (const target of [conn.from, conn.to]) {
       if (
         target &&
@@ -318,7 +329,48 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
             gap: '4px',
           }}
         >
-          {merged.scenes.length === 0 ? (
+          {onOpenAddModal && (
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '4px' }}>
+              <button
+                type="button"
+                data-testid="add-area-btn"
+                onClick={() => onOpenAddModal('area')}
+                style={{
+                  flex: 1,
+                  minHeight: '44px',
+                  borderRadius: '10px',
+                  border: '1px dashed var(--line2)',
+                  background: 'var(--p2)',
+                  color: 'var(--text)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                + Area
+              </button>
+              <button
+                type="button"
+                data-testid="add-scene-btn"
+                onClick={() => onOpenAddModal('scene')}
+                style={{
+                  flex: 1,
+                  minHeight: '44px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--accent)',
+                  background: 'var(--accentBg)',
+                  color: 'var(--accent)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                + Scene
+              </button>
+            </div>
+          )}
+
+          {effectiveScenes.length === 0 && (live?.improvisedAreas ?? []).length === 0 ? (
             <p style={{ margin: '4px', fontSize: '13px', color: 'var(--muted)' }}>
               Import a module JSON to populate the scene list.
             </p>
@@ -326,7 +378,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
             <>
               {actOrder.map((actId) => {
                 const actObj = actMap.get(actId);
-                const actScenes = merged.scenes.filter((s) => s.act_id === actId);
+                const actScenes = effectiveScenes.filter((s) => s.act_id === actId);
                 const visibleScenes = actScenes.filter(
                   (s) =>
                     getSceneVisibility({
@@ -337,7 +389,15 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                       reachable,
                     }) !== 'hidden'
                 );
-                if (visibleScenes.length === 0) {
+                const usedGroupNames = new Set(
+                  actScenes.map((s) => s.group.trim().toLowerCase()).filter(Boolean)
+                );
+                const emptyImpAreas = (live?.improvisedAreas ?? []).filter(
+                  (a) =>
+                    a.actId === actId &&
+                    !usedGroupNames.has(a.name.trim().toLowerCase())
+                );
+                if (visibleScenes.length === 0 && emptyImpAreas.length === 0) {
                   return null;
                 }
 
@@ -483,6 +543,50 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                         </React.Fragment>
                       );
                     })}
+                    {emptyImpAreas.map((area) => (
+                      <div
+                        key={area.id}
+                        data-testid={`improvised-area-${area.id}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          padding: '6px 4px 2px',
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: 'var(--mono)',
+                            fontSize: '11px',
+                            letterSpacing: '.1em',
+                            color: 'var(--muted)',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          {area.name}
+                        </span>
+                        {onOpenAddModal && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenAddModal('scene', area.name)}
+                            style={{
+                              minHeight: '32px',
+                              padding: '0 8px',
+                              borderRadius: '8px',
+                              border: '1px solid var(--line)',
+                              background: 'var(--p2)',
+                              color: 'var(--accent)',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            + Scene
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </React.Fragment>
                 );
               })}
@@ -555,8 +659,8 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
         </div>
       ) : (
         <NodeMapCanvas
-          scenes={merged.scenes}
-          connections={merged.connections}
+          scenes={effectiveScenes}
+          connections={effectiveConnections}
           notLoadedTargets={merged.linkCheck.notLoadedTargets}
           currentSceneId={currentSceneId}
           visited={visited}
@@ -568,6 +672,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           onMoveNode={setNodePosition}
           onResetLayout={resetNodePositions}
           onExpand={onExpandNodeMap}
+          onAddNode={onOpenAddModal ? () => onOpenAddModal('node') : undefined}
         />
       )}
       </div>

@@ -1,13 +1,16 @@
 import React from 'react';
+import { getEffectiveConnections, getEffectiveScenes } from '../lib/improvised';
 import { getArchetypeLabels, getSceneExits } from '../lib/solo';
 import { useCampaignStore } from '../store/campaignStore';
 
 export const ExitsBar: React.FC = () => {
   const { merged, live, goToScene } = useCampaignStore();
 
-  const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
+  const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+  const effectiveConnections = getEffectiveConnections(merged.connections, live);
+  const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? null;
   const currentScene =
-    merged.scenes.find((s) => s.id === currentSceneId) ?? merged.scenes[0] ?? null;
+    effectiveScenes.find((s) => s.id === currentSceneId) ?? effectiveScenes[0] ?? null;
 
   const archetypeLabels = getArchetypeLabels(
     currentScene ? currentScene.archetype : 'unknown'
@@ -17,8 +20,8 @@ export const ExitsBar: React.FC = () => {
   const exits = currentScene
     ? getSceneExits({
         sceneId: currentScene.id,
-        connections: merged.connections,
-        scenes: merged.scenes,
+        connections: effectiveConnections,
+        scenes: effectiveScenes,
         notLoadedTargets: merged.linkCheck.notLoadedTargets,
         connectionState: live?.connectionState ?? {},
         revealed: live?.revealed ?? {},

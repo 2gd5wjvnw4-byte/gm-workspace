@@ -4,6 +4,7 @@ import type {
   DispositionState,
   TableNote,
 } from '../storage/types';
+import { getEffectiveConnections, getEffectiveScenes } from '../lib/improvised';
 import {
   buildUnlockingItemsByConnection,
   getEffectiveConnectionState,
@@ -45,7 +46,9 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
     addImprovisedEntity,
   } = useCampaignStore();
 
-  const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? '';
+  const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+  const effectiveConnections = getEffectiveConnections(merged.connections, live);
+  const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? '';
   const [targetId, setTargetId] = useState<string>(currentSceneId);
   const [noteText, setNoteText] = useState<string>('');
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
@@ -78,7 +81,7 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
     return null;
   }
 
-  const unlockingMap = buildUnlockingItemsByConnection(merged.scenes);
+  const unlockingMap = buildUnlockingItemsByConnection(effectiveScenes);
   const connectionState = live?.connectionState ?? {};
   const revealed = live?.revealed ?? {};
 
@@ -246,7 +249,7 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
                 fontSize: '14px',
               }}
             >
-              {merged.scenes.map((scene) => (
+              {effectiveScenes.map((scene) => (
                 <option key={scene.id} value={scene.id}>
                   Scene #{scene.code} · {scene.title} ({scene.id})
                 </option>
@@ -477,7 +480,7 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
           </form>
         )}
 
-        {!editingNote && merged.connections.length > 0 && (
+        {!editingNote && effectiveConnections.length > 0 && (
           <div
             style={{
               borderTop: '1px solid var(--line)',
@@ -498,7 +501,7 @@ export const NoteOverrideModal: React.FC<NoteOverrideModalProps> = ({
             >
               Connection State Overrides
             </span>
-            {merged.connections.map((conn) => {
+            {effectiveConnections.map((conn) => {
               const effState = getEffectiveConnectionState(
                 conn,
                 connectionState,

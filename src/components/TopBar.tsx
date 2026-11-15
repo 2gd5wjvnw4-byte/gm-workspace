@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { MapDisplayMode } from '../storage/types';
+import { getEffectiveConnections, getEffectiveScenes } from '../lib/improvised';
 import {
   searchModuleRecords,
   type SearchResultEntry,
@@ -60,9 +61,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   const { merged, live, adjustTrackerValue, goToScene } = useCampaignStore();
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
+  const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+  const effectiveConnections = getEffectiveConnections(merged.connections, live);
+  const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? null;
   const currentScene =
-    merged.scenes.find((s) => s.id === currentSceneId) ?? merged.scenes[0] ?? null;
+    effectiveScenes.find((s) => s.id === currentSceneId) ?? effectiveScenes[0] ?? null;
   const currentActId =
     currentScene?.act_id ?? merged.acts[0]?.id ?? null;
 
@@ -76,13 +79,13 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const searchResults = searchModuleRecords({
     query: searchQuery,
-    scenes: merged.scenes,
+    scenes: effectiveScenes,
     entities: merged.entities,
     improvisedEntities: live?.improvisedEntities ?? [],
     truths: merged.truths,
     factions: merged.factions,
     randomTables: merged.random_tables,
-    connections: merged.connections,
+    connections: effectiveConnections,
     connectionState: live?.connectionState ?? {},
     visited: live?.visited ?? {},
     revealed: live?.revealed ?? {},

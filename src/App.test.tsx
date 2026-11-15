@@ -1070,4 +1070,67 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close expanded node map' }));
     expect(screen.queryByTestId('node-map-expanded-overlay')).not.toBeInTheDocument();
   });
+
+  it('adds an area, scene, and map node on the fly and connects exits', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 6a On The Fly Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByTestId('add-area-btn')).toBeInTheDocument();
+    });
+
+    // 1. Add an Area on the fly
+    fireEvent.click(screen.getByTestId('add-area-btn'));
+    expect(screen.getByTestId('add-scene-modal')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Area Name'), {
+      target: { value: 'Sub-Deck Tunnel' },
+    });
+    fireEvent.click(screen.getByTestId('add-scene-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Sub-Deck Tunnel')).toBeInTheDocument();
+    });
+    expect(useCampaignStore.getState().live?.improvisedAreas).toHaveLength(1);
+
+    // 2. Add a Scene on the fly inside that area, connected from current scene (a1-s01)
+    fireEvent.click(screen.getByTestId('add-scene-btn'));
+    fireEvent.change(screen.getByLabelText('Scene Title'), {
+      target: { value: 'Secret Maintenance Hatch' },
+    });
+    fireEvent.change(screen.getByLabelText('Area (optional)'), {
+      target: { value: 'Sub-Deck Tunnel' },
+    });
+    fireEvent.click(screen.getByTestId('add-scene-submit'));
+
+    const createdScene = useCampaignStore.getState().live?.improvisedScenes?.[0];
+    expect(createdScene).toBeDefined();
+    expect(createdScene?.title).toBe('Secret Maintenance Hatch');
+    expect(createdScene?.group).toBe('Sub-Deck Tunnel');
+
+    // Center jumps to the new scene, and ExitsBar has the two-way return exit to a1-s01
+    expect(useCampaignStore.getState().live?.currentSceneId).toBe(createdScene!.id);
+    expect(screen.getByTestId(`scene-row-${createdScene!.id}`)).toBeInTheDocument();
+    expect(screen.getByTestId('zone-exits-bar')).toHaveTextContent('Secret Maintenance Hatch');
+
+    // 3. Switch to Node Map and add a Map Node on the fly
+    fireEvent.click(screen.getByRole('button', { name: 'Node Map' }));
+    fireEvent.click(screen.getByTestId('node-map-add-btn'));
+    fireEvent.change(screen.getByLabelText('Scene Title'), {
+      target: { value: 'Hidden Escape Pod' },
+    });
+    fireEvent.click(screen.getByTestId('add-scene-submit'));
+
+    const createdNodeScene = useCampaignStore.getState().live?.improvisedScenes?.[1];
+    expect(createdNodeScene).toBeDefined();
+    expect(
+      useCampaignStore.getState().live?.nodePositions?.[createdNodeScene!.id]
+    ).toBeDefined();
+    expect(screen.getByTestId(`map-node-${createdNodeScene!.id}`)).toBeInTheDocument();
+    expect(useCampaignStore.getState().live?.improvisedConnections).toHaveLength(2);
+  });
 });

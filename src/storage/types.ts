@@ -1,4 +1,12 @@
 import type { ThemeId } from '../store/themeStore';
+import type { ModuleConnection, ModuleScene } from '../lib/import/types';
+
+export interface ImprovisedAreaRecord {
+  id: string;
+  actId: string;
+  name: string;
+  createdAt: number;
+}
 
 export interface CampaignRecord {
   id: string;
@@ -86,6 +94,9 @@ export interface LiveState {
   factionAttitude: Record<string, DispositionState>;
   summoned: Record<string, string[]>;
   improvisedEntities: ImprovisedEntityRecord[];
+  improvisedAreas?: ImprovisedAreaRecord[];
+  improvisedScenes?: ModuleScene[];
+  improvisedConnections?: ModuleConnection[];
   notes: TableNote[];
   looseNotes: TableNote[];
   nodePositions: Record<string, { x: number; y: number }>;
@@ -141,6 +152,9 @@ export function createDefaultLiveState(campaignId: string, theme: ThemeId = 'sci
     factionAttitude: {},
     summoned: {},
     improvisedEntities: [],
+    improvisedAreas: [],
+    improvisedScenes: [],
+    improvisedConnections: [],
     notes: [],
     looseNotes: [],
     nodePositions: {},

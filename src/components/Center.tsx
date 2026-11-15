@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ExitsBar } from './ExitsBar';
 import type { MapDisplayMode, TableNote } from '../storage/types';
+import { getEffectiveScenes } from '../lib/improvised';
 import { getArchetypeLabels, getMaskedItemView } from '../lib/solo';
 import { useCampaignStore } from '../store/campaignStore';
 import type { SceneItemKind } from '../lib/import/types';
@@ -25,9 +26,10 @@ export const Center: React.FC<CenterProps> = ({ mapMode, onEditNote }) => {
   const { merged, live, toggleRevealedItem } = useCampaignStore();
   const [readOpen, setReadOpen] = useState(true);
 
-  const currentSceneId = live?.currentSceneId ?? merged.scenes[0]?.id ?? null;
+  const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+  const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? null;
   const currentScene =
-    merged.scenes.find((s) => s.id === currentSceneId) ?? merged.scenes[0] ?? null;
+    effectiveScenes.find((s) => s.id === currentSceneId) ?? effectiveScenes[0] ?? null;
 
   useEffect(() => {
     setReadOpen(true);

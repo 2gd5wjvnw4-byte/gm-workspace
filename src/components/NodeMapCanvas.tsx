@@ -41,6 +41,7 @@ export interface NodeMapCanvasProps {
   expanded?: boolean;
   onExpand?: () => void;
   onClose?: () => void;
+  onAddNode?: () => void;
 }
 
 interface ActivePointer {
@@ -94,6 +95,7 @@ export const NodeMapCanvas: React.FC<NodeMapCanvasProps> = ({
   expanded = false,
   onExpand,
   onClose,
+  onAddNode,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [arrangeMode, setArrangeMode] = useState(false);
@@ -699,6 +701,22 @@ export const NodeMapCanvas: React.FC<NodeMapCanvasProps> = ({
         >
           Arrange
         </button>
+
+        {onAddNode && (
+          <button
+            type="button"
+            data-testid="node-map-add-btn"
+            onClick={onAddNode}
+            style={{
+              ...controlButtonStyle,
+              border: '1px solid var(--accent)',
+              background: 'var(--accentBg)',
+              color: 'var(--accent)',
+            }}
+          >
+            + Node
+          </button>
+        )}
 
         {arrangeMode && (
           <button

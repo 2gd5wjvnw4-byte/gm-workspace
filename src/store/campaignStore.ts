@@ -11,6 +11,7 @@ import {
   type ChunkRecord,
   type ConnectionOverrideState,
   type DispositionState,
+  type ImprovisedAreaRecord,
   type ImprovisedEntityRecord,
   type LiveState,
   type LoadedCampaign,
@@ -19,7 +20,14 @@ import {
   type RollLogEntry,
   type TableNote,
 } from '../storage';
-import { mergeRawChunkObjects, type MergedCampaignData } from '../lib/import';
+import {
+  mergeRawChunkObjects,
+  type MergedCampaignData,
+  type ModuleConnection,
+  type ModuleScene,
+  type SceneArchetype,
+} from '../lib/import';
+import { getEffectiveScenes, nextImprovisedSceneCode } from '../lib/improvised';
 import { useThemeStore } from './themeStore';
 
 export interface CampaignStoreState {
@@ -102,6 +110,20 @@ export interface CampaignStoreState {
   deleteLooseNote: (noteId: string) => void;
   setNodePosition: (sceneId: string, pos: { x: number; y: number }) => void;
   resetNodePositions: (sceneIds?: string[]) => void;
+  addImprovisedArea: (input: { name: string; actId?: string }) => ImprovisedAreaRecord | null;
+  addImprovisedScene: (input: {
+    title: string;
+    code?: string;
+    area?: string;
+    actId?: string;
+    archetype?: SceneArchetype;
+    summary?: string;
+    connectFromSceneId?: string | null;
+    connectionLabel?: string;
+    twoWay?: boolean;
+    nodePosition?: { x: number; y: number } | null;
+    selectScene?: boolean;
+  }) => { scene: ModuleScene; connection: ModuleConnection | null } | null;
 }
 
 const emptyMerged = (): MergedCampaignData => mergeRawChunkObjects([]);
@@ -800,6 +822,121 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           nodePositions: next,
         };
       });
+    },
+
+    addImprovisedArea: (input) => {
+      const name = input.name.trim();
+      if (!name) return null;
+      const state = get();
+      if (!state.live) return null;
+      const effectiveScenes = getEffectiveScenes(state.merged.scenes, state.live);
+      const currentScene = effectiveScenes.find((s) => s.id === state.live?.currentSceneId);
+      const actId =
+        input.actId?.trim() ||
+        currentScene?.act_id ||
+        state.merged.acts[0]?.id ||
+        effectiveScenes[0]?.act_id ||
+        'a1';
+
+      const existing = (state.live.improvisedAreas ?? []).find(
+        (a) => a.actId === actId && a.name.toLowerCase() === name.toLowerCase()
+      );
+      if (existing) return existing;
+
+      const created: ImprovisedAreaRecord = {
+        id: `imp-area-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        actId,
+        name,
+        createdAt: Date.now(),
+      };
+      commitLive((prev) => ({
+        ...prev,
+        improvisedAreas: [...(prev.improvisedAreas ?? []), created],
+      }));
+      return created;
+    },
+
+    addImprovisedScene: (input) => {
+      const title = input.title.trim();
+      if (!title) return null;
+      const state = get();
+      if (!state.live) return null;
+
+      const effectiveScenes = getEffectiveScenes(state.merged.scenes, state.live);
+      const currentScene = effectiveScenes.find((s) => s.id === state.live?.currentSceneId);
+      const actId =
+        input.actId?.trim() ||
+        currentScene?.act_id ||
+        state.merged.acts[0]?.id ||
+        effectiveScenes[0]?.act_id ||
+        'a1';
+      const code = input.code?.trim() || nextImprovisedSceneCode(effectiveScenes);
+      const area = input.area?.trim() ?? '';
+      const sceneId = `imp-scene-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      const newScene: ModuleScene = {
+        id: sceneId,
+        code,
+        title,
+        act_id: actId,
+        archetype: input.archetype ?? 'physical_zone',
+        group: area,
+        page: 0,
+        summary: input.summary?.trim() ?? '',
+        tags: ['Improvised'],
+        read_aloud: null,
+        tier1_sensory: [],
+        tier2_interactive: [],
+        tier3_hidden: [],
+        entity_ids: [],
+        entity_counts: {},
+        gm_tips: '',
+        escalation: [],
+        default_map_id: null,
+        needs_review: false,
+        source_quote: '',
+      };
+
+      const connectFromId = input.connectFromSceneId?.trim() || '';
+      const newConnection: ModuleConnection | null = connectFromId
+        ? {
+            id: `imp-conn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            from: connectFromId,
+            to: sceneId,
+            type: 'travel',
+            label: input.connectionLabel?.trim() || title,
+            two_way: input.twoWay ?? true,
+            state: 'open',
+            requires: null,
+            page: 0,
+            needs_review: false,
+            source_quote: '',
+          }
+        : null;
+
+      const selectScene = input.selectScene ?? true;
+      commitLive((prev) => ({
+        ...prev,
+        improvisedScenes: [...(prev.improvisedScenes ?? []), newScene],
+        improvisedConnections: newConnection
+          ? [...(prev.improvisedConnections ?? []), newConnection]
+          : prev.improvisedConnections,
+        currentSceneId: selectScene ? sceneId : prev.currentSceneId,
+        visited: selectScene
+          ? { ...prev.visited, [sceneId]: true }
+          : prev.visited,
+        nodePositions: input.nodePosition
+          ? {
+              ...(prev.nodePositions ?? {}),
+              [sceneId]: {
+                x: Math.round(input.nodePosition.x),
+                y: Math.round(input.nodePosition.y),
+              },
+            }
+          : prev.nodePositions,
+      }));
+
+      return { scene: newScene, connection: newConnection };
     },
   };
 });

@@ -8,8 +8,17 @@ import { CampaignScreen } from './components/CampaignScreen';
 import { ActSwitcherSheet } from './components/ActSwitcherSheet';
 import { ReviewSheet } from './components/ReviewSheet';
 import { NoteOverrideModal } from './components/NoteOverrideModal';
+import { AddSceneModal, type AddModalMode } from './components/AddSceneModal';
 import { NodeMapCanvas } from './components/NodeMapCanvas';
 import { isRunningStandalone, StandaloneBanner } from './components/StandaloneBanner';
+import {
+  getAreasForAct,
+  getEffectiveConnections,
+  getEffectiveScenes,
+  nextImprovisedSceneCode,
+  pickNextNodePosition,
+} from './lib/improvised';
+import { buildNodeMapGraph } from './lib/nodeMap';
 import { applyThemeToElement, getThemeCssVariables, useThemeStore } from './store/themeStore';
 import { useCampaignStore } from './store/campaignStore';
 import { requestPersist, type TableNote } from './storage';
@@ -27,6 +36,8 @@ export const App: React.FC = () => {
     goToScene,
     setNodePosition,
     resetNodePositions,
+    addImprovisedArea,
+    addImprovisedScene,
   } = useCampaignStore();
   const [drawer, setDrawer] = useState<DrawerMode>(null);
   const [inspectedEntityId, setInspectedEntityId] = useState<string | null>(null);
@@ -35,6 +46,11 @@ export const App: React.FC = () => {
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<TableNote | null>(null);
   const [nodeMapExpanded, setNodeMapExpanded] = useState(false);
+  const [addModalState, setAddModalState] = useState<{
+    open: boolean;
+    mode: AddModalMode;
+    defaultArea: string;
+  }>({ open: false, mode: 'scene', defaultArea: '' });
 
   const navView = live?.ui?.navView ?? 'list';
   const mapMode = live?.ui?.mapMode ?? 'off';
@@ -119,6 +135,9 @@ export const App: React.FC = () => {
                 );
               }}
               onExpandNodeMap={() => setNodeMapExpanded(true)}
+              onOpenAddModal={(mode, defaultArea = '') =>
+                setAddModalState({ open: true, mode, defaultArea })
+              }
             />
 
             <div style={{ flex: 1, minWidth: 0, display: 'flex', position: 'relative' }}>
@@ -142,10 +161,14 @@ export const App: React.FC = () => {
                   }}
                 >
                   <NodeMapCanvas
-                    scenes={merged.scenes}
-                    connections={merged.connections}
+                    scenes={getEffectiveScenes(merged.scenes, live)}
+                    connections={getEffectiveConnections(merged.connections, live)}
                     notLoadedTargets={merged.linkCheck.notLoadedTargets}
-                    currentSceneId={live?.currentSceneId ?? merged.scenes[0]?.id ?? null}
+                    currentSceneId={
+                      live?.currentSceneId ??
+                      getEffectiveScenes(merged.scenes, live)[0]?.id ??
+                      null
+                    }
                     visited={live?.visited ?? {}}
                     revealed={live?.revealed ?? {}}
                     connectionState={live?.connectionState ?? {}}
@@ -156,6 +179,9 @@ export const App: React.FC = () => {
                     onResetLayout={resetNodePositions}
                     expanded
                     onClose={() => setNodeMapExpanded(false)}
+                    onAddNode={() =>
+                      setAddModalState({ open: true, mode: 'node', defaultArea: '' })
+                    }
                   />
                 </div>
               )}
@@ -195,6 +221,59 @@ export const App: React.FC = () => {
             onClose={() => {
               setNoteModalOpen(false);
               setEditingNote(null);
+            }}
+          />
+
+          <AddSceneModal
+            open={addModalState.open}
+            mode={addModalState.mode}
+            acts={merged.acts}
+            defaultActId={
+              getEffectiveScenes(merged.scenes, live).find(
+                (s) => s.id === live?.currentSceneId
+              )?.act_id ??
+              merged.acts[0]?.id ??
+              'a1'
+            }
+            defaultArea={addModalState.defaultArea}
+            areas={getAreasForAct(
+              getEffectiveScenes(merged.scenes, live).find(
+                (s) => s.id === live?.currentSceneId
+              )?.act_id ??
+                merged.acts[0]?.id ??
+                'a1',
+              getEffectiveScenes(merged.scenes, live),
+              live
+            )}
+            scenes={getEffectiveScenes(merged.scenes, live)}
+            currentSceneId={live?.currentSceneId ?? null}
+            suggestedCode={nextImprovisedSceneCode(getEffectiveScenes(merged.scenes, live))}
+            onClose={() => setAddModalState((prev) => ({ ...prev, open: false }))}
+            onAddArea={(input) => {
+              addImprovisedArea(input);
+            }}
+            onAddScene={(input) => {
+              const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+              const effectiveConnections = getEffectiveConnections(merged.connections, live);
+              let nodePosition: { x: number; y: number } | null = null;
+              if (addModalState.mode === 'node') {
+                const graph = buildNodeMapGraph({
+                  scenes: effectiveScenes,
+                  connections: effectiveConnections,
+                  notLoadedTargets: merged.linkCheck.notLoadedTargets,
+                  currentSceneId: live?.currentSceneId ?? effectiveScenes[0]?.id ?? null,
+                  visited: live?.visited ?? {},
+                  revealed: live?.revealed ?? {},
+                  connectionState: live?.connectionState ?? {},
+                  soloMask,
+                  nodePositions: live?.nodePositions ?? {},
+                });
+                nodePosition = pickNextNodePosition(graph.nodes);
+              }
+              addImprovisedScene({
+                ...input,
+                nodePosition,
+              });
             }}
           />
         </>
