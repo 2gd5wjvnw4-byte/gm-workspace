@@ -5,7 +5,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { App } from './App';
 import { THEMES, TOKEN_KEYS, useThemeStore } from './store/themeStore';
 import { useCampaignStore } from './store/campaignStore';
-import { createDefaultLiveState, db } from './storage';
+import { createDefaultLiveState, db, exportBackup, getBlob, pdfBlobKey } from './storage';
+import * as pdfLib from './lib/pdf';
 
 const samplePath = resolve(process.cwd(), 'samples/silent-relay-a1.json');
 const sampleRawText = readFileSync(samplePath, 'utf-8');
@@ -1450,5 +1451,185 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       },
       { timeout: 1500 }
     );
+  });
+
+  it('attaches a PDF in ActSwitcherSheet keyed by meta.module_id and shows missing prompt in PDF drawer', async () => {
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    render(<App />);
+
+    // Open PDF drawer before attaching -> shows empty state
+    fireEvent.click(screen.getByRole('button', { name: 'PDF' }));
+    expect(await screen.findByTestId('pdf-missing-state')).toHaveTextContent(
+      'Attach the PDF for this module'
+    );
+    expect(screen.getByTestId('pdf-drawer-attach-btn')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('zone-drawer-host')).getByRole('button', { name: 'Close' }));
+
+    // Open Act Switcher and attach a PDF
+    fireEvent.click(screen.getByTestId('act-switcher-btn'));
+    const pdfFile = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'silent-relay.pdf', {
+      type: 'application/pdf',
+    });
+    const input = screen.getByTestId('attach-pdf-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [pdfFile] } });
+
+    const info = await screen.findByTestId('attached-pdf-info');
+    expect(info).toHaveTextContent('silent-relay.pdf');
+    expect(info).toHaveTextContent('4 B');
+
+    const moduleId = useCampaignStore.getState().merged.meta?.module_id ?? '';
+    const storedBlob = await getBlob(pdfBlobKey(moduleId));
+    expect(storedBlob).toBeDefined();
+    expect(storedBlob?.fileName).toBe('silent-relay.pdf');
+  });
+
+  it('opens PDF drawer at printed page + meta.page_offset from Book, Encounter, Read-Aloud, and Inspector p.N buttons', async () => {
+    // Inject a chunk with page_offset = 2, encounter_page = 11, and read_aloud.page = 5
+    const parsed = JSON.parse(sampleRawText) as Record<string, unknown>;
+    (parsed.meta as Record<string, unknown>).page_offset = 2;
+    const scenes = parsed.scenes as Array<Record<string, unknown>>;
+    scenes[0].page = 4;
+    scenes[0].encounter_page = 11;
+    scenes[0].read_aloud = { page: 5, starts_with: 'Cold water laps at your' };
+
+    const loadSpy = vi.spyOn(pdfLib, 'loadPdfDocument').mockResolvedValue({
+      numPages: 30,
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as unknown as pdfLib.PdfDocumentProxy);
+    const renderSpy = vi.spyOn(pdfLib, 'renderPdfPageToCanvas').mockImplementation(() => ({
+      promise: Promise.resolve(),
+      cancel: vi.fn(),
+    }));
+
+    try {
+      await useCampaignStore.getState().importJsonChunk(JSON.stringify(parsed));
+      const pdfFile = new File([new Uint8Array([1, 2, 3, 4])], 'module.pdf', {
+        type: 'application/pdf',
+      });
+      await useCampaignStore.getState().attachPdf(pdfFile);
+
+      render(<App />);
+
+      // 1. Book p.4 -> PDF p.6
+      fireEvent.click(screen.getByTestId('scene-book-page-btn'));
+      await waitFor(() => {
+        expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+          'Source PDF · printed p.4 (PDF p.6/30)'
+        );
+      });
+
+      // Prev -> printed p.3 (PDF p.5), Next -> printed p.4 (PDF p.6)
+      fireEvent.click(screen.getByTestId('pdf-prev-btn'));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.3 (PDF p.5/30)'
+      );
+      fireEvent.click(screen.getByTestId('pdf-next-btn'));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.4 (PDF p.6/30)'
+      );
+
+      // Go to page... -> printed p.9 -> PDF p.11
+      fireEvent.click(screen.getByTestId('pdf-goto-btn'));
+      fireEvent.change(screen.getByTestId('pdf-goto-input'), { target: { value: '9' } });
+      fireEvent.click(screen.getByTestId('pdf-goto-submit-btn'));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.9 (PDF p.11/30)'
+      );
+
+      // 2. Encounter p.11 -> PDF p.13
+      fireEvent.click(screen.getByTestId('scene-encounter-page-btn'));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.11 (PDF p.13/30)'
+      );
+
+      // 3. Read-aloud Open in PDF -> printed p.5 (PDF p.7)
+      fireEvent.click(screen.getByTestId('read-aloud-open-pdf-btn'));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.5 (PDF p.7/30)'
+      );
+
+      // 4. Entity Inspector p.N button
+      const entityScene = useCampaignStore
+        .getState()
+        .merged.scenes.find((s) => s.entity_ids.length > 0)!;
+      useCampaignStore.getState().goToScene(entityScene.id);
+      const sceneEntity = useCampaignStore
+        .getState()
+        .merged.entities.find((e) => e.id === entityScene.entity_ids[0])!;
+      expect(sceneEntity).toBeDefined();
+      fireEvent.click(await screen.findByTestId(`inspect-entity-${sceneEntity.id}`));
+      fireEvent.click(screen.getByTestId('inspector-page-btn'));
+      const expectedPdf = sceneEntity.page + 2;
+      await waitFor(() => {
+        expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+          `Source PDF · printed p.${sceneEntity.page} (PDF p.${expectedPdf}/30)`
+        );
+      });
+    } finally {
+      loadSpy.mockRestore();
+      renderSpy.mockRestore();
+    }
+  });
+
+  it('saves backup, restores via Load Backup modal with PDF prompt, and shows visibilitychange reminder', async () => {
+    const shareMock = vi.fn().mockResolvedValue(undefined);
+    const canShareMock = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      writable: true,
+      value: shareMock,
+    });
+    Object.defineProperty(navigator, 'canShare', {
+      configurable: true,
+      writable: true,
+      value: canShareMock,
+    });
+
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    const campId = useCampaignStore.getState().activeCampaign!.id;
+
+    render(<App />);
+
+    // Trigger a live change so dirtySinceBackup = true, then simulate backgrounding
+    fireEvent.click(screen.getByTestId('solo-mask-toggle'));
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    });
+    fireEvent(document, new Event('visibilitychange'));
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    fireEvent(document, new Event('visibilitychange'));
+
+    expect(await screen.findByTestId('backup-reminder-banner')).toBeInTheDocument();
+
+    // Save Backup via RightPanel Focus overlay
+    fireEvent.click(screen.getByRole('button', { name: 'Open Clocks and Timeline' }));
+    expect(screen.getByTestId('last-backup-label')).toHaveTextContent('Last backup: Never');
+    fireEvent.click(screen.getByTestId('save-backup-btn'));
+
+    await waitFor(() => {
+      expect(shareMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByTestId('last-backup-label')).toHaveTextContent('Last backup: Just now');
+
+    const exported = await exportBackup(campId);
+    const backupFile = new File([JSON.stringify(exported)], 'backup.json', {
+      type: 'application/json',
+    });
+
+    // Return to CampaignScreen and test Load Backup conflict modal -> Restore as new
+    useCampaignStore.getState().closeCampaign();
+    const loadInput = (await screen.findByTestId('load-backup-input')) as HTMLInputElement;
+    fireEvent.change(loadInput, { target: { files: [backupFile] } });
+
+    expect(await screen.findByTestId('restore-backup-modal')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('restore-as-new-btn'));
+
+    // Restored campaign opens and shows PDF re-attach banner since no PDF was attached
+    expect(await screen.findByTestId('pdf-reattach-banner')).toBeInTheDocument();
+    expect(useCampaignStore.getState().activeCampaign?.id).not.toBe(campId);
   });
 });

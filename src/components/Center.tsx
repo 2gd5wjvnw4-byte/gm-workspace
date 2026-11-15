@@ -10,7 +10,7 @@ import type { EntityRoleplay, SceneItemKind } from '../lib/import/types';
 
 export interface CenterProps {
   mapMode: MapDisplayMode;
-  onOpenPdf?: () => void;
+  onOpenPdf?: (printedPage?: number) => void;
   onEditNote?: (note: TableNote) => void;
   onOpenEntityInspector?: (entityId: string) => void;
 }
@@ -57,6 +57,7 @@ const ANCHOR_PREFIX_RE = /^(Trigger|Check|Loot|Secret):\s*(.+)$/i;
 
 export const Center: React.FC<CenterProps> = ({
   mapMode,
+  onOpenPdf,
   onEditNote,
   onOpenEntityInspector,
 }) => {
@@ -685,6 +686,7 @@ export const Center: React.FC<CenterProps> = ({
                 </div>
                 <button
                   type="button"
+                  onClick={() => onOpenPdf?.(1)}
                   style={{
                     height: '44px',
                     padding: '0 14px',
@@ -693,6 +695,7 @@ export const Center: React.FC<CenterProps> = ({
                     background: 'var(--p2)',
                     color: 'var(--text)',
                     fontSize: '13px',
+                    cursor: 'pointer',
                   }}
                 >
                   Book p.1
@@ -858,6 +861,7 @@ export const Center: React.FC<CenterProps> = ({
                   <button
                     type="button"
                     data-testid="scene-book-page-btn"
+                    onClick={() => onOpenPdf?.(currentScene.page)}
                     style={{
                       height: '44px',
                       padding: '0 14px',
@@ -866,10 +870,31 @@ export const Center: React.FC<CenterProps> = ({
                       background: 'var(--p2)',
                       color: 'var(--text)',
                       fontSize: '13px',
+                      cursor: 'pointer',
                     }}
                   >
                     Book p.{currentScene.page}
                   </button>
+
+                  {typeof currentScene.encounter_page === 'number' && (
+                    <button
+                      type="button"
+                      data-testid="scene-encounter-page-btn"
+                      onClick={() => onOpenPdf?.(currentScene.encounter_page!)}
+                      style={{
+                        height: '44px',
+                        padding: '0 14px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--line)',
+                        background: 'var(--p2)',
+                        color: 'var(--text)',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Encounter p.{currentScene.encounter_page}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1064,6 +1089,14 @@ export const Center: React.FC<CenterProps> = ({
                           <button
                             type="button"
                             data-testid="read-aloud-open-pdf-btn"
+                            onClick={() => {
+                              if (
+                                currentScene.read_aloud &&
+                                typeof currentScene.read_aloud === 'object'
+                              ) {
+                                onOpenPdf?.(currentScene.read_aloud.page);
+                              }
+                            }}
                             style={{
                               height: '44px',
                               padding: '0 14px',
@@ -1074,6 +1107,7 @@ export const Center: React.FC<CenterProps> = ({
                               fontSize: '13px',
                               fontWeight: 600,
                               flexShrink: 0,
+                              cursor: 'pointer',
                             }}
                           >
                             Open in PDF

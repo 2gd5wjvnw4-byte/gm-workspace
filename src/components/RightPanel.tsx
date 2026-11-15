@@ -7,6 +7,7 @@ import {
   getEffectiveScenes,
   getEffectiveTruths,
 } from '../lib/improvised';
+import { deliverBackupFile } from '../lib/backupShare';
 import { isSoundEnabled, playTactileClick, setSoundEnabled } from '../lib/sound';
 import { useCampaignStore } from '../store/campaignStore';
 import { AddRightItemModal, type AddRightItemMode } from './AddRightItemModal';
@@ -61,7 +62,20 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     addImprovisedClue,
     addImprovisedFaction,
     setRightSectionOpen,
+    saveBackup,
   } = useCampaignStore();
+  const [savingBackup, setSavingBackup] = useState(false);
+
+  const handleSaveBackup = async () => {
+    if (!activeCampaign || savingBackup) return;
+    setSavingBackup(true);
+    try {
+      const payload = await saveBackup();
+      await deliverBackupFile(payload);
+    } finally {
+      setSavingBackup(false);
+    }
+  };
   const isSectionOpen = (key: string) => live?.ui.rightSectionsOpen?.[key] ?? true;
   const looseNotes = live?.looseNotes ?? [];
   const [looseNotesOpen, setLooseNotesOpen] = useState(false);
@@ -407,6 +421,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           </span>
           <button
             type="button"
+            data-testid="save-backup-btn"
+            disabled={!activeCampaign || savingBackup}
+            onClick={() => void handleSaveBackup()}
             style={{
               height: '44px',
               padding: '0 12px',
@@ -416,9 +433,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               color: 'var(--teal)',
               fontSize: '13px',
               fontWeight: 600,
+              cursor: !activeCampaign || savingBackup ? 'default' : 'pointer',
+              opacity: !activeCampaign || savingBackup ? 0.6 : 1,
             }}
           >
-            Save Backup
+            {savingBackup ? 'Saving…' : 'Save Backup'}
           </button>
         </div>
       </CollapsibleSection>

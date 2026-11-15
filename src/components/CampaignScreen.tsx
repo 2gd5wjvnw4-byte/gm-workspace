@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import type { CampaignRecord } from '../storage';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { parseBackupPayload, type BackupPayload, type CampaignRecord } from '../storage';
 import { useCampaignStore } from '../store/campaignStore';
 
 export const CampaignScreen: React.FC = () => {
@@ -9,8 +10,17 @@ export const CampaignScreen: React.FC = () => {
     openCampaign,
     createNewCampaign,
     deleteCampaign,
+    restoreBackup,
     errorMessage,
   } = useCampaignStore();
+
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingBackup, setPendingBackup] = useState<{
+    jsonText: string;
+    payload: BackupPayload;
+  } | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -22,6 +32,58 @@ export const CampaignScreen: React.FC = () => {
   useEffect(() => {
     void refreshCampaigns();
   }, [refreshCampaigns]);
+
+  const handleBackupFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBackupError(null);
+    try {
+      const text =
+        typeof file.text === 'function'
+          ? await file.text()
+          : await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result ?? ''));
+              reader.onerror = () => reject(new Error('Failed to read backup file'));
+              reader.readAsText(file);
+            });
+      const payload = parseBackupPayload(text);
+      const hasExistingMatch = campaigns.some((c) => c.id === payload.campaign.id);
+      if (hasExistingMatch) {
+        setPendingBackup({ jsonText: text, payload });
+      } else {
+        setIsRestoring(true);
+        try {
+          await restoreBackup(text, { mode: 'replace' });
+        } finally {
+          setIsRestoring(false);
+        }
+      }
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : 'Invalid backup file.');
+    } finally {
+      if (backupInputRef.current) {
+        backupInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleConfirmRestore = async (mode: 'new' | 'replace') => {
+    if (!pendingBackup || isRestoring) return;
+    setIsRestoring(true);
+    setBackupError(null);
+    try {
+      await restoreBackup(pendingBackup.jsonText, {
+        mode,
+        targetCampaignId: pendingBackup.payload.campaign.id,
+      });
+      setPendingBackup(null);
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : 'Failed to restore backup.');
+    } finally {
+      setIsRestoring(false);
+    }
+  };
 
   const handleConfirmDelete = async () => {
     if (!confirmDeleteCamp || isDeleting) return;
@@ -104,27 +166,57 @@ export const CampaignScreen: React.FC = () => {
             </h1>
           </div>
 
-          <button
-            type="button"
-            data-testid="new-campaign-btn"
-            onClick={() => setShowNewModal(true)}
-            style={{
-              height: '44px',
-              padding: '0 16px',
-              borderRadius: '10px',
-              border: 'none',
-              background: 'var(--accent)',
-              color: 'var(--onAccent)',
-              fontWeight: 700,
-              fontSize: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            New campaign
-          </button>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <input
+              ref={backupInputRef}
+              type="file"
+              accept="application/json,.json"
+              data-testid="load-backup-input"
+              onChange={(e) => void handleBackupFileChange(e)}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              data-testid="load-backup-btn"
+              disabled={isRestoring}
+              onClick={() => backupInputRef.current?.click()}
+              style={{
+                height: '44px',
+                padding: '0 16px',
+                borderRadius: '10px',
+                border: '1px solid var(--tealLine)',
+                background: 'var(--tealBg)',
+                color: 'var(--teal)',
+                fontWeight: 700,
+                fontSize: '14px',
+                cursor: isRestoring ? 'default' : 'pointer',
+              }}
+            >
+              {isRestoring ? 'Restoring…' : 'Load Backup'}
+            </button>
+
+            <button
+              type="button"
+              data-testid="new-campaign-btn"
+              onClick={() => setShowNewModal(true)}
+              style={{
+                height: '44px',
+                padding: '0 16px',
+                borderRadius: '10px',
+                border: 'none',
+                background: 'var(--accent)',
+                color: 'var(--onAccent)',
+                fontWeight: 700,
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              New campaign
+            </button>
+          </div>
         </div>
 
-        {errorMessage && (
+        {(errorMessage || backupError) && (
           <div
             role="alert"
             style={{
@@ -136,7 +228,7 @@ export const CampaignScreen: React.FC = () => {
               fontSize: '13px',
             }}
           >
-            {errorMessage}
+            {backupError || errorMessage}
           </div>
         )}
 
@@ -488,6 +580,104 @@ export const CampaignScreen: React.FC = () => {
           </form>
         </div>
       )}
+      {pendingBackup &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Restore backup"
+            data-testid="restore-backup-modal"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+              zIndex: 60,
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '440px',
+                background: 'var(--panel)',
+                border: '1px solid var(--line)',
+                borderRadius: '14px',
+                padding: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+                color: 'var(--text)',
+              }}
+            >
+              <h2 style={{ margin: 0, fontFamily: 'var(--head)', fontSize: '18px' }}>
+                Restore backup
+              </h2>
+              <p style={{ margin: 0, fontSize: '14px', color: 'var(--muted)' }}>
+                A campaign named <strong>{pendingBackup.payload.campaign.title}</strong> already exists. Replace it or restore as a new campaign?
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button
+                  type="button"
+                  data-testid="restore-replace-btn"
+                  disabled={isRestoring}
+                  onClick={() => void handleConfirmRestore('replace')}
+                  style={{
+                    height: '44px',
+                    padding: '0 16px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'var(--accent)',
+                    color: 'var(--onAccent)',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Replace existing campaign
+                </button>
+                <button
+                  type="button"
+                  data-testid="restore-as-new-btn"
+                  disabled={isRestoring}
+                  onClick={() => void handleConfirmRestore('new')}
+                  style={{
+                    height: '44px',
+                    padding: '0 16px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--tealLine)',
+                    background: 'var(--tealBg)',
+                    color: 'var(--teal)',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Restore as new campaign
+                </button>
+                <button
+                  type="button"
+                  data-testid="restore-cancel-btn"
+                  onClick={() => setPendingBackup(null)}
+                  style={{
+                    height: '44px',
+                    padding: '0 16px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--line)',
+                    background: 'var(--p3)',
+                    color: 'var(--text)',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </main>
   );
 };

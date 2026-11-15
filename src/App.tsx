@@ -18,6 +18,7 @@ import {
   nextImprovisedSceneCode,
   pickNextNodePosition,
 } from './lib/improvised';
+import { deliverBackupFile } from './lib/backupShare';
 import { buildNodeMapGraph } from './lib/nodeMap';
 import { applyThemeToElement, getThemeCssVariables, useThemeStore } from './store/themeStore';
 import { useCampaignStore } from './store/campaignStore';
@@ -39,19 +40,36 @@ export const App: React.FC = () => {
     resetNodePositions,
     addImprovisedArea,
     addImprovisedScene,
+    dirtySinceBackup,
+    pdfMissingPrompt,
+    dismissPdfMissingPrompt,
+    saveBackup,
   } = useCampaignStore();
   const [drawer, setDrawer] = useState<DrawerMode>(null);
+  const [requestedPdfPage, setRequestedPdfPage] = useState<number | null>(null);
+  const [pdfOpenSeq, setPdfOpenSeq] = useState(0);
   const [inspectedEntityId, setInspectedEntityId] = useState<string | null>(null);
   const [actSheetOpen, setActSheetOpen] = useState(false);
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<TableNote | null>(null);
   const [nodeMapExpanded, setNodeMapExpanded] = useState(false);
+  const [showBackupReminder, setShowBackupReminder] = useState(false);
   const [addModalState, setAddModalState] = useState<{
     open: boolean;
     mode: AddModalMode;
     defaultArea: string;
   }>({ open: false, mode: 'scene', defaultArea: '' });
+
+  const openPdfAtPage = (printedPage?: number) => {
+    const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+    const currentScene =
+      effectiveScenes.find((s) => s.id === live?.currentSceneId) ?? effectiveScenes[0] ?? null;
+    const targetPage = printedPage ?? currentScene?.page ?? 1;
+    setRequestedPdfPage(targetPage);
+    setPdfOpenSeq((n) => n + 1);
+    setDrawer('pdf');
+  };
 
   const navView = live?.ui?.navView ?? 'list';
   const mapMode = live?.ui?.mapMode ?? 'off';
@@ -70,6 +88,70 @@ export const App: React.FC = () => {
   useEffect(() => {
     applyThemeToElement(theme);
   }, [theme]);
+
+  // Show backup reminder on next open if app went to background with unsaved changes
+  const pendingReminderRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    const STORAGE_KEY = 'gm-workspace-backup-reminder';
+    if (!activeCampaign) {
+      setShowBackupReminder(false);
+      pendingReminderRef.current = null;
+      return;
+    }
+
+    const readStoredReminder = (): string | null => {
+      if (pendingReminderRef.current) return pendingReminderRef.current;
+      try {
+        return typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function'
+          ? localStorage.getItem(STORAGE_KEY)
+          : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const writeStoredReminder = (campaignId: string) => {
+      pendingReminderRef.current = campaignId;
+      try {
+        if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
+          localStorage.setItem(STORAGE_KEY, campaignId);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    if (readStoredReminder() === activeCampaign.id) {
+      setShowBackupReminder(true);
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        if (dirtySinceBackup) {
+          writeStoredReminder(activeCampaign.id);
+        }
+      } else if (document.visibilityState === 'visible') {
+        if (readStoredReminder() === activeCampaign.id) {
+          setShowBackupReminder(true);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [activeCampaign, dirtySinceBackup]);
+
+  const clearBackupReminder = () => {
+    pendingReminderRef.current = null;
+    setShowBackupReminder(false);
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
+        localStorage.removeItem('gm-workspace-backup-reminder');
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const cssVars = getThemeCssVariables(theme) as React.CSSProperties;
   // shortcut: iPadOS standalone PWA often reports env(safe-area-inset-top) as 0px while drawing the 24-28px clock/battery/multitasking bar, upgrade if WebKit reports accurate standalone insets
@@ -106,6 +188,125 @@ export const App: React.FC = () => {
         <StandaloneBanner onDismiss={() => setShowStandaloneBanner(false)} />
       )}
 
+      {activeCampaign && showBackupReminder && (
+        <div
+          data-testid="backup-reminder-banner"
+          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+            padding: '8px 14px',
+            background: 'var(--tealBg)',
+            borderBottom: '1px solid var(--tealLine)',
+            color: 'var(--text)',
+            fontSize: '13px',
+          }}
+        >
+          <span>You have table changes since your last backup.</span>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              data-testid="backup-reminder-save-btn"
+              onClick={() => {
+                void (async () => {
+                  const payload = await saveBackup();
+                  await deliverBackupFile(payload);
+                  clearBackupReminder();
+                })();
+              }}
+              style={{
+                height: '32px',
+                padding: '0 10px',
+                borderRadius: '6px',
+                border: '1px solid var(--tealLine)',
+                background: 'var(--panel)',
+                color: 'var(--teal)',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Save Backup
+            </button>
+            <button
+              type="button"
+              data-testid="backup-reminder-dismiss-btn"
+              onClick={clearBackupReminder}
+              style={{
+                height: '32px',
+                padding: '0 10px',
+                borderRadius: '6px',
+                border: '1px solid var(--line)',
+                background: 'var(--p2)',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeCampaign && pdfMissingPrompt && (
+        <div
+          data-testid="pdf-reattach-banner"
+          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+            padding: '8px 14px',
+            background: 'var(--deltaBg)',
+            borderBottom: '1px solid var(--gold)',
+            color: 'var(--deltaText)',
+            fontSize: '13px',
+          }}
+        >
+          <span>Backup restored. Re-attach the module PDF when ready.</span>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              data-testid="pdf-reattach-open-btn"
+              onClick={() => {
+                dismissPdfMissingPrompt();
+                setActSheetOpen(true);
+              }}
+              style={{
+                height: '32px',
+                padding: '0 10px',
+                borderRadius: '6px',
+                border: '1px solid var(--gold)',
+                background: 'var(--panel)',
+                color: 'var(--gold)',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Attach PDF
+            </button>
+            <button
+              type="button"
+              data-testid="pdf-reattach-dismiss-btn"
+              onClick={dismissPdfMissingPrompt}
+              style={{
+                height: '32px',
+                padding: '0 10px',
+                borderRadius: '6px',
+                border: '1px solid var(--line)',
+                background: 'var(--p2)',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {!activeCampaign ? (
         <CampaignScreen />
       ) : (
@@ -121,7 +322,13 @@ export const App: React.FC = () => {
             onToggleSoloMask={() => setSoloMask(!soloMask)}
             focusMode={focusMode}
             onToggleFocusMode={() => setFocusMode(!focusMode)}
-            onOpenPdf={() => setDrawer((d) => (d === 'pdf' ? null : 'pdf'))}
+            onOpenPdf={() => {
+              if (drawer === 'pdf') {
+                setDrawer(null);
+              } else {
+                openPdfAtPage();
+              }
+            }}
             onOpenEntityInspector={(entityId) => {
               setInspectedEntityId(entityId);
               setDrawer('entity');
@@ -148,7 +355,7 @@ export const App: React.FC = () => {
             <div style={{ flex: 1, minWidth: 0, display: 'flex', position: 'relative' }}>
               <Center
                 mapMode={mapMode}
-                onOpenPdf={() => setDrawer('pdf')}
+                onOpenPdf={(page) => openPdfAtPage(page)}
                 onEditNote={(note) => {
                   setEditingNote(note);
                   setNoteModalOpen(true);
@@ -213,6 +420,9 @@ export const App: React.FC = () => {
             <DrawerHost
               activeDrawer={drawer}
               inspectedEntityId={inspectedEntityId}
+              requestedPdfPage={requestedPdfPage}
+              pdfOpenSeq={pdfOpenSeq}
+              onOpenPdfPage={(page) => openPdfAtPage(page)}
               onClose={() => setDrawer(null)}
             />
           </div>

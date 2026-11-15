@@ -3,12 +3,16 @@ import type { DispositionState } from '../storage/types';
 import { getEffectiveScenes } from '../lib/improvised';
 import { useFlashConfirm } from '../lib/useFlashConfirm';
 import { useCampaignStore } from '../store/campaignStore';
+import { PdfDrawerContent } from './PdfDrawerContent';
 
 export type DrawerMode = 'pdf' | 'entity' | null;
 
 export interface DrawerHostProps {
   activeDrawer: DrawerMode;
   inspectedEntityId?: string | null;
+  requestedPdfPage?: number | null;
+  pdfOpenSeq?: number;
+  onOpenPdfPage?: (printedPage: number) => void;
   onClose: () => void;
 }
 
@@ -22,6 +26,9 @@ const DISPOSITION_COLORS: Record<DispositionState, string> = {
 export const DrawerHost: React.FC<DrawerHostProps> = ({
   activeDrawer,
   inspectedEntityId,
+  requestedPdfPage = null,
+  pdfOpenSeq = 0,
+  onOpenPdfPage,
   onClose,
 }) => {
   const {
@@ -398,86 +405,11 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
       }}
     >
       {isPdf && (
-        <>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 12px',
-              borderBottom: '1px solid var(--line)',
-            }}
-          >
-            <span style={{ fontWeight: 600, flex: 1 }}>
-              Source PDF · printed p.1 (PDF p.1)
-            </span>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                height: '44px',
-                padding: '0 14px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'var(--p3)',
-                color: 'var(--text)',
-              }}
-            >
-              Close
-            </button>
-          </div>
-          <div style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
-            <div
-              style={{
-                background: 'var(--p2)',
-                border: '1px dashed var(--line2)',
-                borderRadius: '12px',
-                padding: '24px',
-                color: 'var(--muted)',
-                fontSize: '14px',
-                textAlign: 'center',
-              }}
-            >
-              DrawerHost · PDF Drawer placeholder (480px)
-            </div>
-          </div>
-          <div
-            style={{
-              padding: '12px',
-              borderTop: '1px solid var(--line)',
-              display: 'flex',
-              gap: '8px',
-            }}
-          >
-            <button
-              type="button"
-              style={{
-                flex: 1,
-                height: '48px',
-                borderRadius: '10px',
-                border: '1px solid var(--tealLine)',
-                background: 'var(--tealBg)',
-                color: 'var(--teal)',
-                fontWeight: 600,
-              }}
-            >
-              Crop map from this page
-            </button>
-            <button
-              type="button"
-              style={{
-                height: '48px',
-                padding: '0 14px',
-                borderRadius: '10px',
-                border: '1px solid var(--line)',
-                background: 'var(--p2)',
-                color: 'var(--text)',
-              }}
-            >
-              Go to page…
-            </button>
-          </div>
-        </>
+        <PdfDrawerContent
+          requestedPrintedPage={requestedPdfPage}
+          openRequestSeq={pdfOpenSeq}
+          onClose={onClose}
+        />
       )}
 
       {isEntity && (
@@ -562,9 +494,30 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
                         fontSize: '13px',
                         color: 'var(--muted)',
                         textTransform: 'uppercase',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
                       }}
                     >
-                      {baseEntity.type} · book p.{baseEntity.page}
+                      <span>{baseEntity.type} ·</span>
+                      <button
+                        type="button"
+                        data-testid="inspector-page-btn"
+                        onClick={() => onOpenPdfPage?.(baseEntity.page)}
+                        style={{
+                          height: '28px',
+                          padding: '0 8px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--line)',
+                          background: 'var(--p2)',
+                          color: 'var(--text)',
+                          fontFamily: 'var(--mono)',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        p.{baseEntity.page}
+                      </button>
                     </div>
 
                     {baseEntity.stat_line && (

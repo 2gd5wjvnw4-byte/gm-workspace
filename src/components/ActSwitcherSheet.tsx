@@ -7,11 +7,20 @@ export interface ActSwitcherSheetProps {
   onClose: () => void;
 }
 
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export const ActSwitcherSheet: React.FC<ActSwitcherSheetProps> = ({ open, onClose }) => {
   const {
     activeCampaign,
     chunks,
     merged,
+    pdfInfo,
+    attachPdf,
     importJsonChunk,
     removeChunk,
     closeCampaign,
@@ -20,11 +29,29 @@ export const ActSwitcherSheet: React.FC<ActSwitcherSheetProps> = ({ open, onClos
   } = useCampaignStore();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const [exportedText, setExportedText] = useState<string | null>(null);
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
 
   if (!open) return null;
+
+  const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setStatusNotice(null);
+    clearError();
+    try {
+      await attachPdf(file);
+      setStatusNotice(`Attached PDF "${file.name}" (${formatFileSize(file.size)}).`);
+    } catch (err) {
+      setStatusNotice(err instanceof Error ? err.message : 'Failed to attach PDF.');
+    } finally {
+      if (pdfInputRef.current) {
+        pdfInputRef.current.value = '';
+      }
+    }
+  };
 
   const handleRemoveChunk = async (chunkId: string) => {
     setDeletingIds((prev) => ({ ...prev, [chunkId]: true }));
@@ -268,7 +295,59 @@ export const ActSwitcherSheet: React.FC<ActSwitcherSheetProps> = ({ open, onClos
             >
               Export carry-over IDs
             </button>
+
+            <input
+              ref={pdfInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              data-testid="attach-pdf-input"
+              onChange={(e) => void handlePdfChange(e)}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              data-testid="attach-pdf-btn"
+              onClick={() => pdfInputRef.current?.click()}
+              style={{
+                height: '44px',
+                padding: '0 16px',
+                borderRadius: '10px',
+                border: '1px solid var(--line)',
+                background: 'var(--p2)',
+                color: 'var(--text)',
+                fontWeight: 600,
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              Attach PDF
+            </button>
           </div>
+
+          {pdfInfo && (
+            <div
+              data-testid="attached-pdf-info"
+              style={{
+                padding: '10px 12px',
+                borderRadius: '10px',
+                border: '1px solid var(--line)',
+                background: 'var(--p2)',
+                fontSize: '13px',
+                color: 'var(--text)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+              }}
+            >
+              <span>
+                Attached PDF: <strong>{pdfInfo.fileName}</strong>
+              </span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: 'var(--muted)' }}>
+                {formatFileSize(pdfInfo.fileSize)}
+              </span>
+            </div>
+          )}
 
           {errorMessage && (
             <div

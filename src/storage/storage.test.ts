@@ -275,8 +275,63 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
     }
   });
 
-  it('throws "not implemented" for stubbed Phase 7 backup functions', async () => {
-    await expect(exportBackup('camp-1')).rejects.toThrow('not implemented');
-    await expect(importBackup('{}')).rejects.toThrow('not implemented');
+  it('round-trips campaign, chunks, live layer, and map blobs via exportBackup and importBackup', async () => {
+    const created = await importChunk(sampleRawText, 'camp-backup-1');
+
+    // Attach a map blob and a PDF blob (PDF must be excluded from backup)
+    await putBlob('map:deck-1', new Uint8Array([10, 20, 30, 40]), 'image/png');
+    await putBlob(`pdf:${created.campaign.moduleId}`, new Uint8Array([0x25, 0x50, 0x44, 0x46]), 'application/pdf', {
+      fileName: 'module.pdf',
+      fileSize: 4,
+    });
+
+    const updatedLive = {
+      ...created.live,
+      currentSceneId: 'act-1-s01',
+      visited: { 'act-1-s01': true },
+      notes: [{ id: 'n-1', targetId: 'act-1-s01', text: 'Table change note', createdAt: 12345 }],
+      looseNotes: [{ id: 'ln-1', targetId: 'loose', text: 'Loose note', createdAt: 12346 }],
+      maps: [{ id: 'deck-1', name: 'Deck 1', blobKey: 'map:deck-1', width: 800, height: 600 }],
+    };
+    await db.live.put(updatedLive);
+
+    const payload = await exportBackup('camp-backup-1');
+    expect(payload.format).toBe('gm-workspace-backup');
+    expect(payload.version).toBe(1);
+    expect(payload.campaign.lastBackupAt).toEqual(expect.any(Number));
+    expect(Object.keys(payload.maps)).toEqual(['map:deck-1']);
+    expect(JSON.stringify(payload)).not.toContain('module.pdf');
+
+    // Delete campaign and map blob, keep PDF blob first
+    await deleteCampaign('camp-backup-1');
+    expect(await loadCampaign('camp-backup-1')).toBeNull();
+
+    const restored = await importBackup(JSON.stringify(payload), { mode: 'replace' });
+    expect(restored.pdfMissing).toBe(false);
+    expect(restored.campaign.id).toBe(payload.campaign.id);
+    expect(restored.campaign.title).toBe(payload.campaign.title);
+    expect(restored.campaign.lastBackupAt).toBe(payload.campaign.lastBackupAt);
+    expect(restored.chunks.length).toBe(1);
+    expect(restored.live.currentSceneId).toBe('act-1-s01');
+    expect(restored.live.visited).toEqual({ 'act-1-s01': true });
+    expect(restored.live.notes).toEqual(updatedLive.notes);
+    expect(restored.live.looseNotes).toEqual(updatedLive.looseNotes);
+
+    const restoredMap = await getBlob('map:deck-1');
+    expect(restoredMap).toBeDefined();
+    expect(Array.from(restoredMap!.data as Uint8Array)).toEqual([10, 20, 30, 40]);
+
+    // Remove PDF blob and restore as a new campaign -> pdfMissing should be true
+    await db.blobs.delete(`pdf:${created.campaign.moduleId}`);
+    const restoredNew = await importBackup(JSON.stringify(payload), { mode: 'new' });
+    expect(restoredNew.pdfMissing).toBe(true);
+    expect(restoredNew.campaign.id).not.toBe('camp-backup-1');
+    expect(restoredNew.live.campaignId).toBe(restoredNew.campaign.id);
+  });
+
+  it('rejects invalid backup JSON, wrong format, or unsupported version', async () => {
+    await expect(importBackup('not json')).rejects.toThrow(/Invalid backup file/i);
+    await expect(importBackup(JSON.stringify({ format: 'other', version: 1 }))).rejects.toThrow(/wrong format/i);
+    await expect(importBackup(JSON.stringify({ format: 'gm-workspace-backup', version: 99 }))).rejects.toThrow(/Unsupported backup version/i);
   });
 });

@@ -3,14 +3,21 @@ import {
   createCampaign as storageCreateCampaign,
   deleteCampaign as storageDeleteCampaign,
   deleteChunk as storageDeleteChunk,
+  exportBackup as storageExportBackup,
+  getBlob as storageGetBlob,
+  importBackup as storageImportBackup,
   importChunk as storageImportChunk,
   listCampaigns as storageListCampaigns,
   loadCampaign as storageLoadCampaign,
+  pdfBlobKey,
+  putBlob as storagePutBlob,
   saveLive as storageSaveLive,
+  type BackupPayload,
   type CampaignRecord,
   type ChunkRecord,
   type ConnectionOverrideState,
   type DispositionState,
+  type ImportedBackupResult,
   type ImprovisedAreaRecord,
   type ImprovisedClueRecord,
   type ImprovisedEntityRecord,
@@ -47,6 +54,18 @@ export interface CampaignStoreState {
   merged: MergedCampaignData;
   loading: boolean;
   errorMessage: string | null;
+  pdfInfo: { moduleId: string; fileName: string; fileSize: number } | null;
+  pdfVersion: number;
+  dirtySinceBackup: boolean;
+  pdfMissingPrompt: boolean;
+  refreshPdfInfo: () => Promise<void>;
+  attachPdf: (file: File) => Promise<void>;
+  saveBackup: () => Promise<BackupPayload>;
+  restoreBackup: (
+    jsonText: string,
+    options?: { mode?: 'new' | 'replace'; targetCampaignId?: string }
+  ) => Promise<ImportedBackupResult>;
+  dismissPdfMissingPrompt: () => void;
   refreshCampaigns: () => Promise<CampaignRecord[]>;
   openCampaign: (campaignId: string) => Promise<LoadedCampaign | null>;
   createNewCampaign: (input: {
@@ -212,7 +231,7 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
     const current = get().live;
     if (!current) return null;
     const next = updater(current);
-    set({ live: next });
+    set({ live: next, dirtySinceBackup: true });
     void storageSaveLive(next);
     return next;
   };
@@ -225,6 +244,10 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
     merged: emptyMerged(),
     loading: false,
     errorMessage: null,
+    pdfInfo: null,
+    pdfVersion: 0,
+    dirtySinceBackup: false,
+    pdfMissingPrompt: false,
 
     refreshCampaigns: async () => {
       const list = await storageListCampaigns();
@@ -247,7 +270,10 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           ...applyLoaded(loaded),
           campaigns,
           loading: false,
+          dirtySinceBackup: false,
+          pdfMissingPrompt: false,
         });
+        void get().refreshPdfInfo();
         return loaded;
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to load campaign';
@@ -271,7 +297,10 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           ...applyLoaded(loaded),
           campaigns,
           loading: false,
+          dirtySinceBackup: false,
+          pdfMissingPrompt: false,
         });
+        void get().refreshPdfInfo();
         return loaded;
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to create campaign';
@@ -285,6 +314,9 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
       set({
         ...applyLoaded(null),
         errorMessage: null,
+        pdfInfo: null,
+        dirtySinceBackup: false,
+        pdfMissingPrompt: false,
       });
     },
 
@@ -334,7 +366,9 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
         set({
           ...applyLoaded(freshLoaded ?? loaded),
           campaigns,
+          dirtySinceBackup: true,
         });
+        void get().refreshPdfInfo();
         return freshLoaded ?? loaded;
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Invalid JSON file';
@@ -364,7 +398,9 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
       set({
         ...applyLoaded(freshLoaded ?? loaded),
         campaigns,
+        dirtySinceBackup: true,
       });
+      void get().refreshPdfInfo();
     },
 
     setActiveLoadedCampaign: (loaded: LoadedCampaign | null) => {
@@ -1147,6 +1183,103 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           currentSceneId: nextCurrent,
         };
       });
+    },
+
+    refreshPdfInfo: async () => {
+      const moduleId =
+        get().merged.meta?.module_id || get().activeCampaign?.moduleId || '';
+      if (!moduleId) {
+        set({ pdfInfo: null });
+        return;
+      }
+      const record = await storageGetBlob(pdfBlobKey(moduleId));
+      if (!record) {
+        set({ pdfInfo: null });
+        return;
+      }
+      const fileSize =
+        record.fileSize ??
+        (record.data instanceof Blob
+          ? record.data.size
+          : record.data instanceof Uint8Array
+            ? record.data.byteLength
+            : record.data.length);
+      set({
+        pdfInfo: {
+          moduleId,
+          fileName: record.fileName || `${moduleId}.pdf`,
+          fileSize,
+        },
+      });
+    },
+
+    attachPdf: async (file: File) => {
+      const moduleId =
+        get().merged.meta?.module_id || get().activeCampaign?.moduleId;
+      if (!moduleId) {
+        throw new Error('No active module to attach PDF to.');
+      }
+      // Store as Uint8Array for reliable IndexedDB persistence on iPad Safari
+      const bytes =
+        typeof file.arrayBuffer === 'function'
+          ? new Uint8Array(await file.arrayBuffer())
+          : new Uint8Array(await new Response(file).arrayBuffer());
+      await storagePutBlob(
+        pdfBlobKey(moduleId),
+        bytes,
+        file.type || 'application/pdf',
+        { fileName: file.name, fileSize: file.size || bytes.byteLength }
+      );
+      set((state) => ({
+        pdfInfo: {
+          moduleId,
+          fileName: file.name,
+          fileSize: file.size || bytes.byteLength,
+        },
+        pdfVersion: state.pdfVersion + 1,
+        pdfMissingPrompt: false,
+      }));
+    },
+
+    saveBackup: async () => {
+      const active = get().activeCampaign;
+      if (!active) {
+        throw new Error('No active campaign to back up.');
+      }
+      const payload = await storageExportBackup(active.id);
+      const campaigns = await storageListCampaigns();
+      set({
+        activeCampaign: payload.campaign,
+        campaigns,
+        dirtySinceBackup: false,
+      });
+      return payload;
+    },
+
+    restoreBackup: async (jsonText, options) => {
+      sessionEpoch += 1;
+      set({ loading: true, errorMessage: null });
+      try {
+        const result = await storageImportBackup(jsonText, options);
+        const campaigns = await storageListCampaigns();
+        set({
+          ...applyLoaded(result),
+          campaigns,
+          loading: false,
+          dirtySinceBackup: false,
+          pdfMissingPrompt: result.pdfMissing,
+        });
+        void get().refreshPdfInfo();
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to restore backup';
+        set({ loading: false, errorMessage: msg });
+        throw err;
+      }
+    },
+
+    dismissPdfMissingPrompt: () => {
+      set({ pdfMissingPrompt: false });
     },
   };
 });

@@ -5,6 +5,7 @@ import {
   type CampaignRecord,
   type ChunkRecord,
   createDefaultLiveState,
+  type ImportedBackupResult,
   type LiveState,
   type LoadedCampaign,
 } from './types';
@@ -135,15 +136,22 @@ export function saveLive(liveState: LiveState): Promise<void> {
   });
 }
 
+export function pdfBlobKey(moduleId: string): string {
+  return `pdf:${moduleId}`;
+}
+
 export async function putBlob(
   key: string,
   data: Blob | Uint8Array | string,
-  mimeType = 'application/octet-stream'
+  mimeType = 'application/octet-stream',
+  meta?: { fileName?: string; fileSize?: number }
 ): Promise<void> {
   await db.blobs.put({
     key,
     data,
     mimeType,
+    ...(meta?.fileName !== undefined ? { fileName: meta.fileName } : {}),
+    ...(meta?.fileSize !== undefined ? { fileSize: meta.fileSize } : {}),
     updatedAt: Date.now(),
   });
 }
@@ -331,10 +339,233 @@ export async function deleteCampaign(campaignId: string): Promise<void> {
   });
 }
 
-export async function exportBackup(_campaignId: string): Promise<BackupPayload> {
-  throw new Error('not implemented');
+async function blobDataToBase64(data: Blob | Uint8Array | string, mimeType: string): Promise<string> {
+  if (typeof data === 'string') {
+    if (data.startsWith('data:')) return data;
+    const bytes = new TextEncoder().encode(data);
+    return `data:${mimeType || 'text/plain'};base64,${uint8ToBase64(bytes)}`;
+  }
+
+  let bytes: Uint8Array;
+  if (data instanceof Uint8Array) {
+    bytes = data;
+  } else if (typeof data.arrayBuffer === 'function') {
+    bytes = new Uint8Array(await data.arrayBuffer());
+  } else {
+    const buf = await new Response(data).arrayBuffer();
+    bytes = new Uint8Array(buf);
+  }
+  return `data:${mimeType || 'application/octet-stream'};base64,${uint8ToBase64(bytes)}`;
 }
 
-export async function importBackup(_backupJsonText: string): Promise<never> {
-  throw new Error('not implemented');
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
+function base64ToBlobData(encoded: string): { bytes: Uint8Array; mimeType: string } {
+  let mimeType = 'application/octet-stream';
+  let b64 = encoded;
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(encoded);
+  if (match) {
+    mimeType = match[1] || mimeType;
+    b64 = match[2];
+  }
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return { bytes, mimeType };
+}
+
+export function parseBackupPayload(backupJsonText: string): BackupPayload {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(backupJsonText);
+  } catch {
+    throw new Error('Invalid backup file: not valid JSON.');
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Invalid backup file: expected a JSON object.');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (obj.format !== 'gm-workspace-backup') {
+    throw new Error('Invalid backup file: wrong format.');
+  }
+  if (obj.version !== 1) {
+    throw new Error(`Unsupported backup version: ${String(obj.version)}.`);
+  }
+
+  const campaign = obj.campaign as Record<string, unknown> | undefined;
+  if (
+    !campaign ||
+    typeof campaign !== 'object' ||
+    typeof campaign.id !== 'string' ||
+    typeof campaign.moduleId !== 'string' ||
+    typeof campaign.title !== 'string'
+  ) {
+    throw new Error('Invalid backup file: missing campaign metadata.');
+  }
+
+  if (!Array.isArray(obj.chunks)) {
+    throw new Error('Invalid backup file: chunks must be an array.');
+  }
+  if (!obj.live || typeof obj.live !== 'object') {
+    throw new Error('Invalid backup file: missing live state.');
+  }
+  if (obj.maps !== undefined && (typeof obj.maps !== 'object' || obj.maps === null || Array.isArray(obj.maps))) {
+    throw new Error('Invalid backup file: maps must be an object.');
+  }
+
+  return {
+    format: 'gm-workspace-backup',
+    version: 1,
+    exportedAt: typeof obj.exportedAt === 'string' ? obj.exportedAt : new Date().toISOString(),
+    campaign: obj.campaign as CampaignRecord,
+    chunks: obj.chunks as ChunkRecord[],
+    live: obj.live as LiveState,
+    maps: (obj.maps as Record<string, string> | undefined) ?? {},
+  };
+}
+
+export async function exportBackup(campaignId: string): Promise<BackupPayload> {
+  const pending = pendingLiveTimers.get(campaignId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingLiveTimers.delete(campaignId);
+    await db.live.put(pending.state);
+    for (const r of pending.resolvers) r();
+  }
+
+  const campaign = await db.campaigns.get(campaignId);
+  if (!campaign) {
+    throw new Error(`Campaign not found: ${campaignId}`);
+  }
+
+  const chunks = await db.chunks.where('campaignId').equals(campaignId).toArray();
+  chunks.sort((a, b) => a.importedAt - b.importedAt);
+
+  const live =
+    (await db.live.get(campaignId)) ??
+    createDefaultLiveState(campaignId, defaultThemeForGenre(campaign.genre));
+
+  const maps: Record<string, string> = {};
+  for (const mapAsset of live.maps ?? []) {
+    if (!mapAsset.blobKey) continue;
+    const blob = await db.blobs.get(mapAsset.blobKey);
+    if (blob) {
+      maps[mapAsset.blobKey] = await blobDataToBase64(blob.data, blob.mimeType);
+    }
+  }
+
+  const now = Date.now();
+  const updatedCampaign: CampaignRecord = {
+    ...campaign,
+    lastBackupAt: now,
+  };
+  await db.campaigns.put(updatedCampaign);
+
+  return {
+    format: 'gm-workspace-backup',
+    version: 1,
+    exportedAt: new Date(now).toISOString(),
+    campaign: updatedCampaign,
+    chunks,
+    live,
+    maps,
+  };
+}
+
+export async function importBackup(
+  backupJsonText: string,
+  options?: { mode?: 'new' | 'replace'; targetCampaignId?: string }
+): Promise<ImportedBackupResult> {
+  const payload = parseBackupPayload(backupJsonText);
+  const mode = options?.mode ?? 'replace';
+
+  const existingCampaignId = options?.targetCampaignId ?? payload.campaign.id;
+  const targetCampaignId =
+    mode === 'new'
+      ? `camp-${(payload.campaign.moduleId || 'backup').replace(/[^a-zA-Z0-9_-]+/g, '-')}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      : existingCampaignId;
+
+  const restoredCampaign: CampaignRecord = {
+    ...payload.campaign,
+    id: targetCampaignId,
+    updatedAt: payload.campaign.updatedAt || Date.now(),
+  };
+
+  const restoredChunks: ChunkRecord[] = payload.chunks.map((c) => ({
+    ...c,
+    id: `${targetCampaignId}:${c.chunkId}`,
+    campaignId: targetCampaignId,
+  }));
+
+  // Remap map blobKeys when restoring as a new campaign so deleting one doesn't wipe the other's blobs
+  const blobKeyMap = new Map<string, string>();
+  const restoredMapsMeta = (payload.live.maps ?? []).map((m) => {
+    if (mode === 'new') {
+      const nextKey = `map:${targetCampaignId}:${m.id}`;
+      blobKeyMap.set(m.blobKey, nextKey);
+      return { ...m, blobKey: nextKey };
+    }
+    blobKeyMap.set(m.blobKey, m.blobKey);
+    return m;
+  });
+
+  const restoredLive: LiveState = {
+    ...payload.live,
+    campaignId: targetCampaignId,
+    maps: restoredMapsMeta,
+  };
+
+  await db.transaction('rw', db.campaigns, db.chunks, db.live, db.blobs, async () => {
+    if (mode === 'replace') {
+      const prevLive = await db.live.get(targetCampaignId);
+      if (prevLive?.maps && prevLive.maps.length > 0) {
+        const oldKeys = prevLive.maps.map((m) => m.blobKey).filter(Boolean);
+        if (oldKeys.length > 0) {
+          await db.blobs.bulkDelete(oldKeys);
+        }
+      }
+      await db.chunks.where('campaignId').equals(targetCampaignId).delete();
+      await db.live.delete(targetCampaignId);
+      await db.campaigns.delete(targetCampaignId);
+    }
+
+    await db.campaigns.put(restoredCampaign);
+    if (restoredChunks.length > 0) {
+      await db.chunks.bulkPut(restoredChunks);
+    }
+    await db.live.put(restoredLive);
+
+    const now = Date.now();
+    for (const [origKey, encoded] of Object.entries(payload.maps ?? {})) {
+      const destKey = blobKeyMap.get(origKey) ?? (mode === 'new' ? `map:${targetCampaignId}:${origKey}` : origKey);
+      const { bytes, mimeType } = base64ToBlobData(encoded);
+      await db.blobs.put({
+        key: destKey,
+        data: bytes,
+        mimeType,
+        updatedAt: now,
+      });
+    }
+  });
+
+  const pdfRecord = await db.blobs.get(pdfBlobKey(restoredCampaign.moduleId));
+
+  return {
+    campaign: restoredCampaign,
+    chunks: restoredChunks,
+    live: restoredLive,
+    pdfMissing: !pdfRecord,
+  };
 }

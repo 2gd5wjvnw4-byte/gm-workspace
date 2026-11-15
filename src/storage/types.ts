@@ -140,6 +140,8 @@ export interface BlobRecord {
   key: string;
   data: Blob | Uint8Array | string;
   mimeType: string;
+  fileName?: string;
+  fileSize?: number;
   updatedAt: number;
 }
 
@@ -157,6 +159,10 @@ export interface BackupPayload {
   chunks: ChunkRecord[];
   live: LiveState;
   maps: Record<string, string>;
+}
+
+export interface ImportedBackupResult extends LoadedCampaign {
+  pdfMissing: boolean;
 }
 
 export function createDefaultLiveState(campaignId: string, theme: ThemeId = 'scifi'): LiveState {
