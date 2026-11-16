@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   createCampaign as storageCreateCampaign,
+  deleteBlob as storageDeleteBlob,
   deleteCampaign as storageDeleteCampaign,
   deleteChunk as storageDeleteChunk,
   exportBackup as storageExportBackup,
@@ -23,9 +24,12 @@ import {
   type ImprovisedEntityRecord,
   type LiveState,
   type LoadedCampaign,
+  type MapAssetRecord,
   type MapDisplayMode,
+  type MapScale,
   type NavViewMode,
   type RollLogEntry,
+  type ScenePin,
   type TableNote,
 } from '../storage';
 import {
@@ -66,6 +70,20 @@ export interface CampaignStoreState {
     options?: { mode?: 'new' | 'replace'; targetCampaignId?: string }
   ) => Promise<ImportedBackupResult>;
   dismissPdfMissingPrompt: () => void;
+  addMapAsset: (input: {
+    name: string;
+    data: Blob | Uint8Array;
+    mimeType: string;
+    width: number;
+    height: number;
+    scale?: MapScale;
+    fileName?: string;
+  }) => Promise<MapAssetRecord | null>;
+  updateMapAsset: (mapId: string, patch: { name?: string; scale?: MapScale | undefined }) => void;
+  deleteMapAsset: (mapId: string) => Promise<void>;
+  setSceneMap: (sceneIds: string[], mapId: string | null) => void;
+  setLastMapId: (mapId: string | null) => void;
+  setScenePin: (sceneId: string, pin: ScenePin | null) => void;
   refreshCampaigns: () => Promise<CampaignRecord[]>;
   openCampaign: (campaignId: string) => Promise<LoadedCampaign | null>;
   createNewCampaign: (input: {
@@ -1289,6 +1307,146 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
 
     dismissPdfMissingPrompt: () => {
       set({ pdfMissingPrompt: false });
+    },
+
+    addMapAsset: async (input) => {
+      const state = get();
+      if (!state.live || !state.activeCampaign) return null;
+      const campaignId = state.activeCampaign.id;
+      const id = `map-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const blobKey = `map:${campaignId}:${id}`;
+      let bytesOrBlob: Blob | Uint8Array = input.data;
+      let fileSize = input.data instanceof Uint8Array ? input.data.byteLength : input.data.size;
+      if (!(input.data instanceof Uint8Array) && typeof input.data.arrayBuffer === 'function') {
+        const buf = await input.data.arrayBuffer();
+        bytesOrBlob = new Uint8Array(buf);
+        fileSize = bytesOrBlob.byteLength;
+      }
+      await storagePutBlob(blobKey, bytesOrBlob, input.mimeType, {
+        fileName: input.fileName,
+        fileSize,
+      });
+      const record: MapAssetRecord = {
+        id,
+        name: input.name.trim() || 'Untitled Map',
+        blobKey,
+        width: Math.max(1, Math.round(input.width)),
+        height: Math.max(1, Math.round(input.height)),
+        ...(input.scale ? { scale: input.scale } : {}),
+      };
+      commitLive((prev) => ({
+        ...prev,
+        maps: [...(prev.maps ?? []), record],
+        ui: {
+          ...prev.ui,
+          lastMapId: id,
+        },
+      }));
+      return record;
+    },
+
+    updateMapAsset: (mapId, patch) => {
+      commitLive((prev) => ({
+        ...prev,
+        maps: (prev.maps ?? []).map((m) => {
+          if (m.id !== mapId) return m;
+          const next: MapAssetRecord = {
+            ...m,
+            ...(patch.name !== undefined ? { name: patch.name.trim() || m.name } : {}),
+          };
+          if ('scale' in patch) {
+            if (patch.scale) {
+              next.scale = patch.scale;
+            } else {
+              delete next.scale;
+            }
+          }
+          return next;
+        }),
+      }));
+    },
+
+    deleteMapAsset: async (mapId) => {
+      const target = get().live?.maps.find((m) => m.id === mapId);
+      commitLive((prev) => {
+        const nextPins: Record<string, ScenePin> = {};
+        for (const [sid, pin] of Object.entries(prev.pins ?? {})) {
+          if (pin.mapId !== mapId) nextPins[sid] = pin;
+        }
+        const nextSceneMap: Record<string, string> = {};
+        for (const [sid, mid] of Object.entries(prev.sceneMap ?? {})) {
+          if (mid !== mapId) nextSceneMap[sid] = mid;
+        }
+        const remainingMaps = (prev.maps ?? []).filter((m) => m.id !== mapId);
+        const nextLastMapId =
+          prev.ui.lastMapId === mapId ? (remainingMaps[0]?.id ?? null) : prev.ui.lastMapId;
+        return {
+          ...prev,
+          maps: remainingMaps,
+          pins: nextPins,
+          sceneMap: nextSceneMap,
+          ui: {
+            ...prev.ui,
+            lastMapId: nextLastMapId,
+          },
+        };
+      });
+      if (target?.blobKey) {
+        await storageDeleteBlob(target.blobKey);
+      }
+    },
+
+    setSceneMap: (sceneIds, mapId) => {
+      if (sceneIds.length === 0) return;
+      commitLive((prev) => {
+        const nextSceneMap = { ...(prev.sceneMap ?? {}) };
+        for (const sid of sceneIds) {
+          if (mapId) {
+            nextSceneMap[sid] = mapId;
+          } else {
+            delete nextSceneMap[sid];
+          }
+        }
+        return {
+          ...prev,
+          sceneMap: nextSceneMap,
+          ui: mapId
+            ? {
+                ...prev.ui,
+                lastMapId: mapId,
+              }
+            : prev.ui,
+        };
+      });
+    },
+
+    setLastMapId: (mapId) => {
+      commitLive((prev) => ({
+        ...prev,
+        ui: {
+          ...prev.ui,
+          lastMapId: mapId,
+        },
+      }));
+    },
+
+    setScenePin: (sceneId, pin) => {
+      commitLive((prev) => {
+        const nextPins = { ...(prev.pins ?? {}) };
+        if (pin) {
+          nextPins[sceneId] = {
+            mapId: pin.mapId,
+            xPct: Math.min(100, Math.max(0, Number(pin.xPct.toFixed(2)))),
+            yPct: Math.min(100, Math.max(0, Number(pin.yPct.toFixed(2)))),
+          };
+        } else {
+          delete nextPins[sceneId];
+        }
+        return {
+          ...prev,
+          pins: nextPins,
+        };
+      });
     },
   };
 });

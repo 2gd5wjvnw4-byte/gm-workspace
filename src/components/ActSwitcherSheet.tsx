@@ -5,6 +5,7 @@ import { useCampaignStore } from '../store/campaignStore';
 export interface ActSwitcherSheetProps {
   open: boolean;
   onClose: () => void;
+  onOpenMapLibrary?: () => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -14,7 +15,11 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const ActSwitcherSheet: React.FC<ActSwitcherSheetProps> = ({ open, onClose }) => {
+export const ActSwitcherSheet: React.FC<ActSwitcherSheetProps> = ({
+  open,
+  onClose,
+  onOpenMapLibrary,
+}) => {
   const {
     activeCampaign,
     chunks,
@@ -322,6 +327,30 @@ export const ActSwitcherSheet: React.FC<ActSwitcherSheetProps> = ({ open, onClos
             >
               Attach PDF
             </button>
+
+            {onOpenMapLibrary && (
+              <button
+                type="button"
+                data-testid="act-sheet-maps-btn"
+                onClick={() => {
+                  onClose();
+                  onOpenMapLibrary();
+                }}
+                style={{
+                  height: '44px',
+                  padding: '0 16px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--p2)',
+                  color: 'var(--text)',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                }}
+              >
+                Maps
+              </button>
+            )}
           </div>
 
           {pdfInfo && (

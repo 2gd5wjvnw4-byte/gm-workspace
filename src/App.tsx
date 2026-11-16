@@ -6,6 +6,7 @@ import { RightPanel } from './components/RightPanel';
 import { DrawerHost, type DrawerMode } from './components/DrawerHost';
 import { CampaignScreen } from './components/CampaignScreen';
 import { ActSwitcherSheet } from './components/ActSwitcherSheet';
+import { MapLibrarySheet } from './components/MapLibrarySheet';
 import { ReviewSheet } from './components/ReviewSheet';
 import { NoteOverrideModal } from './components/NoteOverrideModal';
 import { AddSceneModal, type AddModalMode } from './components/AddSceneModal';
@@ -54,6 +55,7 @@ export const App: React.FC = () => {
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<TableNote | null>(null);
   const [nodeMapExpanded, setNodeMapExpanded] = useState(false);
+  const [mapLibraryOpen, setMapLibraryOpen] = useState(false);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
   const [addModalState, setAddModalState] = useState<{
     open: boolean;
@@ -333,6 +335,7 @@ export const App: React.FC = () => {
               setInspectedEntityId(entityId);
               setDrawer('entity');
             }}
+            onOpenMapLibrary={() => setMapLibraryOpen(true)}
           />
 
           <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
@@ -366,6 +369,7 @@ export const App: React.FC = () => {
                     d === 'entity' && inspectedEntityId === entityId ? null : 'entity'
                   );
                 }}
+                onOpenMapLibrary={() => setMapLibraryOpen(true)}
               />
 
               {nodeMapExpanded && (
@@ -430,6 +434,12 @@ export const App: React.FC = () => {
           <ActSwitcherSheet
             open={actSheetOpen}
             onClose={() => setActSheetOpen(false)}
+            onOpenMapLibrary={() => setMapLibraryOpen(true)}
+          />
+
+          <MapLibrarySheet
+            open={mapLibraryOpen}
+            onClose={() => setMapLibraryOpen(false)}
           />
 
           <ReviewSheet

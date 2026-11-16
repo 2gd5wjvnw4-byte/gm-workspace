@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExitsBar } from './ExitsBar';
+import { MapArea } from './MapArea';
 import type { DispositionState, MapDisplayMode, TableNote } from '../storage/types';
-import { getEffectiveScenes } from '../lib/improvised';
+import { getEffectiveConnections, getEffectiveScenes } from '../lib/improvised';
 import { buildKeywordTargets, segmentTextByKeywords, type KeywordTarget } from '../lib/keywords';
 import { getArchetypeLabels, getMaskedItemView } from '../lib/solo';
 import { useFlashConfirm } from '../lib/useFlashConfirm';
@@ -13,6 +14,7 @@ export interface CenterProps {
   onOpenPdf?: (printedPage?: number) => void;
   onEditNote?: (note: TableNote) => void;
   onOpenEntityInspector?: (entityId: string) => void;
+  onOpenMapLibrary?: () => void;
 }
 
 export type SceneViewMode = 'run' | 'full';
@@ -60,10 +62,13 @@ export const Center: React.FC<CenterProps> = ({
   onOpenPdf,
   onEditNote,
   onOpenEntityInspector,
+  onOpenMapLibrary,
 }) => {
   const {
     merged,
     live,
+    goToScene,
+    setScenePin,
     toggleRevealedItem,
     adjustEntityTrack,
     cycleEntityDisposition,
@@ -79,6 +84,7 @@ export const Center: React.FC<CenterProps> = ({
   const { flashedIds, triggerFlash } = useFlashConfirm();
 
   const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+  const effectiveConnections = getEffectiveConnections(merged.connections, live);
   const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? null;
   const currentScene =
     effectiveScenes.find((s) => s.id === currentSceneId) ?? effectiveScenes[0] ?? null;
@@ -100,6 +106,11 @@ export const Center: React.FC<CenterProps> = ({
   const sceneNotes = currentScene
     ? (live?.notes ?? []).filter((n) => n.targetId === currentScene.id)
     : [];
+
+  const scenesWithNotes = useMemo(
+    () => new Set((live?.notes ?? []).map((n) => n.targetId)),
+    [live?.notes]
+  );
 
   const labels = getArchetypeLabels(
     currentScene ? currentScene.archetype : 'physical_zone'
@@ -607,9 +618,24 @@ export const Center: React.FC<CenterProps> = ({
                   }
           }
         >
-          <span style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: 'var(--muted)' }}>
-            MAP AREA PLACEHOLDER ({mapMode.toUpperCase()})
-          </span>
+          <MapArea
+            mapMode={mapMode}
+            maps={live?.maps ?? []}
+            pins={live?.pins ?? {}}
+            sceneMap={live?.sceneMap ?? {}}
+            lastMapId={live?.ui.lastMapId ?? null}
+            scenes={effectiveScenes}
+            connections={effectiveConnections}
+            currentSceneId={currentSceneId}
+            visited={visited}
+            revealed={revealed}
+            connectionState={live?.connectionState ?? {}}
+            soloMask={soloMask}
+            scenesWithNotes={scenesWithNotes}
+            onSelectScene={goToScene}
+            onSetScenePin={setScenePin}
+            onOpenMapLibrary={onOpenMapLibrary}
+          />
         </div>
       )}
 

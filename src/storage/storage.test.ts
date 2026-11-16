@@ -334,4 +334,33 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
     await expect(importBackup(JSON.stringify({ format: 'other', version: 1 }))).rejects.toThrow(/wrong format/i);
     await expect(importBackup(JSON.stringify({ format: 'gm-workspace-backup', version: 99 }))).rejects.toThrow(/Unsupported backup version/i);
   });
+
+  it('preserves optional map scale, pins, and sceneMap across backup and restore', async () => {
+    const created = await createCampaign({ id: 'camp-map-scale', title: 'Map Scale Camp' });
+    await putBlob('map:camp-map-scale:m1', new Uint8Array([1, 2, 3]), 'image/png');
+    const updatedLive = {
+      ...created.live,
+      maps: [
+        {
+          id: 'm1',
+          name: 'District Map',
+          blobKey: 'map:camp-map-scale:m1',
+          width: 1200,
+          height: 900,
+          scale: 'District' as const,
+        },
+      ],
+      pins: { 's1': { mapId: 'm1', xPct: 42.5, yPct: 68.25 } },
+      sceneMap: { 's1': 'm1' },
+    };
+    await db.live.put(updatedLive);
+
+    const payload = await exportBackup('camp-map-scale');
+    await deleteCampaign('camp-map-scale');
+    const restored = await importBackup(JSON.stringify(payload), { mode: 'replace' });
+
+    expect(restored.live.maps[0].scale).toBe('District');
+    expect(restored.live.pins).toEqual({ s1: { mapId: 'm1', xPct: 42.5, yPct: 68.25 } });
+    expect(restored.live.sceneMap).toEqual({ s1: 'm1' });
+  });
 });

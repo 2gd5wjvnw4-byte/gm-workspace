@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import type { MapDisplayMode } from '../storage/types';
 import { getEffectiveConnections, getEffectiveScenes } from '../lib/improvised';
 import {
@@ -21,6 +21,7 @@ export interface TopBarProps {
   onToggleFocusMode?: () => void;
   onOpenPdf: () => void;
   onOpenEntityInspector?: (entityId: string) => void;
+  onOpenMapLibrary?: () => void;
 }
 
 const MAP_MODES: Array<{ id: MapDisplayMode; label: string }> = [
@@ -61,9 +62,19 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleFocusMode,
   onOpenPdf,
   onOpenEntityInspector,
+  onOpenMapLibrary,
 }) => {
   const { merged, live, adjustTrackerValue, goToScene } = useCampaignStore();
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const mapLongPressTimerRef = useRef<number | null>(null);
+  const mapLongPressFiredRef = useRef(false);
+
+  const clearMapLongPress = () => {
+    if (mapLongPressTimerRef.current !== null) {
+      window.clearTimeout(mapLongPressTimerRef.current);
+      mapLongPressTimerRef.current = null;
+    }
+  };
 
   const effectiveScenes = getEffectiveScenes(merged.scenes, live);
   const effectiveConnections = getEffectiveConnections(merged.connections, live);
@@ -448,6 +459,28 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* 5. Map mode segmented control */}
       <div
+        data-testid="map-mode-control"
+        onPointerDown={() => {
+          if (!onOpenMapLibrary) return;
+          clearMapLongPress();
+          mapLongPressFiredRef.current = false;
+          mapLongPressTimerRef.current = window.setTimeout(() => {
+            mapLongPressFiredRef.current = true;
+            mapLongPressTimerRef.current = null;
+            onOpenMapLibrary();
+            window.setTimeout(() => {
+              mapLongPressFiredRef.current = false;
+            }, 400);
+          }, 500);
+        }}
+        onPointerUp={clearMapLongPress}
+        onPointerCancel={clearMapLongPress}
+        onPointerLeave={clearMapLongPress}
+        onContextMenu={(e) => {
+          if (onOpenMapLibrary) {
+            e.preventDefault();
+          }
+        }}
         style={{
           display: 'flex',
           background: 'var(--p2)',
@@ -465,7 +498,13 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               key={m.id}
               type="button"
-              onClick={() => onSelectMapMode(m.id)}
+              onClick={() => {
+                if (mapLongPressFiredRef.current) {
+                  mapLongPressFiredRef.current = false;
+                  return;
+                }
+                onSelectMapMode(m.id);
+              }}
               aria-pressed={active}
               style={{
                 height: '44px',

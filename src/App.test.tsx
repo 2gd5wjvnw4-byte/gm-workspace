@@ -1663,4 +1663,98 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(useCampaignStore.getState().live?.theme).toBe('warmPaper');
     expect(useThemeStore.getState().theme).toBe('warmPaper');
   });
+
+  it('Phase 8: Map Library, 4 map modes, pins with Solo Mask, note badge, and Edit pins work', async () => {
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    render(<App />);
+    await screen.findByTestId('act-switcher-btn');
+
+    // Open Map Library from Act Switcher -> Maps
+    fireEvent.click(screen.getByTestId('act-switcher-btn'));
+    fireEvent.click(await screen.findByTestId('act-sheet-maps-btn'));
+    expect(await screen.findByTestId('map-library-sheet')).toBeInTheDocument();
+
+    // Upload a map image
+    const uploadInput = screen.getByTestId('map-upload-input') as HTMLInputElement;
+    const pngFile = new File([new Uint8Array([137, 80, 78, 71])], 'station-deck.png', {
+      type: 'image/png',
+    });
+    fireEvent.change(uploadInput, { target: { files: [pngFile] } });
+
+    await waitFor(() => {
+      expect(useCampaignStore.getState().live?.maps.length).toBe(1);
+    });
+    const mapId = useCampaignStore.getState().live!.maps[0].id;
+
+    // Edit scale tag and assign to current scene
+    const scaleSelect = await screen.findByTestId(`map-scale-select-${mapId}`);
+    fireEvent.change(scaleSelect, { target: { value: 'Tactical' } });
+    expect(useCampaignStore.getState().live?.maps[0].scale).toBe('Tactical');
+
+    const currentSceneId = useCampaignStore.getState().live!.currentSceneId!;
+    fireEvent.click(screen.getByTestId(`map-set-current-scene-btn-${mapId}`));
+    expect(useCampaignStore.getState().live?.sceneMap[currentSceneId]).toBe(mapId);
+
+    fireEvent.click(screen.getByTestId('map-library-close-btn'));
+
+    // Test long-press on Map mode control opens Map Library
+    const mapModeControl = screen.getByTestId('map-mode-control');
+    vi.useFakeTimers();
+    fireEvent.pointerDown(mapModeControl);
+    vi.advanceTimersByTime(520);
+    fireEvent.pointerUp(mapModeControl);
+    vi.advanceTimersByTime(450);
+    vi.useRealTimers();
+    expect(await screen.findByTestId('map-library-sheet')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('map-library-close-btn'));
+
+    // Switch map modes: PiP -> Split -> Map -> Text
+    fireEvent.click(screen.getByRole('button', { name: 'PiP' }));
+    expect(await screen.findByTestId('center-map-area')).toBeInTheDocument();
+    expect(screen.getByTestId('map-area-viewport')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Split' }));
+    expect(await screen.findByTestId('map-edit-pins-btn')).toBeInTheDocument();
+
+    // Place a pin on an unpinned scene via Edit pins
+    const scenes = useCampaignStore.getState().merged.scenes;
+    const firstScene = scenes[0]; // a1-s01
+    const secondScene = scenes[1]; // a1-s02
+    const thirdScene = scenes[2]; // a1-s03 (open from a1-s02)
+    fireEvent.click(screen.getByTestId('map-edit-pins-btn'));
+    expect(screen.getByTestId('map-unpinned-bar')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId(`map-unpinned-scene-${secondScene.id}`));
+    const viewport = screen.getByTestId('map-area-viewport');
+    fireEvent.pointerDown(viewport, { pointerId: 1, clientX: 120, clientY: 120 });
+    fireEvent.pointerUp(viewport, { pointerId: 1, clientX: 120, clientY: 120 });
+
+    expect(useCampaignStore.getState().live?.pins[secondScene.id]).toMatchObject({ mapId });
+
+    // Also pin firstScene and thirdScene, add a table note to firstScene -> verify amber dot badge
+    useCampaignStore.getState().setScenePin(firstScene.id, { mapId, xPct: 25, yPct: 30 });
+    useCampaignStore.getState().setScenePin(thirdScene.id, { mapId, xPct: 60, yPct: 60 });
+    useCampaignStore.getState().addTableNote(firstScene.id, 'Hazard active');
+    fireEvent.click(screen.getByTestId('map-edit-pins-btn'));
+
+    expect(await screen.findByTestId(`map-pin-${firstScene.id}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`map-pin-note-dot-${firstScene.id}`)).toBeInTheDocument();
+
+    // Tap secondScene pin to visit it, then Solo Mask shows '?' for reachable unvisited thirdScene
+    fireEvent.click(screen.getByTestId(`map-pin-${secondScene.id}`));
+    expect(useCampaignStore.getState().live?.currentSceneId).toBe(secondScene.id);
+
+    fireEvent.click(screen.getByTestId('solo-mask-toggle'));
+    const thirdPin = screen.getByTestId(`map-pin-${thirdScene.id}`);
+    expect(thirdPin).toHaveTextContent('?');
+
+    // Tap thirdPin navigates to thirdScene
+    fireEvent.click(thirdPin);
+    expect(useCampaignStore.getState().live?.currentSceneId).toBe(thirdScene.id);
+
+    // Full Map mode hides scene stage, Text hides map area
+    fireEvent.click(screen.getByRole('button', { name: 'Map' }));
+    expect(screen.queryByTestId('zone-scene-stage')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Text' }));
+    expect(screen.queryByTestId('center-map-area')).not.toBeInTheDocument();
+  });
 });

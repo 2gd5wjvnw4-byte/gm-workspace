@@ -92,3 +92,72 @@ export function renderPdfPageToCanvas(
     },
   };
 }
+
+export interface NormalizedCropRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export function clampCropRect(rect: NormalizedCropRect, minSize = 0.05): NormalizedCropRect {
+  const w = Math.min(1, Math.max(minSize, rect.w));
+  const h = Math.min(1, Math.max(minSize, rect.h));
+  const x = Math.min(1 - w, Math.max(0, rect.x));
+  const y = Math.min(1 - h, Math.max(0, rect.y));
+  return { x, y, w, h };
+}
+
+export async function renderPdfCropToPngBlob(
+  doc: PdfDocumentProxy,
+  pdfPageNum: number,
+  cropRect: NormalizedCropRect,
+  dpr?: number
+): Promise<{ blob: Blob; width: number; height: number }> {
+  const page = await doc.getPage(pdfPageNum);
+  const effectiveDpr =
+    dpr ?? (typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1);
+  const renderScale = 2 * effectiveDpr;
+  const viewport = page.getViewport({ scale: renderScale });
+
+  const fullCanvas = document.createElement('canvas');
+  fullCanvas.width = Math.max(1, Math.floor(viewport.width));
+  fullCanvas.height = Math.max(1, Math.floor(viewport.height));
+  const fullCtx = fullCanvas.getContext('2d');
+  if (!fullCtx) {
+    throw new Error('Could not create canvas context for PDF crop.');
+  }
+
+  const renderTask = page.render({
+    canvasContext: fullCtx,
+    viewport,
+  });
+  await renderTask.promise;
+
+  const norm = clampCropRect(cropRect);
+  const sx = Math.floor(norm.x * fullCanvas.width);
+  const sy = Math.floor(norm.y * fullCanvas.height);
+  const sw = Math.max(1, Math.floor(norm.w * fullCanvas.width));
+  const sh = Math.max(1, Math.floor(norm.h * fullCanvas.height));
+
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = sw;
+  cropCanvas.height = sh;
+  const cropCtx = cropCanvas.getContext('2d');
+  if (!cropCtx) {
+    throw new Error('Could not create output canvas context.');
+  }
+  cropCtx.drawImage(fullCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    cropCanvas.toBlob((result) => {
+      if (result) {
+        resolve(result);
+      } else {
+        reject(new Error('Failed to encode cropped map as PNG.'));
+      }
+    }, 'image/png');
+  });
+
+  return { blob, width: sw, height: sh };
+}

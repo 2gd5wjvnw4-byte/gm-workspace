@@ -160,6 +160,10 @@ export async function getBlob(key: string): Promise<BlobRecord | undefined> {
   return db.blobs.get(key);
 }
 
+export async function deleteBlob(key: string): Promise<void> {
+  await db.blobs.delete(key);
+}
+
 export async function requestPersist(): Promise<boolean> {
   if (
     typeof navigator !== 'undefined' &&

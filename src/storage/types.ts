@@ -57,12 +57,15 @@ export interface TableNote {
   createdAt: number;
 }
 
+export type MapScale = 'Tactical' | 'District' | 'Regional' | 'Relationship';
+
 export interface MapAssetRecord {
   id: string;
   name: string;
   blobKey: string;
   width: number;
   height: number;
+  scale?: MapScale;
 }
 
 export interface ScenePin {
@@ -132,6 +135,7 @@ export interface LiveState {
     soloMask: boolean;
     focusMode?: boolean;
     rightSectionsOpen?: Record<string, boolean>;
+    lastMapId?: string | null;
   };
   updatedAt?: number;
 }
