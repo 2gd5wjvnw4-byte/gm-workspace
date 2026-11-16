@@ -44,7 +44,7 @@ import {
   makeAreaKey,
   nextImprovisedSceneCode,
 } from '../lib/improvised';
-import { useThemeStore } from './themeStore';
+import { useThemeStore, type ThemeId } from './themeStore';
 
 export interface CampaignStoreState {
   campaigns: CampaignRecord[];
@@ -86,6 +86,7 @@ export interface CampaignStoreState {
   setNavView: (navView: NavViewMode) => void;
   setMapMode: (mapMode: MapDisplayMode) => void;
   setFocusMode: (focusMode: boolean) => void;
+  setCampaignTheme: (theme: ThemeId) => void;
   setRightSectionOpen: (sectionKey: string, open: boolean) => void;
   addTableNote: (targetId: string, text: string) => TableNote | null;
   updateTableNote: (noteId: string, text: string, targetId?: string) => void;
@@ -497,6 +498,14 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           ...prev.ui,
           focusMode,
         },
+      }));
+    },
+
+    setCampaignTheme: (theme: ThemeId) => {
+      useThemeStore.getState().setTheme(theme);
+      commitLive((prev) => ({
+        ...prev,
+        theme,
       }));
     },
 

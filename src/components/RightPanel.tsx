@@ -43,7 +43,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   onOpenNoteModal,
   onOpenEntityInspector,
 }) => {
-  const { theme, setTheme } = useThemeStore();
+  const { theme } = useThemeStore();
   const {
     activeCampaign,
     live,
@@ -61,6 +61,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     addImprovisedClock,
     addImprovisedClue,
     addImprovisedFaction,
+    setCampaignTheme,
     setRightSectionOpen,
     saveBackup,
   } = useCampaignStore();
@@ -172,22 +173,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           }}
         >
           <span style={sectionHeaderStyle}>RIGHT PANEL</span>
-          <button
-            type="button"
-            onClick={() => setOverlayOpen(false)}
-            style={{
-              height: '44px',
-              padding: '0 14px',
-              borderRadius: '8px',
-              border: 'none',
-              background: 'var(--p3)',
-              color: 'var(--text)',
-              fontSize: '13px',
-              fontWeight: 600,
-            }}
-          >
-            Close
-          </button>
         </div>
       )}
 
@@ -461,7 +446,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               <button
                 key={themeKey}
                 type="button"
-                onClick={() => setTheme(themeKey)}
+                onClick={() => setCampaignTheme(themeKey)}
                 aria-pressed={active}
                 style={{
                   height: '44px',
@@ -653,6 +638,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       <>
         <aside
           data-testid="zone-right-rail"
+          onClick={() => setOverlayOpen((o) => !o)}
           style={{
             width: '56px',
             flexShrink: 0,
@@ -664,6 +650,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             padding: '10px 0',
             gap: '8px',
             boxSizing: 'border-box',
+            cursor: 'pointer',
           }}
         >
           {[
@@ -676,7 +663,10 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               type="button"
               aria-label={item.label}
               aria-expanded={overlayOpen}
-              onClick={() => setOverlayOpen((o) => !o)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setOverlayOpen((o) => !o);
+              }}
               style={{
                 width: '44px',
                 height: '44px',

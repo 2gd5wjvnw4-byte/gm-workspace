@@ -180,22 +180,6 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           >
             NAVIGATION
           </span>
-          <button
-            type="button"
-            onClick={() => setOverlayOpen(false)}
-            style={{
-              height: '44px',
-              padding: '0 14px',
-              borderRadius: '8px',
-              border: 'none',
-              background: 'var(--p3)',
-              color: 'var(--text)',
-              fontSize: '13px',
-              fontWeight: 600,
-            }}
-          >
-            Close
-          </button>
         </div>
       )}
       <div
@@ -785,6 +769,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       <>
         <aside
           data-testid="zone-left-rail"
+          onClick={() => setOverlayOpen((o) => !o)}
           style={{
             width: '56px',
             flexShrink: 0,
@@ -796,6 +781,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
             padding: '10px 0',
             gap: '8px',
             boxSizing: 'border-box',
+            cursor: 'pointer',
           }}
         >
           {[
@@ -809,7 +795,8 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                 type="button"
                 aria-label={item.label}
                 aria-expanded={active}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   if (overlayOpen && navView === item.view) {
                     setOverlayOpen(false);
                   } else {

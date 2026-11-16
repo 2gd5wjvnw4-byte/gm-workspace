@@ -26,7 +26,6 @@ export async function deliverBackupFile(
     try {
       await navigator.share({
         files: [file],
-        title: `${payload.campaign.title} Backup`,
       });
       return 'shared';
     } catch (err) {

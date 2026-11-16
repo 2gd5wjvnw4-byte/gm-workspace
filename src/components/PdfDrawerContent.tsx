@@ -18,7 +18,6 @@ import {
 export interface PdfDrawerContentProps {
   requestedPrintedPage: number | null;
   openRequestSeq: number;
-  onClose: () => void;
 }
 
 const IDENTITY_TRANSFORM: PanZoomTransform = { x: 0, y: 0, scale: 1 };
@@ -26,7 +25,6 @@ const IDENTITY_TRANSFORM: PanZoomTransform = { x: 0, y: 0, scale: 1 };
 export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
   requestedPrintedPage,
   openRequestSeq,
-  onClose,
 }) => {
   const { activeCampaign, merged, pdfVersion, attachPdf } = useCampaignStore();
   const moduleId = merged.meta?.module_id || activeCampaign?.moduleId || '';
@@ -232,21 +230,6 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
           Source PDF · printed p.{printedPage} (PDF p.{currentPdfPage}
           {numPages > 0 ? `/${numPages}` : ''})
         </span>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{
-            height: '44px',
-            padding: '0 14px',
-            borderRadius: '8px',
-            border: 'none',
-            background: 'var(--p3)',
-            color: 'var(--text)',
-            cursor: 'pointer',
-          }}
-        >
-          Close
-        </button>
       </div>
 
       <div

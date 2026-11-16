@@ -1320,13 +1320,31 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(screen.queryByTestId('zone-left-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('zone-right-panel')).not.toBeInTheDocument();
 
-    // Tap left rail button -> LeftPanel opens as overlay; tap backdrop -> closes
+    // Tap left rail bar directly -> LeftPanel opens as overlay without Close button; tap backdrop -> closes
+    fireEvent.click(screen.getByTestId('zone-left-rail'));
+    expect(screen.getByTestId('zone-left-panel')).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('zone-left-panel')).queryByRole('button', { name: 'Close' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('left-panel-backdrop'));
+    expect(screen.queryByTestId('zone-left-panel')).not.toBeInTheDocument();
+
+    // Tap left rail icon button -> still opens LeftPanel
     fireEvent.click(screen.getByRole('button', { name: 'Open Scene List' }));
     expect(screen.getByTestId('zone-left-panel')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('left-panel-backdrop'));
     expect(screen.queryByTestId('zone-left-panel')).not.toBeInTheDocument();
 
-    // Tap right rail button -> RightPanel opens as overlay; tap backdrop -> closes
+    // Tap right rail bar directly -> RightPanel opens as overlay without Close button; tap backdrop -> closes
+    fireEvent.click(screen.getByTestId('zone-right-rail'));
+    expect(screen.getByTestId('zone-right-panel')).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('zone-right-panel')).queryByRole('button', { name: 'Close' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('right-panel-backdrop'));
+    expect(screen.queryByTestId('zone-right-panel')).not.toBeInTheDocument();
+
+    // Tap right rail icon button -> still opens RightPanel
     fireEvent.click(screen.getByRole('button', { name: 'Open Clocks and Timeline' }));
     expect(screen.getByTestId('zone-right-panel')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('right-panel-backdrop'));
@@ -1463,7 +1481,11 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       'Attach the PDF for this module'
     );
     expect(screen.getByTestId('pdf-drawer-attach-btn')).toBeInTheDocument();
-    fireEvent.click(within(screen.getByTestId('zone-drawer-host')).getByRole('button', { name: 'Close' }));
+    expect(
+      within(screen.getByTestId('zone-drawer-host')).queryByRole('button', { name: 'Close' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('drawer-backdrop'));
+    expect(screen.queryByTestId('drawer-backdrop')).not.toBeInTheDocument();
 
     // Open Act Switcher and attach a PDF
     fireEvent.click(screen.getByTestId('act-switcher-btn'));
@@ -1605,20 +1627,27 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
 
     expect(await screen.findByTestId('backup-reminder-banner')).toBeInTheDocument();
 
-    // Save Backup via RightPanel Focus overlay
+    // Save Backup via RightPanel Focus overlay after switching theme to Warm Paper
     fireEvent.click(screen.getByRole('button', { name: 'Open Clocks and Timeline' }));
+    fireEvent.click(screen.getByRole('button', { name: /Warm Paper/i }));
+    expect(useThemeStore.getState().theme).toBe('warmPaper');
     expect(screen.getByTestId('last-backup-label')).toHaveTextContent('Last backup: Never');
     fireEvent.click(screen.getByTestId('save-backup-btn'));
 
     await waitFor(() => {
       expect(shareMock).toHaveBeenCalledTimes(1);
     });
+    expect(Object.keys(shareMock.mock.calls[0][0] as Record<string, unknown>)).toEqual(['files']);
     expect(screen.getByTestId('last-backup-label')).toHaveTextContent('Last backup: Just now');
 
     const exported = await exportBackup(campId);
+    expect(exported.live.theme).toBe('warmPaper');
     const backupFile = new File([JSON.stringify(exported)], 'backup.json', {
       type: 'application/json',
     });
+
+    // Reset theme to scifi before restoring to prove backup restores the saved theme
+    useThemeStore.getState().setTheme('scifi');
 
     // Return to CampaignScreen and test Load Backup conflict modal -> Restore as new
     useCampaignStore.getState().closeCampaign();
@@ -1631,5 +1660,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     // Restored campaign opens and shows PDF re-attach banner since no PDF was attached
     expect(await screen.findByTestId('pdf-reattach-banner')).toBeInTheDocument();
     expect(useCampaignStore.getState().activeCampaign?.id).not.toBe(campId);
+    expect(useCampaignStore.getState().live?.theme).toBe('warmPaper');
+    expect(useThemeStore.getState().theme).toBe('warmPaper');
   });
 });
