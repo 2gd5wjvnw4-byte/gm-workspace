@@ -12,10 +12,28 @@ export interface PanZoomBounds {
 }
 
 export const MIN_ZOOM = 0.4;
+export const MAP_MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 3.0;
 export const ZOOM_STEP = 1.25;
 export const PAN_THRESHOLD_PX = 6;
 export const TAP_SUPPRESS_MS = 80;
+
+export function computeFitScale(
+  bounds: PanZoomBounds,
+  viewportWidth: number,
+  viewportHeight: number,
+  padding = 24,
+  maxFitScale = Number.POSITIVE_INFINITY
+): number {
+  const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
+  const availWidth = Math.max(1, viewportWidth - padding * 2);
+  const availHeight = Math.max(1, viewportHeight - padding * 2);
+
+  const rawScale = Math.min(availWidth / contentWidth, availHeight / contentHeight);
+  const bounded = Math.min(maxFitScale, rawScale);
+  return Number.isFinite(bounded) && bounded > 0 ? bounded : 1;
+}
 
 export function clampScale(
   scale: number,
@@ -116,6 +134,7 @@ export function fitBounds(
   };
 }
 
-export function formatZoomPercent(scale: number): string {
-  return `${Math.round(scale * 100)}%`;
+export function formatZoomPercent(scale: number, baseScale = 1): string {
+  const safeBase = Number.isFinite(baseScale) && baseScale > 0 ? baseScale : 1;
+  return `${Math.round((scale / safeBase) * 100)}%`;
 }

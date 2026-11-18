@@ -1716,6 +1716,26 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Split' }));
     expect(await screen.findByTestId('map-edit-pins-btn')).toBeInTheDocument();
 
+    // Verify a large map (2000x1500) fits the window at 100% and can zoom smaller down to 25%
+    useCampaignStore.setState((state) => ({
+      live: state.live
+        ? {
+            ...state.live,
+            maps: state.live.maps.map((m) =>
+              m.id === mapId ? { ...m, width: 2000, height: 1500 } : m
+            ),
+          }
+        : null,
+    }));
+    fireEvent.click(screen.getByTestId('map-zoom-fit-btn'));
+    expect(screen.getByTestId('map-zoom-caption')).toHaveTextContent('100%');
+    for (let i = 0; i < 8; i += 1) {
+      fireEvent.click(screen.getByTestId('map-zoom-out-btn'));
+    }
+    expect(screen.getByTestId('map-zoom-caption')).toHaveTextContent('25%');
+    fireEvent.click(screen.getByTestId('map-zoom-fit-btn'));
+    expect(screen.getByTestId('map-zoom-caption')).toHaveTextContent('100%');
+
     // Place a pin on an unpinned scene via Edit pins
     const scenes = useCampaignStore.getState().merged.scenes;
     const firstScene = scenes[0]; // a1-s01
@@ -1729,6 +1749,47 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.pointerUp(viewport, { pointerId: 1, clientX: 120, clientY: 120 });
 
     expect(useCampaignStore.getState().live?.pins[secondScene.id]).toMatchObject({ mapId });
+
+    // Remove the placed pin in Edit pins mode while another unpinned scene (firstScene) is selected:
+    // only secondScene's pin is removed and firstScene is NOT accidentally placed at that spot.
+    const placedSecondPin = await screen.findByTestId(`map-pin-${secondScene.id}`);
+    expect(screen.getByTestId(`map-pin-remove-${secondScene.id}`)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId(`map-unpinned-scene-${firstScene.id}`));
+    fireEvent.pointerDown(placedSecondPin, { pointerId: 2, clientX: 120, clientY: 120 });
+    fireEvent.pointerUp(placedSecondPin, { pointerId: 2, clientX: 120, clientY: 120 });
+    fireEvent.click(placedSecondPin);
+    expect(useCampaignStore.getState().live?.pins[secondScene.id]).toBeUndefined();
+    expect(useCampaignStore.getState().live?.pins[firstScene.id]).toBeUndefined();
+    expect(screen.queryByTestId(`map-pin-${secondScene.id}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`map-unpinned-scene-${secondScene.id}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`map-unpinned-scene-${firstScene.id}`)).toBeInTheDocument();
+
+    // Re-place secondScene pin
+    const firePtr = (
+      el: Element,
+      type: 'pointerdown' | 'pointermove' | 'pointerup',
+      props: { pointerId: number; clientX: number; clientY: number }
+    ) => {
+      const ev = new Event(type, { bubbles: true, cancelable: true });
+      Object.assign(ev, props);
+      fireEvent(el, ev);
+    };
+    fireEvent.click(screen.getByTestId(`map-unpinned-scene-${secondScene.id}`));
+    firePtr(viewport, 'pointerdown', { pointerId: 3, clientX: 120, clientY: 120 });
+    firePtr(viewport, 'pointerup', { pointerId: 3, clientX: 120, clientY: 120 });
+    expect(useCampaignStore.getState().live?.pins[secondScene.id]).toMatchObject({ mapId });
+
+    // Rapid single-frame drag (> 6px) in Edit pins mode moves the pin and does not delete it on click
+    const replacedPin = await screen.findByTestId(`map-pin-${secondScene.id}`);
+    const beforeDragPin = useCampaignStore.getState().live!.pins[secondScene.id];
+    firePtr(replacedPin, 'pointerdown', { pointerId: 4, clientX: 120, clientY: 120 });
+    firePtr(replacedPin, 'pointermove', { pointerId: 4, clientX: 200, clientY: 180 });
+    firePtr(replacedPin, 'pointerup', { pointerId: 4, clientX: 200, clientY: 180 });
+    fireEvent.click(replacedPin);
+    const afterDragPin = useCampaignStore.getState().live?.pins[secondScene.id];
+    expect(afterDragPin).toBeDefined();
+    expect(afterDragPin?.xPct).toBeGreaterThan(beforeDragPin.xPct);
+    expect(afterDragPin?.yPct).toBeGreaterThan(beforeDragPin.yPct);
 
     // Also pin firstScene and thirdScene, add a table note to firstScene -> verify amber dot badge
     useCampaignStore.getState().setScenePin(firstScene.id, { mapId, xPct: 25, yPct: 30 });

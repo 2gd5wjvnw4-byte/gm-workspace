@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampScale,
+  computeFitScale,
   fitBounds,
   formatZoomPercent,
+  MAP_MIN_ZOOM,
   MAX_ZOOM,
   MIN_ZOOM,
   panBy,
@@ -11,9 +13,10 @@ import {
 } from './panzoom';
 
 describe('panzoom', () => {
-  it('clamps zoom scale between 40% and 300%', () => {
+  it('clamps zoom scale between 40% and 300% by default and supports custom min/max', () => {
     expect(clampScale(0.1)).toBe(MIN_ZOOM);
     expect(clampScale(0.4)).toBe(0.4);
+    expect(clampScale(0.1, MAP_MIN_ZOOM, MAX_ZOOM)).toBe(0.25);
     expect(clampScale(1.5)).toBe(1.5);
     expect(clampScale(4.5)).toBe(MAX_ZOOM);
     expect(clampScale(Number.NaN)).toBe(1);
@@ -74,8 +77,12 @@ describe('panzoom', () => {
     expect(200 * t.scale + t.y).toBeCloseTo(220, 6);
   });
 
-  it('formats zoom percentage', () => {
+  it('formats zoom percentage and supports fit-relative base scale', () => {
     expect(formatZoomPercent(1)).toBe('100%');
     expect(formatZoomPercent(1.246)).toBe('125%');
+    const fitScale = computeFitScale({ minX: 0, minY: 0, maxX: 2000, maxY: 1500 }, 480, 320, 12);
+    expect(fitScale).toBeCloseTo(296 / 1500, 6);
+    expect(formatZoomPercent(fitScale, fitScale)).toBe('100%');
+    expect(formatZoomPercent(fitScale * 0.25, fitScale)).toBe('25%');
   });
 });

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ModuleConnection, ModuleScene } from '../lib/import/types';
 import {
+  computeFitScale,
   fitBounds,
   formatZoomPercent,
+  MAP_MIN_ZOOM,
   MAX_ZOOM,
-  MIN_ZOOM,
   PAN_THRESHOLD_PX,
   panBy,
   pinchTransform,
@@ -56,6 +57,9 @@ interface PinchAnchor {
 interface DraggingPinState {
   sceneId: string;
   pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  moved: boolean;
   xPct: number;
   yPct: number;
 }
@@ -106,10 +110,22 @@ export const MapArea: React.FC<MapAreaProps> = ({
   const [selectedUnpinnedSceneId, setSelectedUnpinnedSceneId] = useState<string | null>(null);
   const [draggingPin, setDraggingPin] = useState<DraggingPinState | null>(null);
 
+  const draggingPinRef = useRef<DraggingPinState | null>(null);
   const pointersRef = useRef<Map<number, ActivePointer>>(new Map());
   const panStartRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const pinchRef = useRef<PinchAnchor | null>(null);
   const suppressTapUntilRef = useRef<number>(0);
+
+  const effectiveEditPinsMode = editPinsMode && mapMode !== 'pip';
+
+  useEffect(() => {
+    if (mapMode === 'pip' && editPinsMode) {
+      setEditPinsMode(false);
+      setSelectedUnpinnedSceneId(null);
+      draggingPinRef.current = null;
+      setDraggingPin(null);
+    }
+  }, [mapMode, editPinsMode]);
 
   const reachable = useMemo(
     () =>
@@ -143,29 +159,48 @@ export const MapArea: React.FC<MapAreaProps> = ({
     return undefined;
   }, [mapMode]);
 
+  const fitScale = useMemo(() => {
+    if (!activeMap) return 1;
+    return computeFitScale(
+      { minX: 0, minY: 0, maxX: activeMap.width, maxY: activeMap.height },
+      viewportSize.width,
+      viewportSize.height,
+      12
+    );
+  }, [activeMap?.id, activeMap?.width, activeMap?.height, viewportSize.height, viewportSize.width]);
+
+  const minScale = fitScale * MAP_MIN_ZOOM;
+  const maxScale = Math.max(fitScale * MAX_ZOOM, MAX_ZOOM);
+
   const fitMapToViewport = useCallback(() => {
     if (!activeMap) return;
     const el = containerRef.current;
     const rect = el?.getBoundingClientRect();
     const vw = rect && rect.width > 0 ? rect.width : viewportSize.width;
     const vh = rect && rect.height > 0 ? rect.height : viewportSize.height;
+    const targetFit = computeFitScale(
+      { minX: 0, minY: 0, maxX: activeMap.width, maxY: activeMap.height },
+      vw,
+      vh,
+      12
+    );
     setTransform(
       fitBounds(
         { minX: 0, minY: 0, maxX: activeMap.width, maxY: activeMap.height },
         vw,
         vh,
         12,
-        MIN_ZOOM,
-        MAX_ZOOM,
-        1
+        targetFit * MAP_MIN_ZOOM,
+        Math.max(targetFit * MAX_ZOOM, MAX_ZOOM),
+        targetFit
       )
     );
-  }, [activeMap, viewportSize.height, viewportSize.width]);
+  }, [activeMap?.id, activeMap?.width, activeMap?.height, viewportSize.height, viewportSize.width]);
 
-  // Fit when active map changes
+  // Fit when active map or viewport size changes
   useEffect(() => {
     fitMapToViewport();
-  }, [activeMap?.id, fitMapToViewport]);
+  }, [activeMap?.id, activeMap?.width, activeMap?.height, fitMapToViewport]);
 
   // Follow current scene: pan map to current scene's pin when scene changes
   useEffect(() => {
@@ -218,7 +253,9 @@ export const MapArea: React.FC<MapAreaProps> = ({
   const zoomCenter = (factor: number) => {
     const vw = viewportSize.width;
     const vh = viewportSize.height;
-    setTransform((prev) => zoomAtPoint(prev, prev.scale * factor, vw / 2, vh / 2));
+    setTransform((prev) =>
+      zoomAtPoint(prev, prev.scale * factor, vw / 2, vh / 2, minScale, maxScale)
+    );
   };
 
   const clientToMapPct = (clientX: number, clientY: number): { xPct: number; yPct: number } | null => {
@@ -234,7 +271,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
   };
 
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (draggingPin) return;
+    if (draggingPinRef.current) return;
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -256,11 +293,26 @@ export const MapArea: React.FC<MapAreaProps> = ({
     }
   };
 
-  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (draggingPin && activeMap && containerRef.current) {
-      const coords = clientToMapPct(e.clientX, e.clientY);
+  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    const activeDrag = draggingPinRef.current;
+    if (activeDrag && activeDrag.pointerId === e.pointerId && activeMap && containerRef.current) {
+      e.stopPropagation();
+      const safeX = Number.isFinite(e.clientX) ? e.clientX : activeDrag.startClientX;
+      const safeY = Number.isFinite(e.clientY) ? e.clientY : activeDrag.startClientY;
+      const dist = Math.hypot(
+        safeX - activeDrag.startClientX,
+        safeY - activeDrag.startClientY
+      );
+      const moved = activeDrag.moved || dist > PAN_THRESHOLD_PX;
+      const coords = clientToMapPct(safeX, safeY);
       if (coords) {
-        setDraggingPin((prev) => (prev ? { ...prev, ...coords } : null));
+        const nextDrag: DraggingPinState = {
+          ...activeDrag,
+          moved,
+          ...(moved ? coords : {}),
+        };
+        draggingPinRef.current = nextDrag;
+        setDraggingPin(nextDrag);
       }
       return;
     }
@@ -284,7 +336,9 @@ export const MapArea: React.FC<MapAreaProps> = ({
           anchor.dist,
           curMidX,
           curMidY,
-          curDist
+          curDist,
+          minScale,
+          maxScale
         )
       );
       suppressTapUntilRef.current = Date.now() + TAP_SUPPRESS_MS;
@@ -306,13 +360,31 @@ export const MapArea: React.FC<MapAreaProps> = ({
     }
   };
 
-  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (draggingPin && draggingPin.pointerId === e.pointerId && activeMap) {
-      onSetScenePin(draggingPin.sceneId, {
-        mapId: activeMap.id,
-        xPct: draggingPin.xPct,
-        yPct: draggingPin.yPct,
-      });
+  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLElement>) => {
+    const activeDrag = draggingPinRef.current;
+    if (activeDrag && activeDrag.pointerId === e.pointerId && activeMap) {
+      e.stopPropagation();
+      if (e.type !== 'pointercancel') {
+        const safeX = Number.isFinite(e.clientX) ? e.clientX : activeDrag.startClientX;
+        const safeY = Number.isFinite(e.clientY) ? e.clientY : activeDrag.startClientY;
+        const dist = Math.hypot(
+          safeX - activeDrag.startClientX,
+          safeY - activeDrag.startClientY
+        );
+        const moved = activeDrag.moved || dist > PAN_THRESHOLD_PX;
+        if (moved) {
+          const releaseCoords = clientToMapPct(safeX, safeY);
+          const finalXPct = releaseCoords ? releaseCoords.xPct : activeDrag.xPct;
+          const finalYPct = releaseCoords ? releaseCoords.yPct : activeDrag.yPct;
+          onSetScenePin(activeDrag.sceneId, {
+            mapId: activeMap.id,
+            xPct: finalXPct,
+            yPct: finalYPct,
+          });
+          suppressTapUntilRef.current = Date.now() + TAP_SUPPRESS_MS;
+        }
+      }
+      draggingPinRef.current = null;
       setDraggingPin(null);
       return;
     }
@@ -327,9 +399,10 @@ export const MapArea: React.FC<MapAreaProps> = ({
     }
 
     if (
+      e.type !== 'pointercancel' &&
       !wasMoved &&
       Date.now() > suppressTapUntilRef.current &&
-      editPinsMode &&
+      effectiveEditPinsMode &&
       selectedUnpinnedSceneId &&
       activeMap
     ) {
@@ -353,7 +426,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
       const fx = e.clientX - rect.left;
       const fy = e.clientY - rect.top;
       const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-      setTransform((t) => zoomAtPoint(t, t.scale * factor, fx, fy));
+      setTransform((t) => zoomAtPoint(t, t.scale * factor, fx, fy, minScale, maxScale));
     } else {
       setTransform((t) => panBy(t, -e.deltaX, -e.deltaY));
     }
@@ -494,24 +567,40 @@ export const MapArea: React.FC<MapAreaProps> = ({
               aria-label={isMasked ? 'Unknown scene pin' : `Scene ${scene.title}`}
               className={isCurrent ? 'gm-node-current' : undefined}
               onPointerDown={(e) => {
-                if (!editPinsMode) return;
+                if (!effectiveEditPinsMode) return;
                 e.stopPropagation();
                 try {
                   e.currentTarget.setPointerCapture(e.pointerId);
                 } catch {
                   // ignore in jsdom
                 }
-                setDraggingPin({
+                const safeStartX = Number.isFinite(e.clientX) ? e.clientX : 0;
+                const safeStartY = Number.isFinite(e.clientY) ? e.clientY : 0;
+                const nextDrag: DraggingPinState = {
                   sceneId: scene.id,
                   pointerId: e.pointerId,
+                  startClientX: safeStartX,
+                  startClientY: safeStartY,
+                  moved: false,
                   xPct: pin.xPct,
                   yPct: pin.yPct,
-                });
+                };
+                draggingPinRef.current = nextDrag;
+                setDraggingPin(nextDrag);
               }}
+              onPointerMove={handleCanvasPointerMove}
+              onPointerUp={handleCanvasPointerUp}
+              onPointerCancel={handleCanvasPointerUp}
               onClick={(e) => {
                 e.stopPropagation();
-                if (editPinsMode) return;
-                if (Date.now() < suppressTapUntilRef.current) return;
+                if (Date.now() < suppressTapUntilRef.current) {
+                  suppressTapUntilRef.current = 0;
+                  return;
+                }
+                if (effectiveEditPinsMode) {
+                  onSetScenePin(scene.id, null);
+                  return;
+                }
                 onSelectScene(scene.id);
               }}
               style={{
@@ -531,13 +620,38 @@ export const MapArea: React.FC<MapAreaProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                cursor: editPinsMode ? 'grab' : 'pointer',
+                cursor: effectiveEditPinsMode ? 'grab' : 'pointer',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
                 padding: 0,
               }}
             >
               <span>{label}</span>
-              {hasNotes && (
+              {effectiveEditPinsMode && (
+                <span
+                  data-testid={`map-pin-remove-${scene.id}`}
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    background: 'var(--red)',
+                    color: '#fff',
+                    border: '2px solid var(--bg)',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    lineHeight: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  ×
+                </span>
+              )}
+              {hasNotes && !effectiveEditPinsMode && (
                 <span
                   data-testid={`map-pin-note-dot-${scene.id}`}
                   aria-label="Scene has table notes"
@@ -638,12 +752,14 @@ export const MapArea: React.FC<MapAreaProps> = ({
         >
           {unpinnedScenes.length === 0 ? (
             <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
-              All scenes are pinned. Drag any pin to move it.
+              All scenes are pinned. Drag any pin to move it, or tap a pin to remove it.
             </span>
           ) : (
             <>
               <span style={{ fontSize: '12px', color: 'var(--muted)', alignSelf: 'center' }}>
-                {selectedUnpinnedSceneId ? 'Tap map to place:' : 'Tap scene to pin:'}
+                {selectedUnpinnedSceneId
+                  ? 'Tap map to place (or tap a pin to remove):'
+                  : 'Tap scene to pin (or tap a pin to remove):'}
               </span>
               {unpinnedScenes.map((s) => {
                 const selected = selectedUnpinnedSceneId === s.id;
@@ -753,6 +869,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
       {/* Bottom-left zoom caption */}
       {mapMode !== 'pip' && (
         <div
+          data-testid="map-zoom-caption"
           style={{
             position: 'absolute',
             left: '10px',
@@ -766,7 +883,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
             pointerEvents: 'none',
           }}
         >
-          Pinch to zoom · drag to move · {formatZoomPercent(transform.scale)}
+          Pinch to zoom · drag to move · {formatZoomPercent(transform.scale, fitScale)}
         </div>
       )}
     </div>
