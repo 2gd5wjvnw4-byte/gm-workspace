@@ -111,6 +111,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
   const [draggingPin, setDraggingPin] = useState<DraggingPinState | null>(null);
 
   const draggingPinRef = useRef<DraggingPinState | null>(null);
+  const justPlacedSceneIdRef = useRef<string | null>(null);
   const pointersRef = useRef<Map<number, ActivePointer>>(new Map());
   const panStartRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const pinchRef = useRef<PinchAnchor | null>(null);
@@ -271,6 +272,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
   };
 
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    justPlacedSceneIdRef.current = null;
     if (draggingPinRef.current) return;
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
@@ -389,6 +391,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
       return;
     }
 
+    const hadPointer = pointersRef.current.has(e.pointerId);
     const wasMoved = panStartRef.current?.moved ?? false;
     pointersRef.current.delete(e.pointerId);
     if (pointersRef.current.size < 2) {
@@ -399,6 +402,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
     }
 
     if (
+      hadPointer &&
       e.type !== 'pointercancel' &&
       !wasMoved &&
       Date.now() > suppressTapUntilRef.current &&
@@ -408,6 +412,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
     ) {
       const coords = clientToMapPct(e.clientX, e.clientY);
       if (coords) {
+        justPlacedSceneIdRef.current = selectedUnpinnedSceneId;
         onSetScenePin(selectedUnpinnedSceneId, {
           mapId: activeMap.id,
           xPct: coords.xPct,
@@ -567,6 +572,7 @@ export const MapArea: React.FC<MapAreaProps> = ({
               aria-label={isMasked ? 'Unknown scene pin' : `Scene ${scene.title}`}
               className={isCurrent ? 'gm-node-current' : undefined}
               onPointerDown={(e) => {
+                justPlacedSceneIdRef.current = null;
                 if (!effectiveEditPinsMode) return;
                 e.stopPropagation();
                 try {
@@ -593,6 +599,10 @@ export const MapArea: React.FC<MapAreaProps> = ({
               onPointerCancel={handleCanvasPointerUp}
               onClick={(e) => {
                 e.stopPropagation();
+                if (justPlacedSceneIdRef.current === scene.id) {
+                  justPlacedSceneIdRef.current = null;
+                  return;
+                }
                 if (Date.now() < suppressTapUntilRef.current) {
                   suppressTapUntilRef.current = 0;
                   return;
@@ -686,6 +696,9 @@ export const MapArea: React.FC<MapAreaProps> = ({
           zIndex: 3,
         }}
         onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onPointerCancel={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <span
           style={{
@@ -732,6 +745,9 @@ export const MapArea: React.FC<MapAreaProps> = ({
         <div
           data-testid="map-unpinned-bar"
           onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onPointerCancel={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
             left: '10px',
@@ -796,6 +812,9 @@ export const MapArea: React.FC<MapAreaProps> = ({
       {/* Top-right zoom controls (+, -, FIT) */}
       <div
         onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onPointerCancel={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         style={{
           position: 'absolute',
           top: '10px',

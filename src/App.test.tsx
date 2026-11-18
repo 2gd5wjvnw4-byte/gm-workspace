@@ -1764,7 +1764,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(screen.getByTestId(`map-unpinned-scene-${secondScene.id}`)).toBeInTheDocument();
     expect(screen.getByTestId(`map-unpinned-scene-${firstScene.id}`)).toBeInTheDocument();
 
-    // Re-place secondScene pin
+    // Re-place secondScene pin (including synthesized click on the newly mounted pin)
     const firePtr = (
       el: Element,
       type: 'pointerdown' | 'pointermove' | 'pointerup',
@@ -1774,9 +1774,25 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       Object.assign(ev, props);
       fireEvent(el, ev);
     };
-    fireEvent.click(screen.getByTestId(`map-unpinned-scene-${secondScene.id}`));
+    const secondChip = screen.getByTestId(`map-unpinned-scene-${secondScene.id}`);
+    firePtr(secondChip, 'pointerdown', { pointerId: 30, clientX: 80, clientY: 65 });
+    firePtr(secondChip, 'pointerup', { pointerId: 30, clientX: 80, clientY: 65 });
+    fireEvent.click(secondChip);
+    expect(useCampaignStore.getState().live?.pins[firstScene.id]).toBeUndefined();
+
+    // Tapping zoom button while secondScene is selected does NOT place a pin
+    const zoomInBtn = screen.getByTestId('map-zoom-in-btn');
+    firePtr(zoomInBtn, 'pointerdown', { pointerId: 31, clientX: 450, clientY: 25 });
+    firePtr(zoomInBtn, 'pointerup', { pointerId: 31, clientX: 450, clientY: 25 });
+    fireEvent.click(zoomInBtn);
+    expect(useCampaignStore.getState().live?.pins[secondScene.id]).toBeUndefined();
+    fireEvent.click(screen.getByTestId('map-zoom-fit-btn'));
+
+    // Touch tap on map places secondScene pin and follow-up click on new pin does NOT delete it
     firePtr(viewport, 'pointerdown', { pointerId: 3, clientX: 120, clientY: 120 });
     firePtr(viewport, 'pointerup', { pointerId: 3, clientX: 120, clientY: 120 });
+    const newlyPlacedPin = await screen.findByTestId(`map-pin-${secondScene.id}`);
+    fireEvent.click(newlyPlacedPin);
     expect(useCampaignStore.getState().live?.pins[secondScene.id]).toMatchObject({ mapId });
 
     // Rapid single-frame drag (> 6px) in Edit pins mode moves the pin and does not delete it on click
@@ -1791,11 +1807,21 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(afterDragPin?.xPct).toBeGreaterThan(beforeDragPin.xPct);
     expect(afterDragPin?.yPct).toBeGreaterThan(beforeDragPin.yPct);
 
+    // Selecting an unpinned scene and tapping Done editing does NOT place a pin
+    const firstChip = screen.getByTestId(`map-unpinned-scene-${firstScene.id}`);
+    firePtr(firstChip, 'pointerdown', { pointerId: 32, clientX: 80, clientY: 65 });
+    firePtr(firstChip, 'pointerup', { pointerId: 32, clientX: 80, clientY: 65 });
+    fireEvent.click(firstChip);
+    const doneEditBtn = screen.getByTestId('map-edit-pins-btn');
+    firePtr(doneEditBtn, 'pointerdown', { pointerId: 33, clientX: 140, clientY: 20 });
+    firePtr(doneEditBtn, 'pointerup', { pointerId: 33, clientX: 140, clientY: 20 });
+    fireEvent.click(doneEditBtn);
+    expect(useCampaignStore.getState().live?.pins[firstScene.id]).toBeUndefined();
+
     // Also pin firstScene and thirdScene, add a table note to firstScene -> verify amber dot badge
     useCampaignStore.getState().setScenePin(firstScene.id, { mapId, xPct: 25, yPct: 30 });
     useCampaignStore.getState().setScenePin(thirdScene.id, { mapId, xPct: 60, yPct: 60 });
     useCampaignStore.getState().addTableNote(firstScene.id, 'Hazard active');
-    fireEvent.click(screen.getByTestId('map-edit-pins-btn'));
 
     expect(await screen.findByTestId(`map-pin-${firstScene.id}`)).toBeInTheDocument();
     expect(screen.getByTestId(`map-pin-note-dot-${firstScene.id}`)).toBeInTheDocument();
