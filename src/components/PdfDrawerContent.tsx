@@ -2,16 +2,21 @@ import React, { useEffect, useRef, useState } from 'react';
 import { getBlob, pdfBlobKey } from '../storage';
 import { useCampaignStore } from '../store/campaignStore';
 import {
+  PDF_RIBBON_COLORS,
   clampCropRect,
+  detectHorizontalPageSwipe,
+  getPdfRibbonColorHex,
+  isPdfRibbonOutOfRange,
   loadPdfDocument,
   pdfToPrintedPage,
   printedToPdfPage,
   renderPdfCropToPngBlob,
   renderPdfPageToCanvas,
+  sortPdfRibbonsByPage,
   type NormalizedCropRect,
   type PdfDocumentProxy,
 } from '../lib/pdf';
-import type { MapScale } from '../storage/types';
+import type { MapScale, PdfRibbon, PdfRibbonColor } from '../storage/types';
 import {
   clampScale,
   panBy,
@@ -32,7 +37,18 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
   requestedPrintedPage,
   openRequestSeq,
 }) => {
-  const { activeCampaign, merged, pdfVersion, attachPdf, addMapAsset } = useCampaignStore();
+  const {
+    activeCampaign,
+    merged,
+    live,
+    pdfVersion,
+    attachPdf,
+    addMapAsset,
+    addPdfRibbon,
+    updatePdfRibbon,
+    movePdfRibbonToPage,
+    deletePdfRibbon,
+  } = useCampaignStore();
   const moduleId = merged.meta?.module_id || activeCampaign?.moduleId || '';
   const pageOffset = merged.meta?.page_offset ?? 0;
 
@@ -56,6 +72,14 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
   const [savingCrop, setSavingCrop] = useState(false);
   const [cropNotice, setCropNotice] = useState<string | null>(null);
 
+  const [addRibbonOpen, setAddRibbonOpen] = useState(false);
+  const [ribbonLabelDraft, setRibbonLabelDraft] = useState('');
+  const [ribbonColorDraft, setRibbonColorDraft] = useState<PdfRibbonColor>('red');
+  const [ribbonsMenuOpen, setRibbonsMenuOpen] = useState(false);
+  const [editingRibbonId, setEditingRibbonId] = useState<string | null>(null);
+  const [editRibbonLabelDraft, setEditRibbonLabelDraft] = useState('');
+  const [editRibbonColorDraft, setEditRibbonColorDraft] = useState<PdfRibbonColor>('red');
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cropStageRef = useRef<HTMLDivElement | null>(null);
   const cropDragRef = useRef<{
@@ -68,6 +92,32 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchDistRef = useRef<number | null>(null);
+  const swipeStartRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    multiTouch: boolean;
+  } | null>(null);
+  const ribbonLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ribbonClickSuppressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressRibbonClickIdRef = useRef<string | null>(null);
+
+  const rawRibbons = (moduleId && live?.pdfRibbons?.[moduleId]) || [];
+  const sortedRibbons = sortPdfRibbonsByPage(rawRibbons);
+  const editingRibbon = rawRibbons.find((r) => r.id === editingRibbonId) ?? null;
+
+  useEffect(() => {
+    return () => {
+      if (ribbonLongPressTimerRef.current) {
+        clearTimeout(ribbonLongPressTimerRef.current);
+      }
+      if (ribbonClickSuppressTimerRef.current) {
+        clearTimeout(ribbonClickSuppressTimerRef.current);
+      }
+    };
+  }, []);
 
   // Load PDF document from IndexedDB whenever moduleId or pdfVersion changes
   useEffect(() => {
@@ -123,6 +173,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
   // Jump to requested printed page when opened or page requested
   useEffect(() => {
     const targetPrinted = requestedPrintedPage ?? 1;
+    setPdfError(null);
     setCurrentPdfPage(
       printedToPdfPage(targetPrinted, pageOffset, numPages > 0 ? numPages : undefined)
     );
@@ -147,6 +198,112 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
 
   const printedPage = pdfToPrintedPage(currentPdfPage, pageOffset);
 
+  const jumpToRibbon = (ribbon: PdfRibbon) => {
+    if (isPdfRibbonOutOfRange(ribbon, numPages)) {
+      setPdfError(
+        `Ribbon "${ribbon.label}" points to p.${ribbon.printedPage} (PDF p.${ribbon.pdfPage}), which is outside this PDF (${numPages} pages).`
+      );
+      return;
+    }
+    setPdfError(null);
+    setCurrentPdfPage(ribbon.pdfPage);
+    setTransform(IDENTITY_TRANSFORM);
+  };
+
+  const openEditRibbon = (ribbon: PdfRibbon) => {
+    setEditingRibbonId(ribbon.id);
+    setEditRibbonLabelDraft(ribbon.label);
+    setEditRibbonColorDraft(ribbon.color);
+    setAddRibbonOpen(false);
+  };
+
+  const clearRibbonLongPress = () => {
+    if (ribbonLongPressTimerRef.current) {
+      clearTimeout(ribbonLongPressTimerRef.current);
+      ribbonLongPressTimerRef.current = null;
+    }
+  };
+
+  const startRibbonClickSuppressExpiry = (ribbonId: string) => {
+    if (ribbonClickSuppressTimerRef.current) {
+      clearTimeout(ribbonClickSuppressTimerRef.current);
+    }
+    ribbonClickSuppressTimerRef.current = setTimeout(() => {
+      ribbonClickSuppressTimerRef.current = null;
+      if (suppressRibbonClickIdRef.current === ribbonId) {
+        suppressRibbonClickIdRef.current = null;
+      }
+    }, 350);
+  };
+
+  const handleRibbonPointerDown = (ribbon: PdfRibbon, e: React.PointerEvent) => {
+    e.stopPropagation();
+    clearRibbonLongPress();
+    if (ribbonClickSuppressTimerRef.current) {
+      clearTimeout(ribbonClickSuppressTimerRef.current);
+      ribbonClickSuppressTimerRef.current = null;
+    }
+    ribbonLongPressTimerRef.current = setTimeout(() => {
+      ribbonLongPressTimerRef.current = null;
+      suppressRibbonClickIdRef.current = ribbon.id;
+      openEditRibbon(ribbon);
+    }, 500);
+  };
+
+  const handleRibbonPointerUpOrCancel = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    clearRibbonLongPress();
+    if (suppressRibbonClickIdRef.current) {
+      startRibbonClickSuppressExpiry(suppressRibbonClickIdRef.current);
+    }
+  };
+
+  const handleRibbonClick = (ribbon: PdfRibbon, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (suppressRibbonClickIdRef.current === ribbon.id) {
+      suppressRibbonClickIdRef.current = null;
+      if (ribbonClickSuppressTimerRef.current) {
+        clearTimeout(ribbonClickSuppressTimerRef.current);
+        ribbonClickSuppressTimerRef.current = null;
+      }
+      return;
+    }
+    jumpToRibbon(ribbon);
+  };
+
+  const handleRibbonContextMenu = (ribbon: PdfRibbon, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearRibbonLongPress();
+    openEditRibbon(ribbon);
+  };
+
+  const handleAddRibbonSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!moduleId) return;
+    const label = ribbonLabelDraft.trim() || `p.${printedPage}`;
+    addPdfRibbon({
+      moduleId,
+      label,
+      color: ribbonColorDraft,
+      pdfPage: currentPdfPage,
+      printedPage,
+    });
+    setRibbonLabelDraft('');
+    setAddRibbonOpen(false);
+  };
+
+  const handleSaveEditRibbon = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!moduleId || !editingRibbon) return;
+    updatePdfRibbon(moduleId, editingRibbon.id, {
+      label: editRibbonLabelDraft.trim() || editingRibbon.label,
+      color: editRibbonColorDraft,
+    });
+    setPdfError(null);
+    setEditingRibbonId(null);
+  };
+
   const handleAttachFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -166,6 +323,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
     e.preventDefault();
     const parsed = Number.parseInt(goToDraft.trim(), 10);
     if (!Number.isFinite(parsed)) return;
+    setPdfError(null);
     setCurrentPdfPage(
       printedToPdfPage(parsed, pageOffset, numPages > 0 ? numPages : undefined)
     );
@@ -181,7 +339,19 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
     } catch {
       // ignore in jsdom
     }
-    if (pointersRef.current.size === 2) {
+    if (pointersRef.current.size === 1) {
+      swipeStartRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        multiTouch: false,
+      };
+    } else if (pointersRef.current.size >= 2) {
+      if (swipeStartRef.current) {
+        swipeStartRef.current.multiTouch = true;
+      }
       const pts = Array.from(pointersRef.current.values());
       pinchDistRef.current = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
     }
@@ -193,10 +363,18 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
     const nextPt = { x: e.clientX, y: e.clientY };
     pointersRef.current.set(e.pointerId, nextPt);
 
+    if (swipeStartRef.current && swipeStartRef.current.pointerId === e.pointerId) {
+      swipeStartRef.current.lastX = e.clientX;
+      swipeStartRef.current.lastY = e.clientY;
+    }
+
     if (pointersRef.current.size === 1) {
-      const dx = nextPt.x - prev.x;
-      const dy = nextPt.y - prev.y;
-      setTransform((t) => panBy(t, dx, dy));
+      // At unzoomed 100% scale, single-finger horizontal drag is used for swipe page turning
+      if (Math.abs(transform.scale - 1) > 0.001) {
+        const dx = nextPt.x - prev.x;
+        const dy = nextPt.y - prev.y;
+        setTransform((t) => panBy(t, dx, dy));
+      }
     } else if (pointersRef.current.size === 2) {
       const pts = Array.from(pointersRef.current.values());
       const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
@@ -215,6 +393,44 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const swipe = swipeStartRef.current;
+    if (
+      swipe &&
+      swipe.pointerId === e.pointerId &&
+      !swipe.multiTouch &&
+      pointersRef.current.size <= 1
+    ) {
+      const endX = Number.isFinite(e.clientX) ? e.clientX : swipe.lastX;
+      const endY = Number.isFinite(e.clientY) ? e.clientY : swipe.lastY;
+      const dir = detectHorizontalPageSwipe({
+        dx: endX - swipe.startX,
+        dy: endY - swipe.startY,
+        scale: transform.scale,
+        cropMode,
+      });
+      if (dir === 'next' && (numPages === 0 || currentPdfPage < numPages)) {
+        setPdfError(null);
+        setCurrentPdfPage((p) => (numPages > 0 ? Math.min(numPages, p + 1) : p + 1));
+        setTransform(IDENTITY_TRANSFORM);
+      } else if (dir === 'prev' && currentPdfPage > 1) {
+        setPdfError(null);
+        setCurrentPdfPage((p) => Math.max(1, p - 1));
+        setTransform(IDENTITY_TRANSFORM);
+      }
+    }
+    if (swipe && swipe.pointerId === e.pointerId) {
+      swipeStartRef.current = null;
+    }
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) {
+      pinchDistRef.current = null;
+    }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (swipeStartRef.current?.pointerId === e.pointerId) {
+      swipeStartRef.current = null;
+    }
     pointersRef.current.delete(e.pointerId);
     if (pointersRef.current.size < 2) {
       pinchDistRef.current = null;
@@ -354,7 +570,199 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
           Source PDF · printed p.{printedPage} (PDF p.{currentPdfPage}
           {numPages > 0 ? `/${numPages}` : ''})
         </span>
+        <button
+          type="button"
+          data-testid="pdf-add-ribbon-btn"
+          disabled={!doc}
+          onClick={() => {
+            setRibbonLabelDraft(`p.${printedPage}`);
+            setAddRibbonOpen((v) => !v);
+            setEditingRibbonId(null);
+          }}
+          style={{
+            height: '44px',
+            padding: '0 10px',
+            borderRadius: '8px',
+            border: '1px solid var(--line)',
+            background: addRibbonOpen ? 'var(--accentBg)' : 'var(--p2)',
+            color: addRibbonOpen ? 'var(--accent)' : 'var(--text)',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: !doc ? 'default' : 'pointer',
+            opacity: !doc ? 0.45 : 1,
+          }}
+        >
+          + Ribbon
+        </button>
+        <button
+          type="button"
+          data-testid="pdf-ribbons-menu-btn"
+          aria-expanded={ribbonsMenuOpen}
+          onClick={() => setRibbonsMenuOpen((v) => !v)}
+          style={{
+            height: '44px',
+            padding: '0 10px',
+            borderRadius: '8px',
+            border: '1px solid var(--line)',
+            background: ribbonsMenuOpen ? 'var(--accentBg)' : 'var(--p2)',
+            color: ribbonsMenuOpen ? 'var(--accent)' : 'var(--text)',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Ribbons ({sortedRibbons.length})
+        </button>
       </div>
+
+      {pdfError && (
+        <div
+          role="alert"
+          data-testid="pdf-error-banner"
+          style={{
+            padding: '8px 12px',
+            borderBottom: '1px solid var(--redLine)',
+            background: 'var(--redBg)',
+            color: 'var(--red)',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <span style={{ flex: 1 }}>{pdfError}</span>
+          <button
+            type="button"
+            data-testid="pdf-error-dismiss-btn"
+            aria-label="Dismiss PDF error"
+            onClick={() => setPdfError(null)}
+            style={{
+              height: '44px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--redLine)',
+              background: 'var(--panel)',
+              color: 'var(--red)',
+              fontWeight: 600,
+              fontSize: '12px',
+              cursor: 'pointer',
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {ribbonsMenuOpen && (
+        <div
+          data-testid="pdf-ribbons-list-menu"
+          style={{
+            padding: '10px 12px',
+            borderBottom: '1px solid var(--line)',
+            background: 'var(--p2)',
+            maxHeight: '220px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+          }}
+        >
+          {sortedRibbons.length === 0 ? (
+            <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
+              No ribbons on this PDF yet. Tap + Ribbon to bookmark a page.
+            </div>
+          ) : (
+            sortedRibbons.map((ribbon) => {
+              const outOfRange = isPdfRibbonOutOfRange(ribbon, numPages);
+              const hex = getPdfRibbonColorHex(ribbon.color);
+              return (
+                <div
+                  key={ribbon.id}
+                  data-testid={`pdf-ribbon-list-row-${ribbon.id}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    data-testid={`pdf-ribbon-list-jump-${ribbon.id}`}
+                    onClick={() => jumpToRibbon(ribbon)}
+                    onContextMenu={(e) => handleRibbonContextMenu(ribbon, e)}
+                    style={{
+                      flex: 1,
+                      minHeight: '44px',
+                      padding: '0 10px',
+                      borderRadius: '8px',
+                      border: outOfRange ? '1px dashed var(--red)' : '1px solid var(--line)',
+                      background: 'var(--panel)',
+                      color: 'var(--text)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '4px',
+                        background: hex,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ flex: 1, fontWeight: 600, fontSize: '13px' }}>
+                      {ribbon.label}
+                    </span>
+                    {outOfRange && (
+                      <span
+                        data-testid={`pdf-ribbon-out-of-range-${ribbon.id}`}
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: 'var(--red)',
+                        }}
+                      >
+                        ⚠ Missing page
+                      </span>
+                    )}
+                    <span
+                      className="gm-tabular"
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        fontSize: '12px',
+                        color: 'var(--muted)',
+                      }}
+                    >
+                      p.{ribbon.printedPage}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`pdf-ribbon-list-edit-${ribbon.id}`}
+                    aria-label={`Edit ribbon ${ribbon.label}`}
+                    onClick={() => openEditRibbon(ribbon)}
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--line)',
+                      background: 'var(--p3)',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ✎
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       <div
         ref={viewportRef}
@@ -362,7 +770,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
         onPointerDown={doc && !cropMode ? handlePointerDown : undefined}
         onPointerMove={doc && !cropMode ? handlePointerMove : undefined}
         onPointerUp={doc && !cropMode ? handlePointerUp : undefined}
-        onPointerCancel={doc && !cropMode ? handlePointerUp : undefined}
+        onPointerCancel={doc && !cropMode ? handlePointerCancel : undefined}
         onWheel={doc && !cropMode ? handleWheel : undefined}
         style={{
           flex: 1,
@@ -427,22 +835,6 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
         {loadingPdf && (
           <div style={{ padding: '24px', color: 'var(--muted)', fontSize: '14px' }}>
             Loading PDF…
-          </div>
-        )}
-
-        {pdfError && (
-          <div
-            role="alert"
-            style={{
-              padding: '12px',
-              borderRadius: '10px',
-              border: '1px solid var(--redLine)',
-              background: 'var(--redBg)',
-              color: 'var(--red)',
-              fontSize: '13px',
-            }}
-          >
-            {pdfError}
           </div>
         )}
 
@@ -534,7 +926,391 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
             )}
           </div>
         )}
+
+        {sortedRibbons.length > 0 && (
+          <div
+            data-testid="pdf-ribbon-edge-rail"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              top: '12px',
+              right: 0,
+              bottom: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              alignItems: 'flex-end',
+              overflowY: 'auto',
+              pointerEvents: 'auto',
+              zIndex: 5,
+            }}
+          >
+            {sortedRibbons.map((ribbon) => {
+              const hex = getPdfRibbonColorHex(ribbon.color);
+              const isCurrent = ribbon.pdfPage === currentPdfPage;
+              const outOfRange = isPdfRibbonOutOfRange(ribbon, numPages);
+              return (
+                <button
+                  key={ribbon.id}
+                  type="button"
+                  data-testid={`pdf-ribbon-tab-${ribbon.id}`}
+                  aria-label={`Ribbon ${ribbon.label} p.${ribbon.printedPage}${outOfRange ? ' (out of range)' : ''}`}
+                  onPointerDown={(e) => handleRibbonPointerDown(ribbon, e)}
+                  onPointerUp={handleRibbonPointerUpOrCancel}
+                  onPointerCancel={handleRibbonPointerUpOrCancel}
+                  onPointerLeave={handleRibbonPointerUpOrCancel}
+                  onClick={(e) => handleRibbonClick(ribbon, e)}
+                  onContextMenu={(e) => handleRibbonContextMenu(ribbon, e)}
+                  style={{
+                    minWidth: '44px',
+                    minHeight: '44px',
+                    maxWidth: '148px',
+                    padding: '4px 10px 4px 12px',
+                    borderRadius: '10px 0 0 10px',
+                    borderTop: isCurrent ? '2px solid #fff' : '1px solid rgba(0,0,0,0.35)',
+                    borderBottom: isCurrent ? '2px solid #fff' : '1px solid rgba(0,0,0,0.35)',
+                    borderLeft: isCurrent ? '2px solid #fff' : '1px solid rgba(0,0,0,0.35)',
+                    borderRight: 'none',
+                    background: hex,
+                    color: '#0D1117',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: isCurrent
+                      ? '0 2px 10px rgba(0,0,0,0.45)'
+                      : '0 1px 4px rgba(0,0,0,0.3)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {ribbon.label}
+                  </span>
+                  <span
+                    className="gm-tabular"
+                    style={{
+                      fontFamily: 'var(--mono)',
+                      fontSize: '11px',
+                      opacity: 0.85,
+                      flexShrink: 0,
+                    }}
+                  >
+                    p.{ribbon.printedPage}
+                  </span>
+                  {outOfRange && (
+                    <span
+                      data-testid={`pdf-ribbon-tab-warning-${ribbon.id}`}
+                      title="Page out of range"
+                      style={{
+                        fontWeight: 800,
+                        color: '#fff',
+                        background: '#991B1B',
+                        borderRadius: '4px',
+                        padding: '0 4px',
+                        fontSize: '10px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      !
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {addRibbonOpen && (
+        <form
+          onSubmit={handleAddRibbonSubmit}
+          data-testid="pdf-add-ribbon-form"
+          style={{
+            padding: '10px 12px',
+            borderTop: '1px solid var(--line)',
+            background: 'var(--p2)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="text"
+              data-testid="pdf-ribbon-label-input"
+              aria-label="Ribbon label"
+              maxLength={32}
+              value={ribbonLabelDraft}
+              onChange={(e) => setRibbonLabelDraft(e.target.value)}
+              placeholder={`p.${printedPage}`}
+              style={{
+                flex: 1,
+                height: '40px',
+                padding: '0 10px',
+                borderRadius: '8px',
+                border: '1px solid var(--line)',
+                background: 'var(--bg)',
+                color: 'var(--text)',
+                fontSize: '14px',
+              }}
+            />
+            <button
+              type="submit"
+              data-testid="pdf-ribbon-save-btn"
+              style={{
+                height: '44px',
+                padding: '0 14px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'var(--accent)',
+                color: 'var(--onAccent)',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              data-testid="pdf-ribbon-cancel-btn"
+              onClick={() => setAddRibbonOpen(false)}
+              style={{
+                height: '44px',
+                padding: '0 12px',
+                borderRadius: '8px',
+                border: '1px solid var(--line)',
+                background: 'var(--p3)',
+                color: 'var(--text)',
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              flexWrap: 'wrap',
+            }}
+          >
+            {PDF_RIBBON_COLORS.map((preset) => {
+              const selected = ribbonColorDraft === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  data-testid={`pdf-ribbon-color-${preset.id}`}
+                  aria-label={`Ribbon color ${preset.label}`}
+                  aria-pressed={selected}
+                  onClick={() => setRibbonColorDraft(preset.id)}
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '8px',
+                    border: selected ? '2px solid var(--text)' : '1px solid var(--line)',
+                    background: 'var(--bg)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '6px',
+                      background: preset.hex,
+                    }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </form>
+      )}
+
+      {editingRibbon && (
+        <form
+          onSubmit={handleSaveEditRibbon}
+          data-testid="pdf-edit-ribbon-form"
+          style={{
+            padding: '10px 12px',
+            borderTop: '1px solid var(--line)',
+            background: 'var(--p2)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '12px',
+              color: 'var(--muted)',
+              fontFamily: 'var(--mono)',
+            }}
+          >
+            <span>
+              EDIT RIBBON · p.{editingRibbon.printedPage} (PDF p.{editingRibbon.pdfPage})
+            </span>
+            {isPdfRibbonOutOfRange(editingRibbon, numPages) && (
+              <span
+                data-testid="pdf-edit-ribbon-out-of-range"
+                style={{ color: 'var(--red)', fontWeight: 700 }}
+              >
+                ⚠ Page out of range
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="text"
+              data-testid="pdf-edit-ribbon-label-input"
+              aria-label="Edit ribbon label"
+              maxLength={32}
+              value={editRibbonLabelDraft}
+              onChange={(e) => setEditRibbonLabelDraft(e.target.value)}
+              style={{
+                flex: 1,
+                height: '40px',
+                padding: '0 10px',
+                borderRadius: '8px',
+                border: '1px solid var(--line)',
+                background: 'var(--bg)',
+                color: 'var(--text)',
+                fontSize: '14px',
+              }}
+            />
+            <button
+              type="submit"
+              data-testid="pdf-edit-ribbon-save-btn"
+              style={{
+                height: '44px',
+                padding: '0 12px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'var(--accent)',
+                color: 'var(--onAccent)',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              data-testid="pdf-edit-ribbon-close-btn"
+              onClick={() => setEditingRibbonId(null)}
+              style={{
+                height: '44px',
+                padding: '0 10px',
+                borderRadius: '8px',
+                border: '1px solid var(--line)',
+                background: 'var(--p3)',
+                color: 'var(--text)',
+                cursor: 'pointer',
+              }}
+            >
+              Close
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            {PDF_RIBBON_COLORS.map((preset) => {
+              const selected = editRibbonColorDraft === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  data-testid={`pdf-edit-ribbon-color-${preset.id}`}
+                  aria-label={`Edit ribbon color ${preset.label}`}
+                  aria-pressed={selected}
+                  onClick={() => setEditRibbonColorDraft(preset.id)}
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '8px',
+                    border: selected ? '2px solid var(--text)' : '1px solid var(--line)',
+                    background: 'var(--bg)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '6px',
+                      background: preset.hex,
+                    }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              data-testid="pdf-edit-ribbon-move-here-btn"
+              onClick={() => {
+                if (!moduleId) return;
+                movePdfRibbonToPage(moduleId, editingRibbon.id, currentPdfPage, printedPage);
+                setPdfError(null);
+                setEditingRibbonId(null);
+              }}
+              style={{
+                height: '44px',
+                padding: '0 12px',
+                borderRadius: '8px',
+                border: '1px solid var(--line)',
+                background: 'var(--p3)',
+                color: 'var(--text)',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Move to current page (p.{printedPage})
+            </button>
+            <button
+              type="button"
+              data-testid="pdf-edit-ribbon-delete-btn"
+              onClick={() => {
+                if (!moduleId) return;
+                deletePdfRibbon(moduleId, editingRibbon.id);
+                setPdfError(null);
+                setEditingRibbonId(null);
+              }}
+              style={{
+                height: '44px',
+                padding: '0 12px',
+                borderRadius: '8px',
+                border: '1px solid var(--redLine)',
+                background: 'var(--redBg)',
+                color: 'var(--red)',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Delete ribbon
+            </button>
+          </div>
+        </form>
+      )}
 
       {cropNotice && (
         <div
@@ -722,6 +1498,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
           data-testid="pdf-prev-btn"
           disabled={!doc || currentPdfPage <= 1}
           onClick={() => {
+            setPdfError(null);
             setCurrentPdfPage((p) => Math.max(1, p - 1));
             setTransform(IDENTITY_TRANSFORM);
           }}
@@ -744,6 +1521,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
           data-testid="pdf-next-btn"
           disabled={!doc || (numPages > 0 && currentPdfPage >= numPages)}
           onClick={() => {
+            setPdfError(null);
             setCurrentPdfPage((p) => (numPages > 0 ? Math.min(numPages, p + 1) : p + 1));
             setTransform(IDENTITY_TRANSFORM);
           }}

@@ -28,6 +28,8 @@ import {
   type MapDisplayMode,
   type MapScale,
   type NavViewMode,
+  type PdfRibbon,
+  type PdfRibbonColor,
   type RollLogEntry,
   type ScenePin,
   type TableNote,
@@ -84,6 +86,25 @@ export interface CampaignStoreState {
   setSceneMap: (sceneIds: string[], mapId: string | null) => void;
   setLastMapId: (mapId: string | null) => void;
   setScenePin: (sceneId: string, pin: ScenePin | null) => void;
+  addPdfRibbon: (input: {
+    moduleId: string;
+    label: string;
+    color: PdfRibbonColor;
+    pdfPage: number;
+    printedPage: number;
+  }) => PdfRibbon | null;
+  updatePdfRibbon: (
+    moduleId: string,
+    ribbonId: string,
+    patch: { label?: string; color?: PdfRibbonColor }
+  ) => void;
+  movePdfRibbonToPage: (
+    moduleId: string,
+    ribbonId: string,
+    pdfPage: number,
+    printedPage: number
+  ) => void;
+  deletePdfRibbon: (moduleId: string, ribbonId: string) => void;
   refreshCampaigns: () => Promise<CampaignRecord[]>;
   openCampaign: (campaignId: string) => Promise<LoadedCampaign | null>;
   createNewCampaign: (input: {
@@ -1445,6 +1466,105 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
         return {
           ...prev,
           pins: nextPins,
+        };
+      });
+    },
+
+    addPdfRibbon: (input) => {
+      const moduleId = input.moduleId.trim();
+      const label = input.label.trim();
+      if (!moduleId || !label || !get().live) return null;
+      const safePdfPage = Number.isFinite(input.pdfPage)
+        ? Math.max(1, Math.round(input.pdfPage))
+        : 1;
+      const safePrintedPage = Number.isFinite(input.printedPage)
+        ? Math.round(input.printedPage)
+        : 1;
+      const ribbon: PdfRibbon = {
+        id: `rib-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        label,
+        color: input.color,
+        pdfPage: safePdfPage,
+        printedPage: safePrintedPage,
+        createdAt: Date.now(),
+      };
+      commitLive((prev) => {
+        const existing = prev.pdfRibbons?.[moduleId] ?? [];
+        return {
+          ...prev,
+          pdfRibbons: {
+            ...(prev.pdfRibbons ?? {}),
+            [moduleId]: [...existing, ribbon],
+          },
+        };
+      });
+      return ribbon;
+    },
+
+    updatePdfRibbon: (moduleId, ribbonId, patch) => {
+      const trimmedModule = moduleId.trim();
+      if (!trimmedModule) return;
+      commitLive((prev) => {
+        const existing = prev.pdfRibbons?.[trimmedModule];
+        if (!existing) return prev;
+        const nextList = existing.map((r) => {
+          if (r.id !== ribbonId) return r;
+          const nextLabel =
+            patch.label !== undefined ? patch.label.trim() || r.label : r.label;
+          const nextColor = patch.color ?? r.color;
+          return {
+            ...r,
+            label: nextLabel,
+            color: nextColor,
+          };
+        });
+        return {
+          ...prev,
+          pdfRibbons: {
+            ...(prev.pdfRibbons ?? {}),
+            [trimmedModule]: nextList,
+          },
+        };
+      });
+    },
+
+    movePdfRibbonToPage: (moduleId, ribbonId, pdfPage, printedPage) => {
+      const trimmedModule = moduleId.trim();
+      if (!trimmedModule || !Number.isFinite(pdfPage) || !Number.isFinite(printedPage)) return;
+      commitLive((prev) => {
+        const existing = prev.pdfRibbons?.[trimmedModule];
+        if (!existing) return prev;
+        const nextList = existing.map((r) =>
+          r.id === ribbonId
+            ? {
+                ...r,
+                pdfPage: Math.max(1, Math.round(pdfPage)),
+                printedPage: Math.round(printedPage),
+              }
+            : r
+        );
+        return {
+          ...prev,
+          pdfRibbons: {
+            ...(prev.pdfRibbons ?? {}),
+            [trimmedModule]: nextList,
+          },
+        };
+      });
+    },
+
+    deletePdfRibbon: (moduleId, ribbonId) => {
+      const trimmedModule = moduleId.trim();
+      if (!trimmedModule) return;
+      commitLive((prev) => {
+        const existing = prev.pdfRibbons?.[trimmedModule];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          pdfRibbons: {
+            ...(prev.pdfRibbons ?? {}),
+            [trimmedModule]: existing.filter((r) => r.id !== ribbonId),
+          },
         };
       });
     },

@@ -74,6 +74,25 @@ export interface ScenePin {
   yPct: number;
 }
 
+export type PdfRibbonColor =
+  | 'red'
+  | 'gold'
+  | 'teal'
+  | 'blue'
+  | 'violet'
+  | 'emerald'
+  | 'orange'
+  | 'pink';
+
+export interface PdfRibbon {
+  id: string;
+  label: string;
+  color: PdfRibbonColor;
+  pdfPage: number;
+  printedPage: number;
+  createdAt: number;
+}
+
 export interface ImprovisedEntityRecord {
   id: string;
   name: string;
@@ -127,6 +146,7 @@ export interface LiveState {
   maps: MapAssetRecord[];
   pins: Record<string, ScenePin>;
   sceneMap: Record<string, string>;
+  pdfRibbons?: Record<string, PdfRibbon[]>;
   rollLog: RollLogEntry[];
   theme: ThemeId;
   ui: {
@@ -200,6 +220,7 @@ export function createDefaultLiveState(campaignId: string, theme: ThemeId = 'sci
     maps: [],
     pins: {},
     sceneMap: {},
+    pdfRibbons: {},
     rollLog: [],
     theme,
     ui: {

@@ -1524,6 +1524,11 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     }));
 
     try {
+      await useCampaignStore.getState().createNewCampaign({
+        title: 'Stage 8b PDF Ribbons & Swipe Test',
+        system: 'Mothership 1e',
+        genre: 'sci-fi horror',
+      });
       await useCampaignStore.getState().importJsonChunk(JSON.stringify(parsed));
       const pdfFile = new File([new Uint8Array([1, 2, 3, 4])], 'module.pdf', {
         type: 'application/pdf',
@@ -1843,5 +1848,225 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(screen.queryByTestId('zone-scene-stage')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Text' }));
     expect(screen.queryByTestId('center-map-area')).not.toBeInTheDocument();
+  });
+
+  it('Stage 8b: PDF ribbons (add, edge tabs, tap-to-jump, sorted list, long-press/right-click edit, out-of-range flag) and horizontal swipe page turning', async () => {
+    const parsed = JSON.parse(sampleRawText) as Record<string, unknown>;
+    (parsed.meta as Record<string, unknown>).page_offset = 2;
+
+    const loadSpy = vi.spyOn(pdfLib, 'loadPdfDocument').mockResolvedValue({
+      numPages: 20,
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as unknown as pdfLib.PdfDocumentProxy);
+    const renderSpy = vi.spyOn(pdfLib, 'renderPdfPageToCanvas').mockImplementation(() => ({
+      promise: Promise.resolve(),
+      cancel: vi.fn(),
+    }));
+
+    try {
+      await useCampaignStore.getState().createNewCampaign({
+        title: 'Stage 8b PDF Ribbons & Swipe Test',
+        system: 'Mothership 1e',
+        genre: 'sci-fi horror',
+      });
+      await useCampaignStore.getState().importJsonChunk(JSON.stringify(parsed));
+      const pdfFile = new File([new Uint8Array([1, 2, 3, 4])], 'module.pdf', {
+        type: 'application/pdf',
+      });
+      await useCampaignStore.getState().attachPdf(pdfFile);
+
+      render(<App />);
+
+      // Open PDF drawer via TopBar PDF button -> starts at current scene's printed p.6 (PDF p.8/20)
+      fireEvent.click(screen.getByRole('button', { name: 'PDF' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+          'Source PDF · printed p.6 (PDF p.8/20)'
+        );
+      });
+
+      // Jump to printed p.10 (PDF p.12/20) and add a ribbon there
+      fireEvent.click(screen.getByTestId('pdf-goto-btn'));
+      fireEvent.change(screen.getByTestId('pdf-goto-input'), { target: { value: '10' } });
+      fireEvent.click(screen.getByTestId('pdf-goto-submit-btn'));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.10 (PDF p.12/20)'
+      );
+
+      fireEvent.click(screen.getByTestId('pdf-add-ribbon-btn'));
+      fireEvent.change(screen.getByTestId('pdf-ribbon-label-input'), {
+        target: { value: 'Boss Table' },
+      });
+      fireEvent.click(screen.getByTestId('pdf-ribbon-color-gold'));
+      fireEvent.click(screen.getByTestId('pdf-ribbon-save-btn'));
+
+      // Jump back to printed p.2 (PDF p.4/20) and add a second ribbon
+      fireEvent.click(screen.getByTestId('pdf-goto-btn'));
+      fireEvent.change(screen.getByTestId('pdf-goto-input'), { target: { value: '2' } });
+      fireEvent.click(screen.getByTestId('pdf-goto-submit-btn'));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.2 (PDF p.4/20)'
+      );
+
+      fireEvent.click(screen.getByTestId('pdf-add-ribbon-btn'));
+      fireEvent.change(screen.getByTestId('pdf-ribbon-label-input'), {
+        target: { value: 'Rumors' },
+      });
+      fireEvent.click(screen.getByTestId('pdf-ribbon-color-teal'));
+      fireEvent.click(screen.getByTestId('pdf-ribbon-save-btn'));
+
+      const modId = useCampaignStore.getState().merged.meta!.module_id;
+      const ribbons = useCampaignStore.getState().live?.pdfRibbons?.[modId] ?? [];
+      expect(ribbons).toHaveLength(2);
+      const bossRibbon = ribbons.find((r) => r.label === 'Boss Table')!;
+      const rumorsRibbon = ribbons.find((r) => r.label === 'Rumors')!;
+
+      // Edge tabs are >= 44x44px and sorted by page (Rumors p.2 before Boss Table p.10)
+      const edgeRail = screen.getByTestId('pdf-ribbon-edge-rail');
+      const tabButtons = within(edgeRail).getAllByRole('button');
+      expect(tabButtons).toHaveLength(2);
+      expect(tabButtons[0]).toHaveTextContent('Rumors');
+      expect(tabButtons[1]).toHaveTextContent('Boss Table');
+      expect(tabButtons[0].style.minHeight).toBe('44px');
+      expect(tabButtons[0].style.minWidth).toBe('44px');
+
+      // Tap Boss Table edge tab -> jumps to printed p.10 (PDF p.12/20)
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.10 (PDF p.12/20)'
+      );
+
+      // Open sorted ribbons list menu -> shows Rumors (p.2) then Boss Table (p.10)
+      fireEvent.click(screen.getByTestId('pdf-ribbons-menu-btn'));
+      const listMenu = screen.getByTestId('pdf-ribbons-list-menu');
+      expect(listMenu).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-list-jump-${rumorsRibbon.id}`));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.2 (PDF p.4/20)'
+      );
+
+      // Right-click (contextmenu) Boss Table tab -> rename, recolor, and move to current page (p.2)
+      fireEvent.contextMenu(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      expect(screen.getByTestId('pdf-edit-ribbon-form')).toBeInTheDocument();
+      fireEvent.change(screen.getByTestId('pdf-edit-ribbon-label-input'), {
+        target: { value: 'Updated Boss' },
+      });
+      fireEvent.click(screen.getByTestId('pdf-edit-ribbon-color-violet'));
+      fireEvent.click(screen.getByTestId('pdf-edit-ribbon-save-btn'));
+      expect(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`)).toHaveTextContent(
+        'Updated Boss'
+      );
+
+      // Long-press (>= 950ms hold) Updated Boss tab while + Ribbon is open -> opens edit form below viewport (no rail shift) and suppresses jump click even on long hold
+      fireEvent.click(screen.getByTestId('pdf-add-ribbon-btn'));
+      expect(screen.getByTestId('pdf-add-ribbon-form')).toBeInTheDocument();
+      vi.useFakeTimers();
+      fireEvent.pointerDown(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      vi.advanceTimersByTime(950);
+      fireEvent.pointerUp(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      // Even if a release click misses the tab, advancing >350ms after pointerup expires suppression
+      vi.advanceTimersByTime(400);
+      vi.useRealTimers();
+      expect(await screen.findByTestId('pdf-edit-ribbon-form')).toBeInTheDocument();
+      // Page did NOT jump to p.10 on the 950ms hold release
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.2 (PDF p.4/20)'
+      );
+      fireEvent.click(screen.getByTestId('pdf-edit-ribbon-close-btn'));
+      expect(screen.queryByTestId('pdf-edit-ribbon-form')).not.toBeInTheDocument();
+
+      // Next normal tap on Updated Boss tab jumps to printed p.10 immediately (not swallowed)
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.10 (PDF p.12/20)'
+      );
+
+      // Jump back to p.2 and move Updated Boss to current page (printed p.2 / PDF p.4)
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${rumorsRibbon.id}`));
+      fireEvent.contextMenu(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      fireEvent.click(screen.getByTestId('pdf-edit-ribbon-move-here-btn'));
+      expect(
+        useCampaignStore
+          .getState()
+          .live?.pdfRibbons?.[modId].find((r) => r.id === bossRibbon.id)?.printedPage
+      ).toBe(2);
+
+      // Out-of-range ribbon is flagged, renders error banner outside pdf-canvas-viewport, and clears on dismiss/page turn/delete
+      const outRibbon = useCampaignStore.getState().addPdfRibbon({
+        moduleId: modId,
+        label: 'Appendix Z',
+        color: 'orange',
+        pdfPage: 99,
+        printedPage: 97,
+      })!;
+      expect(await screen.findByTestId(`pdf-ribbon-tab-warning-${outRibbon.id}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`pdf-ribbon-out-of-range-${outRibbon.id}`)).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${outRibbon.id}`));
+      const errBanner = screen.getByTestId('pdf-error-banner');
+      expect(errBanner).toHaveTextContent(/outside this PDF/i);
+      expect(screen.getByTestId('pdf-canvas-viewport').contains(errBanner)).toBe(false);
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.2 (PDF p.4/20)'
+      );
+
+      // Dismiss button clears error banner
+      fireEvent.click(screen.getByTestId('pdf-error-dismiss-btn'));
+      expect(screen.queryByTestId('pdf-error-banner')).not.toBeInTheDocument();
+
+      // Re-trigger out-of-range error and verify Next page button clears it automatically
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${outRibbon.id}`));
+      expect(screen.getByTestId('pdf-error-banner')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('pdf-next-btn'));
+      expect(screen.queryByTestId('pdf-error-banner')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('pdf-prev-btn'));
+
+      // Re-trigger out-of-range error and delete out-of-range ribbon via edit menu -> clears error banner too
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${outRibbon.id}`));
+      expect(screen.getByTestId('pdf-error-banner')).toBeInTheDocument();
+      fireEvent.contextMenu(screen.getByTestId(`pdf-ribbon-tab-${outRibbon.id}`));
+      fireEvent.click(screen.getByTestId('pdf-edit-ribbon-delete-btn'));
+      expect(screen.queryByTestId(`pdf-ribbon-tab-${outRibbon.id}`)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('pdf-error-banner')).not.toBeInTheDocument();
+
+      // Horizontal swipe at 100% zoom turns pages: swipe left (dx = -90) -> next page (printed p.3, PDF p.5)
+      const viewport = screen.getByTestId('pdf-canvas-viewport');
+      const firePtr = (
+        el: Element,
+        type: 'pointerdown' | 'pointermove' | 'pointerup',
+        props: { pointerId: number; clientX: number; clientY: number }
+      ) => {
+        const ev = new Event(type, { bubbles: true, cancelable: true });
+        Object.assign(ev, props);
+        fireEvent(el, ev);
+      };
+      firePtr(viewport, 'pointerdown', { pointerId: 10, clientX: 300, clientY: 200 });
+      firePtr(viewport, 'pointermove', { pointerId: 10, clientX: 200, clientY: 205 });
+      firePtr(viewport, 'pointerup', { pointerId: 10, clientX: 200, clientY: 205 });
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.3 (PDF p.5/20)'
+      );
+
+      // Swipe right (dx = +95) -> prev page (printed p.2, PDF p.4)
+      firePtr(viewport, 'pointerdown', { pointerId: 11, clientX: 150, clientY: 200 });
+      firePtr(viewport, 'pointermove', { pointerId: 11, clientX: 245, clientY: 198 });
+      firePtr(viewport, 'pointerup', { pointerId: 11, clientX: 245, clientY: 198 });
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.2 (PDF p.4/20)'
+      );
+
+      // Zoom in with ctrl+wheel -> horizontal drag pans instead of turning pages
+      fireEvent.wheel(viewport, { ctrlKey: true, deltaY: -100, clientX: 200, clientY: 200 });
+      expect(screen.getByTestId('pdf-reset-zoom-btn')).toBeInTheDocument();
+      firePtr(viewport, 'pointerdown', { pointerId: 12, clientX: 300, clientY: 200 });
+      firePtr(viewport, 'pointermove', { pointerId: 12, clientX: 180, clientY: 200 });
+      firePtr(viewport, 'pointerup', { pointerId: 12, clientX: 180, clientY: 200 });
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.2 (PDF p.4/20)'
+      );
+    } finally {
+      loadSpy.mockRestore();
+      renderSpy.mockRestore();
+    }
   });
 });

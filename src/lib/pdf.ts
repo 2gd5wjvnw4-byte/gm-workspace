@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import type { PdfRibbon, PdfRibbonColor } from '../storage/types';
 
 if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -8,6 +9,60 @@ if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
 
 export type PdfDocumentProxy = pdfjsLib.PDFDocumentProxy;
 export type PdfRenderTask = pdfjsLib.RenderTask;
+
+export interface PdfRibbonColorPreset {
+  id: PdfRibbonColor;
+  label: string;
+  hex: string;
+}
+
+export const PDF_RIBBON_COLORS: readonly PdfRibbonColorPreset[] = [
+  { id: 'red', label: 'Crimson', hex: '#E05555' },
+  { id: 'gold', label: 'Amber', hex: '#E5A93B' },
+  { id: 'teal', label: 'Teal', hex: '#38B89A' },
+  { id: 'blue', label: 'Cobalt', hex: '#4C8FE8' },
+  { id: 'violet', label: 'Violet', hex: '#9D75E6' },
+  { id: 'emerald', label: 'Emerald', hex: '#43A854' },
+  { id: 'orange', label: 'Tangerine', hex: '#E67A38' },
+  { id: 'pink', label: 'Rose', hex: '#D95B96' },
+] as const;
+
+export function getPdfRibbonColorHex(color: PdfRibbonColor): string {
+  const found = PDF_RIBBON_COLORS.find((c) => c.id === color);
+  return found ? found.hex : PDF_RIBBON_COLORS[0].hex;
+}
+
+export function sortPdfRibbonsByPage(ribbons: readonly PdfRibbon[]): PdfRibbon[] {
+  return [...ribbons].sort((a, b) => {
+    if (a.pdfPage !== b.pdfPage) return a.pdfPage - b.pdfPage;
+    return a.createdAt - b.createdAt;
+  });
+}
+
+export function isPdfRibbonOutOfRange(ribbon: Pick<PdfRibbon, 'pdfPage'>, numPages: number): boolean {
+  if (!Number.isFinite(ribbon.pdfPage) || ribbon.pdfPage < 1) return true;
+  if (numPages > 0 && ribbon.pdfPage > numPages) return true;
+  return false;
+}
+
+export function detectHorizontalPageSwipe(input: {
+  dx: number;
+  dy: number;
+  scale: number;
+  cropMode?: boolean;
+  minSwipePx?: number;
+}): 'prev' | 'next' | null {
+  const { dx, dy, scale, cropMode = false, minSwipePx = 50 } = input;
+  if (cropMode) return null;
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(scale)) return null;
+  if (Math.abs(scale - 1) > 0.001) return null;
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+  if (absX < minSwipePx) return null;
+  if (absX <= 1.5 * absY) return null;
+  // Swiping left (dx < 0) turns to next page; swiping right (dx > 0) turns to previous page.
+  return dx < 0 ? 'next' : 'prev';
+}
 
 export function printedToPdfPage(
   printedPage: number,

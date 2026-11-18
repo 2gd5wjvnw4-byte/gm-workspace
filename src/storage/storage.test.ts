@@ -363,4 +363,78 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
     expect(restored.live.pins).toEqual({ s1: { mapId: 'm1', xPct: 42.5, yPct: 68.25 } });
     expect(restored.live.sceneMap).toEqual({ s1: 'm1' });
   });
+
+  it('persists pdfRibbons per moduleId in LiveState and round-trips them across exportBackup and importBackup', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { useCampaignStore } = await import('../store/campaignStore');
+      await useCampaignStore.getState().createNewCampaign({
+        title: 'Ribbon Test Campaign',
+        system: 'Mothership',
+        genre: 'sci-fi',
+      });
+      const campId = useCampaignStore.getState().activeCampaign!.id;
+      const modId = useCampaignStore.getState().activeCampaign!.moduleId;
+
+      const r1 = useCampaignStore.getState().addPdfRibbon({
+        moduleId: modId,
+        label: 'Weapons Table',
+        color: 'red',
+        pdfPage: 14,
+        printedPage: 12,
+      });
+      const r2 = useCampaignStore.getState().addPdfRibbon({
+        moduleId: modId,
+        label: 'Boss Room',
+        color: 'gold',
+        pdfPage: 28,
+        printedPage: 26,
+      });
+      expect(r1).not.toBeNull();
+      expect(r2).not.toBeNull();
+
+      useCampaignStore.getState().updatePdfRibbon(modId, r1!.id, {
+        label: 'Armor & Weapons',
+        color: 'teal',
+      });
+      useCampaignStore.getState().movePdfRibbonToPage(modId, r2!.id, 30, 28);
+
+      await vi.advanceTimersByTimeAsync(600);
+
+      const storedLive = await db.live.get(campId);
+      expect(storedLive?.pdfRibbons?.[modId]).toHaveLength(2);
+      expect(storedLive?.pdfRibbons?.[modId][0]).toMatchObject({
+        id: r1!.id,
+        label: 'Armor & Weapons',
+        color: 'teal',
+        pdfPage: 14,
+        printedPage: 12,
+      });
+      expect(storedLive?.pdfRibbons?.[modId][1]).toMatchObject({
+        id: r2!.id,
+        label: 'Boss Room',
+        color: 'gold',
+        pdfPage: 30,
+        printedPage: 28,
+      });
+
+      useCampaignStore.getState().deletePdfRibbon(modId, r2!.id);
+      await vi.advanceTimersByTimeAsync(600);
+
+      const payload = await exportBackup(campId);
+      await deleteCampaign(campId);
+      const restored = await importBackup(JSON.stringify(payload), { mode: 'replace' });
+
+      expect(restored.live.pdfRibbons?.[modId]).toHaveLength(1);
+      expect(restored.live.pdfRibbons?.[modId][0]).toMatchObject({
+        id: r1!.id,
+        label: 'Armor & Weapons',
+        color: 'teal',
+        pdfPage: 14,
+        printedPage: 12,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
