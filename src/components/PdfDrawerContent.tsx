@@ -238,11 +238,15 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
 
   const handleRibbonPointerDown = (ribbon: PdfRibbon, e: React.PointerEvent) => {
     e.stopPropagation();
+    if (e.pointerType === 'mouse' && e.button !== 0) {
+      return;
+    }
     clearRibbonLongPress();
     if (ribbonClickSuppressTimerRef.current) {
       clearTimeout(ribbonClickSuppressTimerRef.current);
       ribbonClickSuppressTimerRef.current = null;
     }
+    suppressRibbonClickIdRef.current = null;
     ribbonLongPressTimerRef.current = setTimeout(() => {
       ribbonLongPressTimerRef.current = null;
       suppressRibbonClickIdRef.current = ribbon.id;

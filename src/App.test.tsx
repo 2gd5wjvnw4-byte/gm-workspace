@@ -1982,6 +1982,28 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
         'Source PDF · printed p.10 (PDF p.12/20)'
       );
 
+      // Jump back to p.2, then test a long-press (>= 560ms) that ends via pointerLeave without a release click,
+      // followed immediately (< 350ms) by closing the edit form and tapping the same ribbon tab (pointerDown -> pointerUp -> click)
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${rumorsRibbon.id}`));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.2 (PDF p.4/20)'
+      );
+      vi.useFakeTimers();
+      fireEvent.pointerDown(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      vi.advanceTimersByTime(560);
+      fireEvent.pointerLeave(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      // Within 100ms (< 350ms expiry window), close edit form and perform a fast normal tap
+      vi.advanceTimersByTime(100);
+      vi.useRealTimers();
+      expect(await screen.findByTestId('pdf-edit-ribbon-form')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('pdf-edit-ribbon-close-btn'));
+      fireEvent.pointerDown(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      fireEvent.pointerUp(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.10 (PDF p.12/20)'
+      );
+
       // Jump back to p.2 and move Updated Boss to current page (printed p.2 / PDF p.4)
       fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${rumorsRibbon.id}`));
       fireEvent.contextMenu(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
