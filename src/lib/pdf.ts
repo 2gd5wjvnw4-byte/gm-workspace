@@ -2,6 +2,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { PdfRibbon, PdfRibbonColor } from '../storage/types';
+import type { PanZoomTransform } from './panzoom';
 
 if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -62,6 +63,64 @@ export function detectHorizontalPageSwipe(input: {
   if (absX <= 1.5 * absY) return null;
   // Swiping left (dx < 0) turns to next page; swiping right (dx > 0) turns to previous page.
   return dx < 0 ? 'next' : 'prev';
+}
+
+export function clampPdfPan(
+  transform: PanZoomTransform,
+  viewportWidth: number,
+  viewportHeight: number,
+  contentWidth: number,
+  contentHeight: number,
+  padding = 12
+): PanZoomTransform {
+  const safeScale =
+    Number.isFinite(transform.scale) && transform.scale > 0 ? transform.scale : 1;
+  const safeX = Number.isFinite(transform.x) ? transform.x : 0;
+  const safeY = Number.isFinite(transform.y) ? transform.y : 0;
+
+  if (
+    !Number.isFinite(viewportWidth) ||
+    !Number.isFinite(viewportHeight) ||
+    !Number.isFinite(contentWidth) ||
+    !Number.isFinite(contentHeight) ||
+    viewportWidth <= 0 ||
+    viewportHeight <= 0 ||
+    contentWidth <= 0 ||
+    contentHeight <= 0
+  ) {
+    return { x: safeX, y: safeY, scale: safeScale };
+  }
+
+  const availW = Math.max(1, viewportWidth - padding * 2);
+  const availH = Math.max(1, viewportHeight - padding * 2);
+  const scaledW = contentWidth * safeScale;
+  const scaledH = contentHeight * safeScale;
+  const baseLeft = Math.max(padding, (viewportWidth - contentWidth) / 2);
+  const baseTop = padding;
+
+  const minX =
+    scaledW > availW
+      ? viewportWidth - padding - scaledW - baseLeft
+      : padding - baseLeft;
+  const maxX =
+    scaledW > availW
+      ? padding - baseLeft
+      : viewportWidth - padding - scaledW - baseLeft;
+
+  const minY =
+    scaledH > availH
+      ? viewportHeight - padding - scaledH - baseTop
+      : padding - baseTop;
+  const maxY =
+    scaledH > availH
+      ? padding - baseTop
+      : viewportHeight - padding - scaledH - baseTop;
+
+  return {
+    x: Math.min(maxX, Math.max(minX, safeX)),
+    y: Math.min(maxY, Math.max(minY, safeY)),
+    scale: safeScale,
+  };
 }
 
 export function printedToPdfPage(

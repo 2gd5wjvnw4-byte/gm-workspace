@@ -101,6 +101,7 @@ export type DeskCardType =
   | 'tracker'
   | 'scene-list'
   | 'node-map'
+  | 'map'
   | 'random-tables'
   | 'factions'
   | 'timeline'

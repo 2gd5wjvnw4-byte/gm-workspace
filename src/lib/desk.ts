@@ -82,6 +82,13 @@ export const DESK_CARD_CATALOG: DeskCardCatalogItem[] = [
     defaultHeight: 380,
   },
   {
+    type: 'map',
+    label: 'Map Card',
+    defaultTitle: 'Map',
+    defaultWidth: 460,
+    defaultHeight: 380,
+  },
+  {
     type: 'random-tables',
     label: 'Random Tables',
     defaultTitle: 'Random Tables',
@@ -363,6 +370,8 @@ export function isDeskCardTargetMissing(
       );
       return !inBase && !inImprovised;
     }
+    case 'map':
+      return !(live?.maps ?? []).some((m) => m.id === targetId);
     default:
       return true;
   }

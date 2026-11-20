@@ -136,6 +136,7 @@ export interface CampaignStoreState {
   ) => void;
   bringDeskCardToFront: (cardId: string) => void;
   toggleDeskCardMinimized: (cardId: string) => void;
+  setDeskCardTarget: (cardId: string, targetId: string | null, title?: string) => void;
   removeDeskCard: (cardId: string) => void;
   refreshCampaigns: () => Promise<CampaignRecord[]>;
   openCampaign: (campaignId: string) => Promise<LoadedCampaign | null>;
@@ -1766,6 +1767,27 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
             ...desk,
             cards: desk.cards.map((c) =>
               c.id === cardId ? { ...c, minimized: !c.minimized } : c
+            ),
+          },
+        };
+      });
+    },
+
+    setDeskCardTarget: (cardId, targetId, title) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            cards: desk.cards.map((c) =>
+              c.id === cardId
+                ? {
+                    ...c,
+                    targetId,
+                    title: title !== undefined ? title : c.title,
+                  }
+                : c
             ),
           },
         };

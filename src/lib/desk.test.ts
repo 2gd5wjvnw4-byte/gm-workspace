@@ -3,6 +3,7 @@ import {
   bringCardToFront,
   clampDeskCardSize,
   computeDeskCardsBounds,
+  DESK_CARD_CATALOG,
   DESK_CARD_HEADER_HEIGHT,
   DESK_MIN_CARD_HEIGHT,
   DESK_MIN_CARD_WIDTH,
@@ -130,6 +131,26 @@ describe('desk pure helpers', () => {
       targetId: 'npc-ghost',
     });
     expect(isDeskCardTargetMissing(missingEntityCard, merged, live)).toBe(true);
+
+    expect(DESK_CARD_CATALOG.some((item) => item.type === 'map')).toBe(true);
+    const liveWithMap = {
+      ...live,
+      maps: [
+        {
+          id: 'map-1',
+          name: 'Deck A',
+          blobKey: 'map:camp-1:map-1',
+          width: 800,
+          height: 600,
+        },
+      ],
+    };
+    expect(
+      isDeskCardTargetMissing(makeCard({ type: 'map', targetId: 'map-1' }), merged, liveWithMap)
+    ).toBe(false);
+    expect(
+      isDeskCardTargetMissing(makeCard({ type: 'map', targetId: 'map-deleted' }), merged, liveWithMap)
+    ).toBe(true);
 
     const safeDefaultDesk = ensureDeskState(undefined);
     expect(safeDefaultDesk.viewMode).toBe('structured');

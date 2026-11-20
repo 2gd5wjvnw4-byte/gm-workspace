@@ -35,6 +35,7 @@ const CARD_TYPE_BADGES: Record<DeskCardRecord['type'], string> = {
   tracker: 'TRACKER',
   'scene-list': 'LIST',
   'node-map': 'NODES',
+  map: 'MAP',
   'random-tables': 'TABLES',
   factions: 'FACTIONS',
   timeline: 'TIMELINE',

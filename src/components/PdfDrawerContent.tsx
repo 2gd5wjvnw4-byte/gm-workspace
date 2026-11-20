@@ -4,6 +4,7 @@ import { useCampaignStore } from '../store/campaignStore';
 import {
   PDF_RIBBON_COLORS,
   clampCropRect,
+  clampPdfPan,
   detectHorizontalPageSwipe,
   getPdfRibbonColorHex,
   isPdfRibbonOutOfRange,
@@ -64,6 +65,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
   const [goToOpen, setGoToOpen] = useState(false);
   const [goToDraft, setGoToDraft] = useState('');
   const [transform, setTransform] = useState<PanZoomTransform>(IDENTITY_TRANSFORM);
+  const transformRef = useRef<PanZoomTransform>(IDENTITY_TRANSFORM);
   const [cropMode, setCropMode] = useState(false);
   const [cropRect, setCropRect] = useState<NormalizedCropRect>(DEFAULT_CROP_RECT);
   const [cropPromptOpen, setCropPromptOpen] = useState(false);
@@ -106,7 +108,37 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
 
   const rawRibbons = (moduleId && live?.pdfRibbons?.[moduleId]) || [];
   const sortedRibbons = sortPdfRibbonsByPage(rawRibbons);
+  const pageRibbons = sortedRibbons.filter((r) => r.pdfPage === currentPdfPage);
   const editingRibbon = rawRibbons.find((r) => r.id === editingRibbonId) ?? null;
+
+  const clearActiveGestures = () => {
+    pointersRef.current.clear();
+    pinchDistRef.current = null;
+    swipeStartRef.current = null;
+  };
+
+  const applyTransform = (next: PanZoomTransform) => {
+    const vp = viewportRef.current;
+    const stage = cropStageRef.current;
+    const clamped =
+      vp && stage
+        ? clampPdfPan(
+            next,
+            vp.clientWidth,
+            vp.clientHeight,
+            stage.offsetWidth,
+            stage.offsetHeight
+          )
+        : next;
+    transformRef.current = clamped;
+    setTransform(clamped);
+  };
+
+  const resetTransform = () => {
+    clearActiveGestures();
+    transformRef.current = IDENTITY_TRANSFORM;
+    setTransform(IDENTITY_TRANSFORM);
+  };
 
   useEffect(() => {
     return () => {
@@ -177,7 +209,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
     setCurrentPdfPage(
       printedToPdfPage(targetPrinted, pageOffset, numPages > 0 ? numPages : undefined)
     );
-    setTransform(IDENTITY_TRANSFORM);
+    resetTransform();
   }, [requestedPrintedPage, openRequestSeq, pageOffset, numPages]);
 
   // Render only the currently visible page
@@ -207,7 +239,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
     }
     setPdfError(null);
     setCurrentPdfPage(ribbon.pdfPage);
-    setTransform(IDENTITY_TRANSFORM);
+    resetTransform();
   };
 
   const openEditRibbon = (ribbon: PdfRibbon) => {
@@ -331,12 +363,15 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
     setCurrentPdfPage(
       printedToPdfPage(parsed, pageOffset, numPages > 0 ? numPages : undefined)
     );
-    setTransform(IDENTITY_TRANSFORM);
+    resetTransform();
     setGoToOpen(false);
     setGoToDraft('');
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.isPrimary && pointersRef.current.size > 0) {
+      clearActiveGestures();
+    }
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -374,10 +409,10 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
 
     if (pointersRef.current.size === 1) {
       // At unzoomed 100% scale, single-finger horizontal drag is used for swipe page turning
-      if (Math.abs(transform.scale - 1) > 0.001) {
+      if (Math.abs(transformRef.current.scale - 1) > 0.001) {
         const dx = nextPt.x - prev.x;
         const dy = nextPt.y - prev.y;
-        setTransform((t) => panBy(t, dx, dy));
+        applyTransform(panBy(transformRef.current, dx, dy));
       }
     } else if (pointersRef.current.size === 2) {
       const pts = Array.from(pointersRef.current.values());
@@ -389,14 +424,24 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
         const midX = (pts[0].x + pts[1].x) / 2 - rect.left;
         const midY = (pts[0].y + pts[1].y) / 2 - rect.top;
         const factor = dist / prevDist;
-        setTransform((t) =>
-          zoomAtPoint(t, clampScale(t.scale * factor), midX, midY)
-        );
+        const cur = transformRef.current;
+        applyTransform(zoomAtPoint(cur, clampScale(cur.scale * factor), midX, midY));
       }
     }
   };
 
+  const releaseCaptureSafely = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore in jsdom
+    }
+  };
+
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    releaseCaptureSafely(e);
     const swipe = swipeStartRef.current;
     if (
       swipe &&
@@ -409,17 +454,19 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
       const dir = detectHorizontalPageSwipe({
         dx: endX - swipe.startX,
         dy: endY - swipe.startY,
-        scale: transform.scale,
+        scale: transformRef.current.scale,
         cropMode,
       });
       if (dir === 'next' && (numPages === 0 || currentPdfPage < numPages)) {
         setPdfError(null);
         setCurrentPdfPage((p) => (numPages > 0 ? Math.min(numPages, p + 1) : p + 1));
-        setTransform(IDENTITY_TRANSFORM);
+        resetTransform();
+        return;
       } else if (dir === 'prev' && currentPdfPage > 1) {
         setPdfError(null);
         setCurrentPdfPage((p) => Math.max(1, p - 1));
-        setTransform(IDENTITY_TRANSFORM);
+        resetTransform();
+        return;
       }
     }
     if (swipe && swipe.pointerId === e.pointerId) {
@@ -432,6 +479,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
   };
 
   const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    releaseCaptureSafely(e);
     if (swipeStartRef.current?.pointerId === e.pointerId) {
       swipeStartRef.current = null;
     }
@@ -448,7 +496,8 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
       const fx = e.clientX - rect.left;
       const fy = e.clientY - rect.top;
       const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-      setTransform((t) => zoomAtPoint(t, clampScale(t.scale * factor), fx, fy));
+      const cur = transformRef.current;
+      applyTransform(zoomAtPoint(cur, clampScale(cur.scale * factor), fx, fy));
     }
   };
 
@@ -775,6 +824,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
         onPointerMove={doc && !cropMode ? handlePointerMove : undefined}
         onPointerUp={doc && !cropMode ? handlePointerUp : undefined}
         onPointerCancel={doc && !cropMode ? handlePointerCancel : undefined}
+        onLostPointerCapture={doc && !cropMode ? handlePointerCancel : undefined}
         onWheel={doc && !cropMode ? handleWheel : undefined}
         style={{
           flex: 1,
@@ -931,7 +981,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
           </div>
         )}
 
-        {sortedRibbons.length > 0 && (
+        {pageRibbons.length > 0 && (
           <div
             data-testid="pdf-ribbon-edge-rail"
             onPointerDown={(e) => e.stopPropagation()}
@@ -950,7 +1000,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
               zIndex: 5,
             }}
           >
-            {sortedRibbons.map((ribbon) => {
+            {pageRibbons.map((ribbon) => {
               const hex = getPdfRibbonColorHex(ribbon.color);
               const isCurrent = ribbon.pdfPage === currentPdfPage;
               const outOfRange = isPdfRibbonOutOfRange(ribbon, numPages);
@@ -1504,7 +1554,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
           onClick={() => {
             setPdfError(null);
             setCurrentPdfPage((p) => Math.max(1, p - 1));
-            setTransform(IDENTITY_TRANSFORM);
+            resetTransform();
           }}
           style={{
             height: '44px',
@@ -1527,7 +1577,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
           onClick={() => {
             setPdfError(null);
             setCurrentPdfPage((p) => (numPages > 0 ? Math.min(numPages, p + 1) : p + 1));
-            setTransform(IDENTITY_TRANSFORM);
+            resetTransform();
           }}
           style={{
             height: '44px',
@@ -1571,7 +1621,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
             disabled={!doc}
             onClick={() => {
               setCropNotice(null);
-              setTransform(IDENTITY_TRANSFORM);
+              resetTransform();
               setCropRect(DEFAULT_CROP_RECT);
               setCropTitleDraft(`Map p.${printedPage}`);
               setCropPromptOpen(false);
@@ -1636,7 +1686,7 @@ export const PdfDrawerContent: React.FC<PdfDrawerContentProps> = ({
           <button
             type="button"
             data-testid="pdf-reset-zoom-btn"
-            onClick={() => setTransform(IDENTITY_TRANSFORM)}
+            onClick={() => resetTransform()}
             style={{
               height: '44px',
               padding: '0 12px',

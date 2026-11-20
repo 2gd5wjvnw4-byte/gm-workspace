@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   PDF_RIBBON_COLORS,
   clampCropRect,
+  clampPdfPan,
   detectHorizontalPageSwipe,
   getPdfRibbonColorHex,
   isPdfRibbonOutOfRange,
@@ -114,5 +115,41 @@ describe('PDF printed-page offset helpers', () => {
     expect(detectHorizontalPageSwipe({ dx: -80, dy: 70, scale: 1 })).toBeNull();
     expect(detectHorizontalPageSwipe({ dx: -90, dy: 0, scale: 1.5 })).toBeNull();
     expect(detectHorizontalPageSwipe({ dx: -90, dy: 0, scale: 1, cropMode: true })).toBeNull();
+  });
+
+  it('clamps zoomed and unzoomed PDF pan offsets within viewport edges', () => {
+    // Viewport 480x600, content 448x640, padding 12 -> baseLeft = 16, baseTop = 12
+    // At 2x zoom: scaledW = 896, scaledH = 1280
+    // maxX = 12 - 16 = -4; minX = 480 - 12 - 896 - 16 = -444
+    // maxY = 12 - 12 = 0; minY = 600 - 12 - 1280 - 12 = -704
+    expect(clampPdfPan({ x: 500, y: 500, scale: 2 }, 480, 600, 448, 640, 12)).toEqual({
+      x: -4,
+      y: 0,
+      scale: 2,
+    });
+    expect(clampPdfPan({ x: -2000, y: -2000, scale: 2 }, 480, 600, 448, 640, 12)).toEqual({
+      x: -444,
+      y: -704,
+      scale: 2,
+    });
+
+    // Identity at 1x stays at (0, 0)
+    expect(clampPdfPan({ x: 0, y: 0, scale: 1 }, 480, 600, 448, 560, 12)).toEqual({
+      x: 0,
+      y: 0,
+      scale: 1,
+    });
+
+    // Zoomed out (0.5x): stays inside viewport bounds
+    const outClamped = clampPdfPan({ x: -500, y: 900, scale: 0.5 }, 480, 600, 448, 560, 12);
+    expect(outClamped.x).toBe(-4);
+    expect(outClamped.y).toBe(296);
+
+    // Zero dimensions (e.g. jsdom) pass through safely without NaN
+    expect(clampPdfPan({ x: -45, y: 30, scale: 1.5 }, 0, 0, 0, 0, 12)).toEqual({
+      x: -45,
+      y: 30,
+      scale: 1.5,
+    });
   });
 });

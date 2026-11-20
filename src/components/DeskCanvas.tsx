@@ -21,6 +21,8 @@ import {
 import { useCampaignStore } from '../store/campaignStore';
 import type { DeskCardRecord, DeskCardType } from '../storage/types';
 import { DeskCardShell } from './DeskCardShell';
+import { DeskMapCardBody } from './DeskMapCardBody';
+import { resolveActiveMap } from './MapArea';
 
 interface ActivePointer {
   x: number;
@@ -48,6 +50,7 @@ export const DeskCanvas: React.FC = () => {
     resizeDeskCard,
     bringDeskCardToFront,
     toggleDeskCardMinimized,
+    setDeskCardTarget,
     removeDeskCard,
   } = useCampaignStore();
 
@@ -337,6 +340,20 @@ export const DeskCanvas: React.FC = () => {
         x: spawnX,
         y: spawnY,
       });
+    } else if (type === 'map') {
+      const activeMap = resolveActiveMap({
+        maps: live?.maps ?? [],
+        sceneMap: live?.sceneMap ?? {},
+        currentSceneId: live?.currentSceneId ?? null,
+        lastMapId: live?.ui?.lastMapId ?? null,
+      });
+      addDeskCard({
+        type: 'map',
+        title: activeMap ? activeMap.name : 'Map',
+        targetId: activeMap?.id ?? null,
+        x: spawnX,
+        y: spawnY,
+      });
     } else {
       addDeskCard({ type, x: spawnX, y: spawnY });
     }
@@ -474,6 +491,14 @@ export const DeskCanvas: React.FC = () => {
           </div>
         );
       }
+      case 'map':
+        return (
+          <DeskMapCardBody
+            card={card}
+            maps={live?.maps ?? []}
+            onSelectMap={(mapId, title) => setDeskCardTarget(card.id, mapId, title)}
+          />
+        );
       default:
         return (
           <div style={{ fontSize: '13px', color: 'var(--muted)' }}>

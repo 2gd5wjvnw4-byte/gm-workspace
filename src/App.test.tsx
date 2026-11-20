@@ -1921,31 +1921,41 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       const bossRibbon = ribbons.find((r) => r.label === 'Boss Table')!;
       const rumorsRibbon = ribbons.find((r) => r.label === 'Rumors')!;
 
-      // Edge tabs are >= 44x44px and sorted by page (Rumors p.2 before Boss Table p.10)
+      // Edge rail shows ONLY ribbons on the current page (printed p.2 -> Rumors only; Boss Table on p.10 is hidden)
       const edgeRail = screen.getByTestId('pdf-ribbon-edge-rail');
       const tabButtons = within(edgeRail).getAllByRole('button');
-      expect(tabButtons).toHaveLength(2);
+      expect(tabButtons).toHaveLength(1);
       expect(tabButtons[0]).toHaveTextContent('Rumors');
-      expect(tabButtons[1]).toHaveTextContent('Boss Table');
       expect(tabButtons[0].style.minHeight).toBe('44px');
       expect(tabButtons[0].style.minWidth).toBe('44px');
+      expect(screen.queryByTestId(`pdf-ribbon-tab-${bossRibbon.id}`)).not.toBeInTheDocument();
 
-      // Tap Boss Table edge tab -> jumps to printed p.10 (PDF p.12/20)
-      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      // Turning to a page with no ribbons (p.3) omits the edge rail completely
+      fireEvent.click(screen.getByTestId('pdf-next-btn'));
       expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
-        'Source PDF · printed p.10 (PDF p.12/20)'
+        'Source PDF · printed p.3 (PDF p.5/20)'
       );
+      expect(screen.queryByTestId('pdf-ribbon-edge-rail')).not.toBeInTheDocument();
 
-      // Open sorted ribbons list menu -> shows Rumors (p.2) then Boss Table (p.10)
+      // Open Ribbons (2) menu -> shows ALL ribbons sorted by page (Rumors p.2 then Boss Table p.10)
+      expect(screen.getByTestId('pdf-ribbons-menu-btn')).toHaveTextContent('Ribbons (2)');
       fireEvent.click(screen.getByTestId('pdf-ribbons-menu-btn'));
       const listMenu = screen.getByTestId('pdf-ribbons-list-menu');
       expect(listMenu).toBeInTheDocument();
-      fireEvent.click(screen.getByTestId(`pdf-ribbon-list-jump-${rumorsRibbon.id}`));
-      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
-        'Source PDF · printed p.2 (PDF p.4/20)'
-      );
+      const jumpButtons = within(listMenu).getAllByTestId(/^pdf-ribbon-list-jump-/);
+      expect(jumpButtons).toHaveLength(2);
+      expect(jumpButtons[0]).toHaveTextContent('Rumors');
+      expect(jumpButtons[1]).toHaveTextContent('Boss Table');
 
-      // Right-click (contextmenu) Boss Table tab -> rename, recolor, and move to current page (p.2)
+      // Tap Boss Table in Ribbons menu -> jumps to printed p.10, where edge rail shows ONLY Boss Table
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-list-jump-${bossRibbon.id}`));
+      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
+        'Source PDF · printed p.10 (PDF p.12/20)'
+      );
+      expect(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`)).toBeInTheDocument();
+      expect(screen.queryByTestId(`pdf-ribbon-tab-${rumorsRibbon.id}`)).not.toBeInTheDocument();
+
+      // Right-click (contextmenu) Boss Table tab on p.10 -> rename & recolor
       fireEvent.contextMenu(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
       expect(screen.getByTestId('pdf-edit-ribbon-form')).toBeInTheDocument();
       fireEvent.change(screen.getByTestId('pdf-edit-ribbon-label-input'), {
@@ -1957,7 +1967,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
         'Updated Boss'
       );
 
-      // Long-press (>= 950ms hold) Updated Boss tab while + Ribbon is open -> opens edit form below viewport (no rail shift) and suppresses jump click even on long hold
+      // Long-press (>= 950ms hold) Updated Boss tab while + Ribbon is open -> opens edit form
       fireEvent.click(screen.getByTestId('pdf-add-ribbon-btn'));
       expect(screen.getByTestId('pdf-add-ribbon-form')).toBeInTheDocument();
       vi.useFakeTimers();
@@ -1965,56 +1975,29 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       vi.advanceTimersByTime(950);
       fireEvent.pointerUp(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
       fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
-      // Even if a release click misses the tab, advancing >350ms after pointerup expires suppression
       vi.advanceTimersByTime(400);
       vi.useRealTimers();
       expect(await screen.findByTestId('pdf-edit-ribbon-form')).toBeInTheDocument();
-      // Page did NOT jump to p.10 on the 950ms hold release
-      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
-        'Source PDF · printed p.2 (PDF p.4/20)'
-      );
       fireEvent.click(screen.getByTestId('pdf-edit-ribbon-close-btn'));
       expect(screen.queryByTestId('pdf-edit-ribbon-form')).not.toBeInTheDocument();
 
-      // Next normal tap on Updated Boss tab jumps to printed p.10 immediately (not swallowed)
-      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
-      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
-        'Source PDF · printed p.10 (PDF p.12/20)'
-      );
-
-      // Jump back to p.2, then test a long-press (>= 560ms) that ends via pointerLeave without a release click,
-      // followed immediately (< 350ms) by closing the edit form and tapping the same ribbon tab (pointerDown -> pointerUp -> click)
-      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${rumorsRibbon.id}`));
+      // Jump back to p.2 via Ribbons menu and move Updated Boss to current page (printed p.2 / PDF p.4)
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-list-jump-${rumorsRibbon.id}`));
       expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
         'Source PDF · printed p.2 (PDF p.4/20)'
       );
-      vi.useFakeTimers();
-      fireEvent.pointerDown(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
-      vi.advanceTimersByTime(560);
-      fireEvent.pointerLeave(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
-      // Within 100ms (< 350ms expiry window), close edit form and perform a fast normal tap
-      vi.advanceTimersByTime(100);
-      vi.useRealTimers();
-      expect(await screen.findByTestId('pdf-edit-ribbon-form')).toBeInTheDocument();
-      fireEvent.click(screen.getByTestId('pdf-edit-ribbon-close-btn'));
-      fireEvent.pointerDown(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
-      fireEvent.pointerUp(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
-      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
-      expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
-        'Source PDF · printed p.10 (PDF p.12/20)'
-      );
-
-      // Jump back to p.2 and move Updated Boss to current page (printed p.2 / PDF p.4)
-      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${rumorsRibbon.id}`));
-      fireEvent.contextMenu(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`));
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-list-edit-${bossRibbon.id}`));
       fireEvent.click(screen.getByTestId('pdf-edit-ribbon-move-here-btn'));
       expect(
         useCampaignStore
           .getState()
           .live?.pdfRibbons?.[modId].find((r) => r.id === bossRibbon.id)?.printedPage
       ).toBe(2);
+      // Both Rumors and Updated Boss are now on p.2, so both appear in the p.2 edge rail
+      expect(screen.getByTestId(`pdf-ribbon-tab-${bossRibbon.id}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`pdf-ribbon-tab-${rumorsRibbon.id}`)).toBeInTheDocument();
 
-      // Out-of-range ribbon is flagged, renders error banner outside pdf-canvas-viewport, and clears on dismiss/page turn/delete
+      // Out-of-range ribbon is NOT shown on p.2 edge rail, IS shown in Ribbons (n) menu with warning, and clears error on dismiss/page turn/delete
       const outRibbon = useCampaignStore.getState().addPdfRibbon({
         moduleId: modId,
         label: 'Appendix Z',
@@ -2022,9 +2005,9 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
         pdfPage: 99,
         printedPage: 97,
       })!;
-      expect(await screen.findByTestId(`pdf-ribbon-tab-warning-${outRibbon.id}`)).toBeInTheDocument();
-      expect(screen.getByTestId(`pdf-ribbon-out-of-range-${outRibbon.id}`)).toBeInTheDocument();
-      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${outRibbon.id}`));
+      expect(screen.queryByTestId(`pdf-ribbon-tab-${outRibbon.id}`)).not.toBeInTheDocument();
+      expect(await screen.findByTestId(`pdf-ribbon-out-of-range-${outRibbon.id}`)).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-list-jump-${outRibbon.id}`));
       const errBanner = screen.getByTestId('pdf-error-banner');
       expect(errBanner).toHaveTextContent(/outside this PDF/i);
       expect(screen.getByTestId('pdf-canvas-viewport').contains(errBanner)).toBe(false);
@@ -2037,29 +2020,29 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       expect(screen.queryByTestId('pdf-error-banner')).not.toBeInTheDocument();
 
       // Re-trigger out-of-range error and verify Next page button clears it automatically
-      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${outRibbon.id}`));
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-list-jump-${outRibbon.id}`));
       expect(screen.getByTestId('pdf-error-banner')).toBeInTheDocument();
       fireEvent.click(screen.getByTestId('pdf-next-btn'));
       expect(screen.queryByTestId('pdf-error-banner')).not.toBeInTheDocument();
       fireEvent.click(screen.getByTestId('pdf-prev-btn'));
 
       // Re-trigger out-of-range error and delete out-of-range ribbon via edit menu -> clears error banner too
-      fireEvent.click(screen.getByTestId(`pdf-ribbon-tab-${outRibbon.id}`));
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-list-jump-${outRibbon.id}`));
       expect(screen.getByTestId('pdf-error-banner')).toBeInTheDocument();
-      fireEvent.contextMenu(screen.getByTestId(`pdf-ribbon-tab-${outRibbon.id}`));
+      fireEvent.click(screen.getByTestId(`pdf-ribbon-list-edit-${outRibbon.id}`));
       fireEvent.click(screen.getByTestId('pdf-edit-ribbon-delete-btn'));
-      expect(screen.queryByTestId(`pdf-ribbon-tab-${outRibbon.id}`)).not.toBeInTheDocument();
+      expect(screen.queryByTestId(`pdf-ribbon-list-row-${outRibbon.id}`)).not.toBeInTheDocument();
       expect(screen.queryByTestId('pdf-error-banner')).not.toBeInTheDocument();
 
       // Horizontal swipe at 100% zoom turns pages: swipe left (dx = -90) -> next page (printed p.3, PDF p.5)
       const viewport = screen.getByTestId('pdf-canvas-viewport');
       const firePtr = (
         el: Element,
-        type: 'pointerdown' | 'pointermove' | 'pointerup',
-        props: { pointerId: number; clientX: number; clientY: number }
+        type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel' | 'lostpointercapture',
+        props: { pointerId: number; clientX: number; clientY: number; isPrimary?: boolean }
       ) => {
         const ev = new Event(type, { bubbles: true, cancelable: true });
-        Object.assign(ev, props);
+        Object.assign(ev, { isPrimary: true, ...props });
         fireEvent(el, ev);
       };
       firePtr(viewport, 'pointerdown', { pointerId: 10, clientX: 300, clientY: 200 });
@@ -2077,15 +2060,65 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
         'Source PDF · printed p.2 (PDF p.4/20)'
       );
 
-      // Zoom in with ctrl+wheel -> horizontal drag pans instead of turning pages
-      fireEvent.wheel(viewport, { ctrlKey: true, deltaY: -100, clientX: 200, clientY: 200 });
+      // Zoom in with ctrl+wheel with real non-zero viewport/stage dimensions -> horizontal drag pans, clamps at edges, and recovers cleanly
+      Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 480 });
+      Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 600 });
+      const stageEl = screen.getByTestId('pdf-page-canvas').parentElement as HTMLElement;
+      Object.defineProperty(stageEl, 'offsetWidth', { configurable: true, value: 448 });
+      Object.defineProperty(stageEl, 'offsetHeight', { configurable: true, value: 640 });
+
+      for (let i = 0; i < 6; i += 1) {
+        fireEvent.wheel(viewport, { ctrlKey: true, deltaY: -100, clientX: 200, clientY: 200 });
+      }
       expect(screen.getByTestId('pdf-reset-zoom-btn')).toBeInTheDocument();
-      firePtr(viewport, 'pointerdown', { pointerId: 12, clientX: 300, clientY: 200 });
-      firePtr(viewport, 'pointermove', { pointerId: 12, clientX: 180, clientY: 200 });
-      firePtr(viewport, 'pointerup', { pointerId: 12, clientX: 180, clientY: 200 });
+
+      const parseTranslate = (tr: string) => {
+        const m = tr.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/);
+        expect(m).not.toBeNull();
+        return { x: Number(m![1]), y: Number(m![2]), scale: Number(m![3]) };
+      };
+
+      const zoomedStart = parseTranslate(stageEl.style.transform);
+      expect(zoomedStart.scale).toBeGreaterThan(1.5);
+
+      // Drag far past the top-left edge -> clamped cleanly to (-4, 0) instead of drifting off-screen
+      firePtr(viewport, 'pointerdown', { pointerId: 12, clientX: 50, clientY: 50 });
+      firePtr(viewport, 'pointermove', { pointerId: 12, clientX: 2050, clientY: 2050 });
+      firePtr(viewport, 'pointerup', { pointerId: 12, clientX: 2050, clientY: 2050 });
       expect(screen.getByTestId('pdf-drawer-header-label')).toHaveTextContent(
         'Source PDF · printed p.2 (PDF p.4/20)'
       );
+      const atTopLeftEdge = parseTranslate(stageEl.style.transform);
+      expect(atTopLeftEdge.x).toBe(-4);
+      expect(atTopLeftEdge.y).toBe(0);
+
+      // Drag back away from the clamped edge -> moves freely (never stuck)
+      firePtr(viewport, 'pointerdown', { pointerId: 16, clientX: 300, clientY: 300 });
+      firePtr(viewport, 'pointermove', { pointerId: 16, clientX: 220, clientY: 210 });
+      firePtr(viewport, 'pointerup', { pointerId: 16, clientX: 220, clientY: 210 });
+      const afterPanBack = parseTranslate(stageEl.style.transform);
+      expect(afterPanBack.x).toBe(-84);
+      expect(afterPanBack.y).toBe(-90);
+
+      // Edge preemption (lostpointercapture) and a stale unended pointer must NOT wedge zoomed panning
+      firePtr(viewport, 'pointerdown', { pointerId: 13, clientX: 200, clientY: 200 });
+      firePtr(viewport, 'pointermove', { pointerId: 13, clientX: 10, clientY: 200 });
+      firePtr(viewport, 'lostpointercapture', { pointerId: 13, clientX: 10, clientY: 200 });
+
+      // Simulate a dropped pointerup (stale pointer 14 left unended), then a fresh primary touch (pointer 15)
+      firePtr(viewport, 'pointerdown', { pointerId: 14, clientX: 100, clientY: 150 });
+      const beforeRecoveryPan = parseTranslate(stageEl.style.transform);
+      firePtr(viewport, 'pointerdown', { pointerId: 15, clientX: 150, clientY: 150, isPrimary: true });
+      firePtr(viewport, 'pointermove', { pointerId: 15, clientX: 210, clientY: 190, isPrimary: true });
+      firePtr(viewport, 'pointerup', { pointerId: 15, clientX: 210, clientY: 190, isPrimary: true });
+      const afterRecoveryPan = parseTranslate(stageEl.style.transform);
+      expect(afterRecoveryPan.x).toBeGreaterThan(beforeRecoveryPan.x);
+      expect(afterRecoveryPan.y).toBeGreaterThan(beforeRecoveryPan.y);
+
+      // Reset clears zoom and active gesture state
+      fireEvent.click(screen.getByTestId('pdf-reset-zoom-btn'));
+      expect(screen.queryByTestId('pdf-reset-zoom-btn')).not.toBeInTheDocument();
+      expect(stageEl.style.transform).toContain('scale(1)');
     } finally {
       loadSpy.mockRestore();
       renderSpy.mockRestore();
@@ -2375,6 +2408,91 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
         value: originalWidth,
       });
       fireEvent(window, new Event('resize'));
+    }
+  });
+
+  it('supports Stage 8d-b Desk Map card: empty state, map image rendering, map switching, persistence, and missing-target flagging', async () => {
+    const origCreateObjectURL = URL.createObjectURL;
+    const origRevokeObjectURL = URL.revokeObjectURL;
+    let urlCounter = 0;
+    URL.createObjectURL = vi.fn(() => `blob:mock-map-${++urlCounter}`);
+    URL.revokeObjectURL = vi.fn();
+
+    try {
+      seedOpenCampaign();
+      await useCampaignStore.getState().importJsonChunk(sampleRawText);
+      render(<App />);
+      await screen.findByTestId('zone-topbar');
+
+      // Open Desk View
+      fireEvent.click(screen.getByTestId('desk-view-toggle'));
+      expect(await screen.findByTestId('desk-canvas')).toBeInTheDocument();
+
+      // Add a Map card when no maps exist -> shows clean empty state
+      fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+      expect(screen.getByTestId('desk-add-card-option-map')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('desk-add-card-option-map'));
+
+      const emptyMapCard = useCampaignStore
+        .getState()
+        .live!.desk!.cards.find((c) => c.type === 'map')!;
+      expect(emptyMapCard).toBeDefined();
+      expect(screen.getByTestId(`desk-map-card-empty-${emptyMapCard.id}`)).toBeInTheDocument();
+
+      // Close empty card, then add two maps to the campaign library
+      fireEvent.click(screen.getByTestId(`desk-card-close-${emptyMapCard.id}`));
+
+      const mapA = await useCampaignStore.getState().addMapAsset({
+        name: 'Command Deck',
+        data: new Blob(['fake-png-a'], { type: 'image/png' }),
+        mimeType: 'image/png',
+        width: 800,
+        height: 600,
+        scale: 'Tactical',
+      });
+      const mapB = await useCampaignStore.getState().addMapAsset({
+        name: 'Sector Chart',
+        data: new Blob(['fake-png-b'], { type: 'image/png' }),
+        mimeType: 'image/png',
+        width: 1000,
+        height: 700,
+        scale: 'Regional',
+      });
+      expect(mapA).not.toBeNull();
+      expect(mapB).not.toBeNull();
+
+      // Add Map card from + Add Card -> defaults to most recently added map (mapB) and renders image + switcher
+      fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+      fireEvent.click(screen.getByTestId('desk-add-card-option-map'));
+
+      const mapCard = useCampaignStore
+        .getState()
+        .live!.desk!.cards.find((c) => c.type === 'map')!;
+      expect(mapCard.targetId).toBe(mapB!.id);
+      expect(screen.getByTestId(`desk-card-title-${mapCard.id}`)).toHaveTextContent('Sector Chart');
+      const mapImg = await screen.findByTestId(`desk-map-card-img-${mapCard.id}`);
+      expect(mapImg).toHaveAttribute('alt', 'Sector Chart');
+      expect(mapImg.getAttribute('src')).toMatch(/^blob:mock-map-/);
+
+      // Switch map via selector -> updates card targetId, title, and rendered image
+      const selectEl = screen.getByTestId(`desk-map-card-select-${mapCard.id}`);
+      fireEvent.change(selectEl, { target: { value: mapA!.id } });
+      expect(
+        useCampaignStore.getState().live!.desk!.cards.find((c) => c.id === mapCard.id)?.targetId
+      ).toBe(mapA!.id);
+      expect(screen.getByTestId(`desk-card-title-${mapCard.id}`)).toHaveTextContent('Command Deck');
+      expect(await screen.findByTestId(`desk-map-card-img-${mapCard.id}`)).toHaveAttribute(
+        'alt',
+        'Command Deck'
+      );
+
+      // Deleting the map targeted by the card flags it safely as missing
+      await useCampaignStore.getState().deleteMapAsset(mapA!.id);
+      expect(await screen.findByTestId('desk-card-missing-flag')).toBeInTheDocument();
+      expect(screen.getByTestId(`desk-card-${mapCard.id}`)).toHaveAttribute('data-flagged', 'true');
+    } finally {
+      URL.createObjectURL = origCreateObjectURL;
+      URL.revokeObjectURL = origRevokeObjectURL;
     }
   });
 });
