@@ -19,6 +19,8 @@ export interface TopBarProps {
   onToggleSoloMask: () => void;
   focusMode?: boolean;
   onToggleFocusMode?: () => void;
+  deskMode?: boolean;
+  onToggleDeskMode?: () => void;
   onOpenPdf: () => void;
   onOpenEntityInspector?: (entityId: string) => void;
   onOpenMapLibrary?: () => void;
@@ -60,6 +62,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleSoloMask,
   focusMode = true,
   onToggleFocusMode,
+  deskMode = false,
+  onToggleDeskMode,
   onOpenPdf,
   onOpenEntityInspector,
   onOpenMapLibrary,
@@ -138,15 +142,23 @@ export const TopBar: React.FC<TopBarProps> = ({
         flexShrink: 0,
         display: 'flex',
         alignItems: 'flex-end',
-        gap: '10px',
-        padding: '0 14px 4px',
+        gap: '5px',
+        padding: '0 8px 4px',
         background: 'var(--panel)',
         borderBottom: '1px solid var(--line)',
         boxSizing: 'border-box',
       }}
     >
       {/* 1. Brand block */}
-      <div style={{ display: 'flex', flexDirection: 'column', minWidth: '140px' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: '80px',
+          maxWidth: '120px',
+          flexShrink: 1,
+        }}
+      >
         <span
           style={{
             fontFamily: 'var(--mono)',
@@ -154,6 +166,9 @@ export const TopBar: React.FC<TopBarProps> = ({
             letterSpacing: '.12em',
             color: 'var(--muted)',
             textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
           }}
         >
           GM WORKSPACE
@@ -167,11 +182,15 @@ export const TopBar: React.FC<TopBarProps> = ({
             cursor: 'pointer',
             fontFamily: 'var(--head)',
             fontWeight: 700,
-            fontSize: '15px',
+            fontSize: '14px',
             color: 'var(--text)',
             minHeight: '28px',
-            display: 'inline-flex',
-            alignItems: 'center',
+            lineHeight: '28px',
+            maxWidth: '100%',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            display: 'block',
           }}
         >
           {campaignLabel} ▾
@@ -179,7 +198,10 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* 2. Tracker steppers (scoped to global + current act) */}
-      <div data-testid="topbar-trackers" style={{ display: 'flex', gap: '6px' }}>
+      <div
+        data-testid="topbar-trackers"
+        style={{ display: 'flex', gap: '4px', flexShrink: 0 }}
+      >
         {scopedTrackers.map((tr) => {
           const val = trackerValues[tr.id] ?? tr.start;
           return (
@@ -189,7 +211,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '3px',
+                gap: '2px',
                 background: 'var(--p2)',
                 border: '1px solid var(--line)',
                 borderRadius: '10px',
@@ -219,11 +241,22 @@ export const TopBar: React.FC<TopBarProps> = ({
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  minWidth: '62px',
-                  padding: '0 4px',
+                  minWidth: '34px',
+                  maxWidth: '46px',
+                  padding: '0 2px',
+                  overflow: 'hidden',
                 }}
               >
-                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    color: 'var(--muted)',
+                    maxWidth: '100%',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
                   {tr.label}
                 </span>
                 <span
@@ -266,18 +299,18 @@ export const TopBar: React.FC<TopBarProps> = ({
         style={{
           flex: 1,
           position: 'relative',
-          minWidth: '100px',
+          minWidth: '80px',
         }}
       >
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            gap: '5px',
             background: 'var(--bg)',
             border: '1px solid var(--line)',
             borderRadius: '10px',
-            padding: '0 12px',
+            padding: '0 8px',
             height: '44px',
             boxSizing: 'border-box',
           }}
@@ -308,6 +341,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             style={{
               all: 'unset',
               flex: 1,
+              width: '100%',
               minWidth: 0,
               color: 'var(--text)',
               fontSize: '14px',
@@ -442,15 +476,16 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClick={onOpenReview}
           style={{
             height: '44px',
-            padding: '0 10px',
+            padding: '0 7px',
             borderRadius: '10px',
             border: '1px solid var(--goldLine)',
             background: 'var(--goldBg)',
             color: 'var(--gold)',
-            fontSize: '13px',
+            fontSize: '12px',
             fontWeight: 600,
             cursor: 'pointer',
             flexShrink: 0,
+            whiteSpace: 'nowrap',
           }}
         >
           Review {reviewCount}
@@ -488,6 +523,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           borderRadius: '10px',
           padding: '2px',
           gap: '2px',
+          flexShrink: 0,
         }}
         role="group"
         aria-label="Map view"
@@ -508,8 +544,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               aria-pressed={active}
               style={{
                 height: '44px',
-                minWidth: '48px',
-                padding: '0 8px',
+                minWidth: '44px',
+                padding: '0 6px',
                 borderRadius: '8px',
                 border: 'none',
                 fontSize: '13px',
@@ -534,19 +570,20 @@ export const TopBar: React.FC<TopBarProps> = ({
           height: '44px',
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          padding: '0 12px',
+          gap: '4px',
+          padding: '0 7px',
           borderRadius: '10px',
-          fontSize: '13px',
+          fontSize: '12px',
           fontWeight: 600,
           border: soloMask ? '1px solid var(--violet)' : '1px solid var(--line)',
           background: soloMask ? 'var(--violetBg)' : 'var(--p2)',
           color: soloMask ? 'var(--violet)' : 'var(--text)',
+          flexShrink: 0,
         }}
       >
         <svg
-          width="18"
-          height="18"
+          width="15"
+          height="15"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -571,19 +608,20 @@ export const TopBar: React.FC<TopBarProps> = ({
             height: '44px',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            padding: '0 12px',
+            gap: '4px',
+            padding: '0 7px',
             borderRadius: '10px',
-            fontSize: '13px',
+            fontSize: '12px',
             fontWeight: 600,
             border: focusMode ? '1px solid var(--accent)' : '1px solid var(--line)',
             background: focusMode ? 'var(--accentBg)' : 'var(--p2)',
             color: focusMode ? 'var(--accent)' : 'var(--text)',
+            flexShrink: 0,
           }}
         >
           <svg
-            width="16"
-            height="16"
+            width="15"
+            height="15"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -597,6 +635,47 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
       )}
 
+      {/* 6c. Desk View toggle */}
+      {onToggleDeskMode && (
+        <button
+          type="button"
+          data-testid="desk-view-toggle"
+          onClick={onToggleDeskMode}
+          aria-pressed={deskMode}
+          aria-label={deskMode ? 'Exit Desk View' : 'Enter Desk View'}
+          style={{
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '0 7px',
+            borderRadius: '10px',
+            fontSize: '12px',
+            fontWeight: 600,
+            border: deskMode ? '1px solid var(--accent)' : '1px solid var(--line)',
+            background: deskMode ? 'var(--accentBg)' : 'var(--p2)',
+            color: deskMode ? 'var(--accent)' : 'var(--text)',
+            flexShrink: 0,
+          }}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="8" height="8" rx="1.5" />
+            <rect x="13" y="3" width="8" height="6" rx="1.5" />
+            <rect x="13" y="11" width="8" height="10" rx="1.5" />
+            <rect x="3" y="13" width="8" height="8" rx="1.5" />
+          </svg>
+          <span>Desk</span>
+        </button>
+      )}
+
       {/* 7. PDF button */}
       <button
         type="button"
@@ -605,19 +684,20 @@ export const TopBar: React.FC<TopBarProps> = ({
           height: '44px',
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          padding: '0 12px',
+          gap: '4px',
+          padding: '0 7px',
           borderRadius: '10px',
           border: '1px solid var(--line)',
           background: 'var(--p2)',
           color: 'var(--text)',
-          fontSize: '13px',
+          fontSize: '12px',
           fontWeight: 600,
+          flexShrink: 0,
         }}
       >
         <svg
-          width="18"
-          height="18"
+          width="15"
+          height="15"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

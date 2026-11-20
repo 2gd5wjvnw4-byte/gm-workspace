@@ -17,6 +17,9 @@ import {
   type CampaignRecord,
   type ChunkRecord,
   type ConnectionOverrideState,
+  type DeskCardRecord,
+  type DeskCardType,
+  type DeskViewMode,
   type DispositionState,
   type ImportedBackupResult,
   type ImprovisedAreaRecord,
@@ -50,6 +53,13 @@ import {
   makeAreaKey,
   nextImprovisedSceneCode,
 } from '../lib/improvised';
+import {
+  bringCardToFront,
+  clampDeskCardSize,
+  DESK_CARD_CATALOG,
+  ensureDeskState,
+  snapToDeskGrid,
+} from '../lib/desk';
 import { useThemeStore, type ThemeId } from './themeStore';
 
 export interface CampaignStoreState {
@@ -105,6 +115,28 @@ export interface CampaignStoreState {
     printedPage: number
   ) => void;
   deletePdfRibbon: (moduleId: string, ribbonId: string) => void;
+  setDeskViewMode: (viewMode: DeskViewMode) => void;
+  setDeskSnapToGrid: (snapToGrid: boolean) => void;
+  setDeskViewport: (viewport: { x: number; y: number; scale: number }) => void;
+  addDeskCard: (input: {
+    type: DeskCardType;
+    title?: string;
+    targetId?: string | null;
+    followCurrentScene?: boolean;
+    pageNumber?: number;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  }) => DeskCardRecord | null;
+  moveDeskCard: (cardId: string, x: number, y: number) => void;
+  resizeDeskCard: (
+    cardId: string,
+    rect: { x: number; y: number; width: number; height: number }
+  ) => void;
+  bringDeskCardToFront: (cardId: string) => void;
+  toggleDeskCardMinimized: (cardId: string) => void;
+  removeDeskCard: (cardId: string) => void;
   refreshCampaigns: () => Promise<CampaignRecord[]>;
   openCampaign: (campaignId: string) => Promise<LoadedCampaign | null>;
   createNewCampaign: (input: {
@@ -1564,6 +1596,190 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           pdfRibbons: {
             ...(prev.pdfRibbons ?? {}),
             [trimmedModule]: existing.filter((r) => r.id !== ribbonId),
+          },
+        };
+      });
+    },
+
+    setDeskViewMode: (viewMode) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            viewMode,
+          },
+        };
+      });
+    },
+
+    setDeskSnapToGrid: (snapToGrid) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            snapToGrid,
+          },
+        };
+      });
+    },
+
+    setDeskViewport: (viewport) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            viewport: {
+              x: Number.isFinite(viewport.x) ? viewport.x : desk.viewport.x,
+              y: Number.isFinite(viewport.y) ? viewport.y : desk.viewport.y,
+              scale:
+                Number.isFinite(viewport.scale) && viewport.scale > 0
+                  ? viewport.scale
+                  : desk.viewport.scale,
+            },
+          },
+        };
+      });
+    },
+
+    addDeskCard: (input) => {
+      const state = get();
+      if (!state.live) return null;
+      const desk = ensureDeskState(state.live.desk);
+      const catalogEntry = DESK_CARD_CATALOG.find((c) => c.type === input.type);
+      const clampedSize = clampDeskCardSize(
+        input.width ?? catalogEntry?.defaultWidth ?? 360,
+        input.height ?? catalogEntry?.defaultHeight ?? 320
+      );
+      const count = desk.cards.length;
+      const rawX =
+        input.x !== undefined ? input.x : 48 + ((count * 36) % 288);
+      const rawY =
+        input.y !== undefined ? input.y : 48 + ((count * 36) % 216);
+      const x = snapToDeskGrid(rawX, desk.gridSize, desk.snapToGrid);
+      const y = snapToDeskGrid(rawY, desk.gridSize, desk.snapToGrid);
+      const maxZ = desk.cards.reduce((acc, c) => Math.max(acc, c.z), 0);
+
+      const newCard: DeskCardRecord = {
+        id: `desk-card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type: input.type,
+        title:
+          input.title?.trim() ||
+          catalogEntry?.defaultTitle ||
+          catalogEntry?.label ||
+          'Card',
+        ...(input.targetId !== undefined ? { targetId: input.targetId } : {}),
+        ...(input.followCurrentScene !== undefined
+          ? { followCurrentScene: input.followCurrentScene }
+          : input.type === 'scene' && !input.targetId
+            ? { followCurrentScene: true }
+            : {}),
+        ...(input.pageNumber !== undefined ? { pageNumber: input.pageNumber } : {}),
+        x,
+        y,
+        width: clampedSize.width,
+        height: clampedSize.height,
+        z: maxZ + 1,
+        minimized: false,
+        createdAt: Date.now(),
+      };
+
+      commitLive((prev) => {
+        const curDesk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...curDesk,
+            cards: bringCardToFront([...curDesk.cards, newCard], newCard.id),
+          },
+        };
+      });
+
+      return newCard;
+    },
+
+    moveDeskCard: (cardId, x, y) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        const snappedX = snapToDeskGrid(x, desk.gridSize, desk.snapToGrid);
+        const snappedY = snapToDeskGrid(y, desk.gridSize, desk.snapToGrid);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            cards: desk.cards.map((c) =>
+              c.id === cardId ? { ...c, x: snappedX, y: snappedY } : c
+            ),
+          },
+        };
+      });
+    },
+
+    resizeDeskCard: (cardId, rect) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        const clamped = clampDeskCardSize(rect.width, rect.height);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            cards: desk.cards.map((c) =>
+              c.id === cardId
+                ? {
+                    ...c,
+                    x: Math.round(rect.x),
+                    y: Math.round(rect.y),
+                    width: clamped.width,
+                    height: clamped.height,
+                  }
+                : c
+            ),
+          },
+        };
+      });
+    },
+
+    bringDeskCardToFront: (cardId) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            cards: bringCardToFront(desk.cards, cardId),
+          },
+        };
+      });
+    },
+
+    toggleDeskCardMinimized: (cardId) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            cards: desk.cards.map((c) =>
+              c.id === cardId ? { ...c, minimized: !c.minimized } : c
+            ),
+          },
+        };
+      });
+    },
+
+    removeDeskCard: (cardId) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            cards: desk.cards.filter((c) => c.id !== cardId),
           },
         };
       });

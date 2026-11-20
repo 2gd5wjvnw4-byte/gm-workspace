@@ -2091,4 +2091,194 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       renderSpy.mockRestore();
     }
   });
+
+  it('supports Stage 8d Desk View canvas pan/zoom, snap-to-grid, Fit All, universal card shell drag/resize/z-order/minimize/close, and missing-target flagging', async () => {
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    render(<App />);
+
+    const firePtr = (
+      el: Element,
+      type: 'pointerdown' | 'pointermove' | 'pointerup',
+      props: { pointerId: number; clientX: number; clientY: number }
+    ) => {
+      const ev = new Event(type, { bubbles: true, cancelable: true });
+      Object.assign(ev, props);
+      fireEvent(el, ev);
+    };
+
+    // G2: Toggling Desk button switches from Structured view to Desk canvas
+    const deskToggle = screen.getByTestId('desk-view-toggle');
+    expect(deskToggle).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(deskToggle);
+    expect(deskToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(useCampaignStore.getState().live?.desk?.viewMode).toBe('desk');
+
+    const canvas = screen.getByTestId('desk-canvas');
+    expect(canvas).toBeInTheDocument();
+    expect(screen.getByTestId('desk-empty-hint')).toBeInTheDocument();
+
+    // G3: Dragging empty space on desk-canvas pans the canvas and updates world transform
+    firePtr(canvas, 'pointerdown', { pointerId: 1, clientX: 400, clientY: 300 });
+    firePtr(canvas, 'pointermove', { pointerId: 1, clientX: 480, clientY: 350 });
+    firePtr(canvas, 'pointerup', { pointerId: 1, clientX: 480, clientY: 350 });
+    expect(useCampaignStore.getState().live?.desk?.viewport).toMatchObject({
+      x: 80,
+      y: 50,
+      scale: 1,
+    });
+    expect(screen.getByTestId('desk-world').style.transform).toContain(
+      'translate3d(80px, 50px, 0) scale(1)'
+    );
+
+    // G4: Zoom buttons and ctrl+wheel scale between 25% and 300% and update readout
+    expect(screen.getByTestId('desk-zoom-readout')).toHaveTextContent('100%');
+    fireEvent.click(screen.getByTestId('desk-zoom-in'));
+    expect(screen.getByTestId('desk-zoom-readout')).toHaveTextContent('125%');
+    fireEvent.click(screen.getByTestId('desk-zoom-out'));
+    expect(screen.getByTestId('desk-zoom-readout')).toHaveTextContent('100%');
+    fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -100, clientX: 500, clientY: 360 });
+    expect(screen.getByTestId('desk-zoom-readout')).toHaveTextContent('112%');
+    // Reset to 100% via Fit All while empty
+    fireEvent.click(screen.getByTestId('desk-fit-all'));
+    expect(screen.getByTestId('desk-zoom-readout')).toHaveTextContent('100%');
+
+    // G7: Add Card menu spawns cards onto Desk
+    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+    expect(screen.getByTestId('desk-add-card-menu')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('desk-add-card-option-scene'));
+    expect(screen.queryByTestId('desk-add-card-menu')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('desk-empty-hint')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+    fireEvent.click(screen.getByTestId('desk-add-card-option-sheet'));
+
+    const cards = useCampaignStore.getState().live?.desk?.cards ?? [];
+    expect(cards).toHaveLength(2);
+    const sceneCard = cards[0];
+    const sheetCard = cards[1];
+    expect(sheetCard.z).toBeGreaterThan(sceneCard.z);
+
+    // G10: Tapping the earlier scene card brings it to the front (highest zIndex)
+    const sceneCardEl = screen.getByTestId(`desk-card-${sceneCard.id}`);
+    const sheetCardEl = screen.getByTestId(`desk-card-${sheetCard.id}`);
+    firePtr(sceneCardEl, 'pointerdown', { pointerId: 2, clientX: 100, clientY: 100 });
+    firePtr(sceneCardEl, 'pointerup', { pointerId: 2, clientX: 100, clientY: 100 });
+    const zAfterTap = useCampaignStore.getState().live?.desk?.cards ?? [];
+    const sceneZ = zAfterTap.find((c) => c.id === sceneCard.id)!.z;
+    const sheetZ = zAfterTap.find((c) => c.id === sheetCard.id)!.z;
+    expect(sceneZ).toBeGreaterThan(sheetZ);
+    expect(Number(sceneCardEl.style.zIndex)).toBeGreaterThan(Number(sheetCardEl.style.zIndex));
+
+    // G8: Dragging card title bar moves the card without panning the Desk canvas underneath
+    const viewportBeforeCardDrag = {
+      ...useCampaignStore.getState().live!.desk!.viewport,
+    };
+    const headerEl = screen.getByTestId(`desk-card-header-${sceneCard.id}`);
+    const startX = sceneCard.x;
+    const startY = sceneCard.y;
+    firePtr(headerEl, 'pointerdown', { pointerId: 3, clientX: 150, clientY: 80 });
+    firePtr(headerEl, 'pointermove', { pointerId: 3, clientX: 205, clientY: 117 });
+    firePtr(headerEl, 'pointerup', { pointerId: 3, clientX: 205, clientY: 117 });
+
+    const movedSceneCard = useCampaignStore
+      .getState()
+      .live!.desk!.cards.find((c) => c.id === sceneCard.id)!;
+    expect(movedSceneCard.x).toBe(startX + 55);
+    expect(movedSceneCard.y).toBe(startY + 37);
+    expect(useCampaignStore.getState().live!.desk!.viewport).toEqual(
+      viewportBeforeCardDrag
+    );
+
+    // G6: Toggling Snap to Grid snaps card drag and corner resize to 24px multiples
+    const snapToggle = screen.getByTestId('desk-snap-toggle');
+    expect(snapToggle).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(snapToggle);
+    expect(snapToggle).toHaveAttribute('aria-pressed', 'true');
+
+    firePtr(headerEl, 'pointerdown', { pointerId: 4, clientX: 200, clientY: 100 });
+    firePtr(headerEl, 'pointermove', { pointerId: 4, clientX: 213, clientY: 119 });
+    firePtr(headerEl, 'pointerup', { pointerId: 4, clientX: 213, clientY: 119 });
+    const snappedCard = useCampaignStore
+      .getState()
+      .live!.desk!.cards.find((c) => c.id === sceneCard.id)!;
+    expect(snappedCard.x % 24).toBe(0);
+    expect(snappedCard.y % 24).toBe(0);
+
+    // G9: Dragging 44x44px corner handle resizes card and respects minimum bounds
+    const seHandle = screen.getByTestId(`desk-card-resize-se-${sceneCard.id}`);
+    firePtr(seHandle, 'pointerdown', { pointerId: 5, clientX: 500, clientY: 400 });
+    firePtr(seHandle, 'pointermove', { pointerId: 5, clientX: 550, clientY: 450 });
+    firePtr(seHandle, 'pointerup', { pointerId: 5, clientX: 550, clientY: 450 });
+    const resizedCard = useCampaignStore
+      .getState()
+      .live!.desk!.cards.find((c) => c.id === sceneCard.id)!;
+    expect(resizedCard.width).toBeGreaterThan(sceneCard.width);
+    expect(resizedCard.height).toBeGreaterThan(sceneCard.height);
+
+    // Drag SE corner far inward to verify minimum width (240) and height (168) clamp
+    firePtr(seHandle, 'pointerdown', { pointerId: 6, clientX: 550, clientY: 450 });
+    firePtr(seHandle, 'pointermove', { pointerId: 6, clientX: 50, clientY: 50 });
+    firePtr(seHandle, 'pointerup', { pointerId: 6, clientX: 50, clientY: 50 });
+    const minClampedCard = useCampaignStore
+      .getState()
+      .live!.desk!.cards.find((c) => c.id === sceneCard.id)!;
+    expect(minClampedCard.width).toBe(240);
+    expect(minClampedCard.height).toBe(168);
+
+    // G17: ctrl+wheel over a card body zooms the Desk canvas and updates readout
+    const cardBodyEl = screen.getByTestId(`desk-card-body-${sceneCard.id}`);
+    const scaleBeforeBodyWheel = useCampaignStore.getState().live!.desk!.viewport.scale;
+    fireEvent.wheel(cardBodyEl, { ctrlKey: true, deltaY: -100, clientX: 300, clientY: 200 });
+    expect(useCampaignStore.getState().live!.desk!.viewport.scale).toBeGreaterThan(
+      scaleBeforeBodyWheel
+    );
+
+    // G17: Rapid same-frame wheel bursts accumulate every pan delta
+    const vpBeforeBurst = { ...useCampaignStore.getState().live!.desk!.viewport };
+    for (let i = 0; i < 4; i++) {
+      fireEvent.wheel(canvas, { deltaX: -25, deltaY: -10, clientX: 500, clientY: 360 });
+    }
+    const vpAfterBurst = useCampaignStore.getState().live!.desk!.viewport;
+    expect(vpAfterBurst.x).toBeCloseTo(vpBeforeBurst.x + 100, 1);
+    expect(vpAfterBurst.y).toBeCloseTo(vpBeforeBurst.y + 40, 1);
+
+    // G18: Wheeling over the open Add Card menu lets the menu scroll without panning Desk
+    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+    const addMenu = screen.getByTestId('desk-add-card-menu');
+    const vpBeforeMenuWheel = { ...useCampaignStore.getState().live!.desk!.viewport };
+    fireEvent.wheel(addMenu, { deltaY: 120, clientX: 120, clientY: 150 });
+    expect(useCampaignStore.getState().live!.desk!.viewport).toEqual(vpBeforeMenuWheel);
+    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+
+    // G5: Fit All frames all open cards inside the viewport
+    fireEvent.click(screen.getByTestId('desk-fit-all'));
+    const fitVp = useCampaignStore.getState().live!.desk!.viewport;
+    expect(fitVp.scale).toBeGreaterThanOrEqual(0.25);
+    expect(fitVp.scale).toBeLessThanOrEqual(1);
+
+    // G11: Minimize collapses card body to title bar (44px) and restores; Close removes card
+    const minBtn = screen.getByTestId(`desk-card-minimize-${sceneCard.id}`);
+    expect(screen.getByTestId(`desk-card-body-${sceneCard.id}`)).toBeInTheDocument();
+    fireEvent.click(minBtn);
+    expect(screen.queryByTestId(`desk-card-body-${sceneCard.id}`)).not.toBeInTheDocument();
+    expect(sceneCardEl).toHaveAttribute('data-minimized', 'true');
+    fireEvent.click(minBtn);
+    expect(screen.getByTestId(`desk-card-body-${sceneCard.id}`)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId(`desk-card-close-${sheetCard.id}`));
+    expect(screen.queryByTestId(`desk-card-${sheetCard.id}`)).not.toBeInTheDocument();
+
+    // G12: Card pointing to a missing/deleted target ID renders safe flagged state without crashing
+    const missingCard = useCampaignStore.getState().addDeskCard({
+      type: 'scene',
+      title: 'Deleted Scene Card',
+      targetId: 'scene-missing-999',
+      followCurrentScene: false,
+    })!;
+    expect(await screen.findByTestId('desk-card-missing-flag')).toBeInTheDocument();
+    expect(screen.getByTestId(`desk-card-${missingCard.id}`)).toHaveAttribute(
+      'data-flagged',
+      'true'
+    );
+  });
 });

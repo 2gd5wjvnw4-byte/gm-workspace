@@ -93,6 +93,53 @@ export interface PdfRibbon {
   createdAt: number;
 }
 
+export type DeskCardType =
+  | 'scene'
+  | 'pdf'
+  | 'page'
+  | 'sheet'
+  | 'tracker'
+  | 'scene-list'
+  | 'node-map'
+  | 'random-tables'
+  | 'factions'
+  | 'timeline'
+  | 'clocks'
+  | 'clue-matrix'
+  | 'notes';
+
+export type DeskViewMode = 'structured' | 'desk';
+export type DeskLayoutMode = 'free' | 'standard';
+
+export interface DeskCardRecord {
+  id: string;
+  type: DeskCardType;
+  title: string;
+  targetId?: string | null;
+  followCurrentScene?: boolean;
+  pageNumber?: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z: number;
+  minimized: boolean;
+  createdAt: number;
+}
+
+export interface DeskState {
+  viewMode: DeskViewMode;
+  layoutMode: DeskLayoutMode;
+  snapToGrid: boolean;
+  gridSize: number;
+  viewport: {
+    x: number;
+    y: number;
+    scale: number;
+  };
+  cards: DeskCardRecord[];
+}
+
 export interface ImprovisedEntityRecord {
   id: string;
   name: string;
@@ -147,6 +194,7 @@ export interface LiveState {
   pins: Record<string, ScenePin>;
   sceneMap: Record<string, string>;
   pdfRibbons?: Record<string, PdfRibbon[]>;
+  desk?: DeskState;
   rollLog: RollLogEntry[];
   theme: ThemeId;
   ui: {
@@ -221,6 +269,14 @@ export function createDefaultLiveState(campaignId: string, theme: ThemeId = 'sci
     pins: {},
     sceneMap: {},
     pdfRibbons: {},
+    desk: {
+      viewMode: 'structured',
+      layoutMode: 'free',
+      snapToGrid: false,
+      gridSize: 24,
+      viewport: { x: 0, y: 0, scale: 1 },
+      cards: [],
+    },
     rollLog: [],
     theme,
     ui: {

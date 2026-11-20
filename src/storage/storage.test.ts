@@ -437,4 +437,78 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('persists Desk state (cards, viewport, snapToGrid, viewMode) in LiveState and round-trips through exportBackup and importBackup', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { useCampaignStore } = await import('../store/campaignStore');
+      await useCampaignStore.getState().createNewCampaign({
+        title: 'Desk Backup Test Campaign',
+        system: 'Mothership',
+        genre: 'sci-fi',
+      });
+      const campId = useCampaignStore.getState().activeCampaign!.id;
+
+      useCampaignStore.getState().setDeskViewMode('desk');
+      useCampaignStore.getState().setDeskSnapToGrid(true);
+      useCampaignStore.getState().setDeskViewport({ x: 140, y: -60, scale: 1.25 });
+
+      const c1 = useCampaignStore.getState().addDeskCard({
+        type: 'scene',
+        title: 'Airlock Scene',
+        followCurrentScene: true,
+        x: 48,
+        y: 72,
+        width: 520,
+        height: 400,
+      });
+      const c2 = useCampaignStore.getState().addDeskCard({
+        type: 'sheet',
+        title: 'Captain Vance',
+        targetId: 'npc-vance',
+        x: 600,
+        y: 72,
+        width: 360,
+        height: 420,
+      });
+      expect(c1).not.toBeNull();
+      expect(c2).not.toBeNull();
+
+      useCampaignStore.getState().toggleDeskCardMinimized(c2!.id);
+      await vi.advanceTimersByTimeAsync(600);
+
+      const payload = await exportBackup(campId);
+      await deleteCampaign(campId);
+      const restored = await importBackup(JSON.stringify(payload), { mode: 'replace' });
+
+      expect(restored.live.desk?.viewMode).toBe('desk');
+      expect(restored.live.desk?.snapToGrid).toBe(true);
+      expect(restored.live.desk?.viewport).toEqual({ x: 140, y: -60, scale: 1.25 });
+      expect(restored.live.desk?.cards).toHaveLength(2);
+      expect(restored.live.desk?.cards[0]).toMatchObject({
+        id: c1!.id,
+        type: 'scene',
+        title: 'Airlock Scene',
+        followCurrentScene: true,
+        x: 48,
+        y: 72,
+        width: 520,
+        height: 400,
+        minimized: false,
+      });
+      expect(restored.live.desk?.cards[1]).toMatchObject({
+        id: c2!.id,
+        type: 'sheet',
+        title: 'Captain Vance',
+        targetId: 'npc-vance',
+        x: 600,
+        y: 72,
+        width: 360,
+        height: 420,
+        minimized: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -1,0 +1,138 @@
+import { describe, expect, it } from 'vitest';
+import {
+  bringCardToFront,
+  clampDeskCardSize,
+  computeDeskCardsBounds,
+  DESK_CARD_HEADER_HEIGHT,
+  DESK_MIN_CARD_HEIGHT,
+  DESK_MIN_CARD_WIDTH,
+  ensureDeskState,
+  fitAllDeskCards,
+  isDeskCardTargetMissing,
+  resizeDeskCardFromCorner,
+  snapToDeskGrid,
+} from './desk';
+import { mergeParsedChunks, parseModuleChunk } from './import';
+import { createDefaultLiveState, type DeskCardRecord } from '../storage/types';
+import sampleJson from '../../samples/silent-relay-a1.json';
+
+function makeCard(overrides: Partial<DeskCardRecord> = {}): DeskCardRecord {
+  return {
+    id: 'card-1',
+    type: 'scene',
+    title: 'Scene 1',
+    x: 100,
+    y: 120,
+    width: 400,
+    height: 300,
+    z: 1,
+    minimized: false,
+    createdAt: 1000,
+    ...overrides,
+  };
+}
+
+describe('desk pure helpers', () => {
+  it('snaps coordinates to 24px grid when enabled and rounds when disabled', () => {
+    expect(snapToDeskGrid(35, 24, false)).toBe(35);
+    expect(snapToDeskGrid(35.6, 24, false)).toBe(36);
+    expect(snapToDeskGrid(35, 24, true)).toBe(24);
+    expect(snapToDeskGrid(37, 24, true)).toBe(48);
+    expect(snapToDeskGrid(-13, 24, true)).toBe(-24);
+  });
+
+  it('clamps card dimensions to minimum and maximum bounds', () => {
+    expect(clampDeskCardSize(120, 80)).toEqual({
+      width: DESK_MIN_CARD_WIDTH,
+      height: DESK_MIN_CARD_HEIGHT,
+    });
+    expect(clampDeskCardSize(480, 360)).toEqual({ width: 480, height: 360 });
+  });
+
+  it('resizes cards from all 4 corners while anchoring the opposite corner and enforcing minimums', () => {
+    const base = { x: 100, y: 100, width: 300, height: 240 };
+
+    const se = resizeDeskCardFromCorner(base, 'se', 50, 40, false);
+    expect(se).toEqual({ x: 100, y: 100, width: 350, height: 280 });
+
+    const nwClamped = resizeDeskCardFromCorner(base, 'nw', 200, 200, false);
+    expect(nwClamped.width).toBe(DESK_MIN_CARD_WIDTH);
+    expect(nwClamped.height).toBe(DESK_MIN_CARD_HEIGHT);
+    // Bottom-right corner remains anchored at (400, 340)
+    expect(nwClamped.x + nwClamped.width).toBe(400);
+    expect(nwClamped.y + nwClamped.height).toBe(340);
+
+    const swSnapped = resizeDeskCardFromCorner(base, 'sw', -19, 25, true, 24);
+    expect(swSnapped.x % 24).toBe(0);
+    expect((swSnapped.y + swSnapped.height) % 24).toBe(0);
+
+    const ne = resizeDeskCardFromCorner(base, 'ne', 40, -30, false);
+    expect(ne).toEqual({ x: 100, y: 70, width: 340, height: 270 });
+  });
+
+  it('brings target card to front and normalizes z-indices 1..N', () => {
+    const cards: DeskCardRecord[] = [
+      makeCard({ id: 'a', z: 2, createdAt: 1 }),
+      makeCard({ id: 'b', z: 5, createdAt: 2 }),
+      makeCard({ id: 'c', z: 9, createdAt: 3 }),
+    ];
+    const reordered = bringCardToFront(cards, 'a');
+    const byId = Object.fromEntries(reordered.map((c) => [c.id, c.z]));
+    expect(byId).toEqual({ b: 1, c: 2, a: 3 });
+  });
+
+  it('computes bounding boxes and fit-all transform respecting minimized cards', () => {
+    const cards: DeskCardRecord[] = [
+      makeCard({ id: 'a', x: 50, y: 60, width: 300, height: 400, minimized: false }),
+      makeCard({ id: 'b', x: 500, y: 200, width: 400, height: 500, minimized: true }),
+    ];
+    const bounds = computeDeskCardsBounds(cards);
+    expect(bounds).toEqual({
+      minX: 50,
+      minY: 60,
+      maxX: 900,
+      maxY: 460, // card b is minimized so its bottom is 200 + 44 = 244 < 460
+    });
+    expect(DESK_CARD_HEADER_HEIGHT).toBe(44);
+
+    const fit = fitAllDeskCards(cards, 1200, 800, 48);
+    expect(fit.scale).toBeGreaterThan(0.25);
+    expect(fit.scale).toBeLessThanOrEqual(1);
+  });
+
+  it('detects cards whose target data is missing or deleted without throwing', () => {
+    const parsed = parseModuleChunk(JSON.stringify(sampleJson));
+    const merged = mergeParsedChunks([parsed]);
+    const live = createDefaultLiveState('camp-1');
+
+    const validSceneId = merged.scenes[0].id;
+    const validSceneCard = makeCard({
+      type: 'scene',
+      targetId: validSceneId,
+    });
+    expect(isDeskCardTargetMissing(validSceneCard, merged, live)).toBe(false);
+
+    const missingSceneCard = makeCard({
+      type: 'scene',
+      targetId: 'scene-does-not-exist',
+    });
+    expect(isDeskCardTargetMissing(missingSceneCard, merged, live)).toBe(true);
+
+    // Deleting the scene in live layer also flags the card
+    const liveWithDeleted = {
+      ...live,
+      deletedSceneIds: [validSceneId],
+    };
+    expect(isDeskCardTargetMissing(validSceneCard, merged, liveWithDeleted)).toBe(true);
+
+    const missingEntityCard = makeCard({
+      type: 'sheet',
+      targetId: 'npc-ghost',
+    });
+    expect(isDeskCardTargetMissing(missingEntityCard, merged, live)).toBe(true);
+
+    const safeDefaultDesk = ensureDeskState(undefined);
+    expect(safeDefaultDesk.viewMode).toBe('structured');
+    expect(safeDefaultDesk.cards).toEqual([]);
+  });
+});

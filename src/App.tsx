@@ -10,6 +10,7 @@ import { MapLibrarySheet } from './components/MapLibrarySheet';
 import { ReviewSheet } from './components/ReviewSheet';
 import { NoteOverrideModal } from './components/NoteOverrideModal';
 import { AddSceneModal, type AddModalMode } from './components/AddSceneModal';
+import { DeskCanvas } from './components/DeskCanvas';
 import { NodeMapCanvas } from './components/NodeMapCanvas';
 import { isRunningStandalone, StandaloneBanner } from './components/StandaloneBanner';
 import {
@@ -36,6 +37,7 @@ export const App: React.FC = () => {
     setMapMode,
     setSoloMask,
     setFocusMode,
+    setDeskViewMode,
     goToScene,
     setNodePosition,
     resetNodePositions,
@@ -77,6 +79,7 @@ export const App: React.FC = () => {
   const mapMode = live?.ui?.mapMode ?? 'off';
   const soloMask = Boolean(live?.ui?.soloMask);
   const focusMode = live?.ui?.focusMode ?? true;
+  const deskMode = (live?.desk?.viewMode ?? 'structured') === 'desk';
 
   const standalone = isRunningStandalone();
   const [showStandaloneBanner, setShowStandaloneBanner] = useState<boolean>(
@@ -324,6 +327,10 @@ export const App: React.FC = () => {
             onToggleSoloMask={() => setSoloMask(!soloMask)}
             focusMode={focusMode}
             onToggleFocusMode={() => setFocusMode(!focusMode)}
+            deskMode={deskMode}
+            onToggleDeskMode={() =>
+              setDeskViewMode(deskMode ? 'structured' : 'desk')
+            }
             onOpenPdf={() => {
               if (drawer === 'pdf') {
                 setDrawer(null);
@@ -339,87 +346,93 @@ export const App: React.FC = () => {
           />
 
           <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
-            <LeftPanel
-              navView={navView}
-              onSelectNavView={setNavView}
-              focusMode={focusMode}
-              onOpenEntityInspector={(entityId) => {
-                setInspectedEntityId(entityId);
-                setDrawer((d) =>
-                  d === 'entity' && inspectedEntityId === entityId ? null : 'entity'
-                );
-              }}
-              onExpandNodeMap={() => setNodeMapExpanded(true)}
-              onOpenAddModal={(mode, defaultArea = '') =>
-                setAddModalState({ open: true, mode, defaultArea })
-              }
-            />
-
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', position: 'relative' }}>
-              <Center
-                mapMode={mapMode}
-                onOpenPdf={(page) => openPdfAtPage(page)}
-                onEditNote={(note) => {
-                  setEditingNote(note);
-                  setNoteModalOpen(true);
-                }}
-                onOpenEntityInspector={(entityId) => {
-                  setInspectedEntityId(entityId);
-                  setDrawer((d) =>
-                    d === 'entity' && inspectedEntityId === entityId ? null : 'entity'
-                  );
-                }}
-                onOpenMapLibrary={() => setMapLibraryOpen(true)}
-              />
-
-              {nodeMapExpanded && (
-                <div
-                  data-testid="node-map-expanded-overlay"
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    zIndex: 30,
-                    background: 'var(--mapBg)',
+            {deskMode ? (
+              <DeskCanvas />
+            ) : (
+              <>
+                <LeftPanel
+                  navView={navView}
+                  onSelectNavView={setNavView}
+                  focusMode={focusMode}
+                  onOpenEntityInspector={(entityId) => {
+                    setInspectedEntityId(entityId);
+                    setDrawer((d) =>
+                      d === 'entity' && inspectedEntityId === entityId ? null : 'entity'
+                    );
                   }}
-                >
-                  <NodeMapCanvas
-                    scenes={getEffectiveScenes(merged.scenes, live)}
-                    connections={getEffectiveConnections(merged.connections, live)}
-                    notLoadedTargets={merged.linkCheck.notLoadedTargets}
-                    currentSceneId={
-                      live?.currentSceneId ??
-                      getEffectiveScenes(merged.scenes, live)[0]?.id ??
-                      null
-                    }
-                    visited={live?.visited ?? {}}
-                    revealed={live?.revealed ?? {}}
-                    connectionState={live?.connectionState ?? {}}
-                    soloMask={soloMask}
-                    nodePositions={live?.nodePositions ?? {}}
-                    onSelectScene={goToScene}
-                    onMoveNode={setNodePosition}
-                    onResetLayout={resetNodePositions}
-                    expanded
-                    onClose={() => setNodeMapExpanded(false)}
-                    onAddNode={() =>
-                      setAddModalState({ open: true, mode: 'node', defaultArea: '' })
-                    }
-                  />
-                </div>
-              )}
-            </div>
+                  onExpandNodeMap={() => setNodeMapExpanded(true)}
+                  onOpenAddModal={(mode, defaultArea = '') =>
+                    setAddModalState({ open: true, mode, defaultArea })
+                  }
+                />
 
-            <RightPanel
-              focusMode={focusMode}
-              onOpenNoteModal={() => {
-                setEditingNote(null);
-                setNoteModalOpen(true);
-              }}
-              onOpenEntityInspector={(entityId) => {
-                setInspectedEntityId(entityId);
-                setDrawer('entity');
-              }}
-            />
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', position: 'relative' }}>
+                  <Center
+                    mapMode={mapMode}
+                    onOpenPdf={(page) => openPdfAtPage(page)}
+                    onEditNote={(note) => {
+                      setEditingNote(note);
+                      setNoteModalOpen(true);
+                    }}
+                    onOpenEntityInspector={(entityId) => {
+                      setInspectedEntityId(entityId);
+                      setDrawer((d) =>
+                        d === 'entity' && inspectedEntityId === entityId ? null : 'entity'
+                      );
+                    }}
+                    onOpenMapLibrary={() => setMapLibraryOpen(true)}
+                  />
+
+                  {nodeMapExpanded && (
+                    <div
+                      data-testid="node-map-expanded-overlay"
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        zIndex: 30,
+                        background: 'var(--mapBg)',
+                      }}
+                    >
+                      <NodeMapCanvas
+                        scenes={getEffectiveScenes(merged.scenes, live)}
+                        connections={getEffectiveConnections(merged.connections, live)}
+                        notLoadedTargets={merged.linkCheck.notLoadedTargets}
+                        currentSceneId={
+                          live?.currentSceneId ??
+                          getEffectiveScenes(merged.scenes, live)[0]?.id ??
+                          null
+                        }
+                        visited={live?.visited ?? {}}
+                        revealed={live?.revealed ?? {}}
+                        connectionState={live?.connectionState ?? {}}
+                        soloMask={soloMask}
+                        nodePositions={live?.nodePositions ?? {}}
+                        onSelectScene={goToScene}
+                        onMoveNode={setNodePosition}
+                        onResetLayout={resetNodePositions}
+                        expanded
+                        onClose={() => setNodeMapExpanded(false)}
+                        onAddNode={() =>
+                          setAddModalState({ open: true, mode: 'node', defaultArea: '' })
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <RightPanel
+                  focusMode={focusMode}
+                  onOpenNoteModal={() => {
+                    setEditingNote(null);
+                    setNoteModalOpen(true);
+                  }}
+                  onOpenEntityInspector={(entityId) => {
+                    setInspectedEntityId(entityId);
+                    setDrawer('entity');
+                  }}
+                />
+              </>
+            )}
 
             <DrawerHost
               activeDrawer={drawer}
