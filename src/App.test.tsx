@@ -2281,4 +2281,100 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       'true'
     );
   });
+
+  it('Stage 8d-a: hides Map mode and Focus in Desk View, and uses compact Search popover below 1280px with wide results', async () => {
+    const originalWidth = window.innerWidth;
+    try {
+      Object.defineProperty(window, 'innerWidth', {
+        writable: true,
+        configurable: true,
+        value: 1180,
+      });
+
+      seedOpenCampaign();
+      await useCampaignStore.getState().importJsonChunk(sampleRawText);
+      render(<App />);
+      await screen.findByTestId('zone-topbar');
+      await screen.findByTestId('scene-title');
+
+      // G1: Structured mode shows Map mode and Focus; Desk View hides both and Structured restores them
+      expect(screen.getByTestId('map-mode-control')).toBeInTheDocument();
+      expect(screen.getByTestId('focus-mode-toggle')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('desk-view-toggle'));
+      await screen.findByTestId('desk-canvas');
+      expect(screen.queryByTestId('map-mode-control')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('focus-mode-toggle')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('desk-view-toggle'));
+      await screen.findByTestId('scene-title');
+      expect(screen.getByTestId('map-mode-control')).toBeInTheDocument();
+      expect(screen.getByTestId('focus-mode-toggle')).toBeInTheDocument();
+
+      // G2 & G7: Below 1280px, compact search button opens popover anchored below zone-topbar
+      expect(screen.getByTestId('compact-search-btn')).toBeInTheDocument();
+      expect(screen.queryByTestId('global-search-input')).not.toBeInTheDocument();
+
+      const topbarEl = screen.getByTestId('zone-topbar');
+      const rectSpy = vi.spyOn(topbarEl, 'getBoundingClientRect').mockReturnValue({
+        x: 0,
+        y: 57,
+        top: 57,
+        left: 0,
+        right: 1180,
+        bottom: 121,
+        width: 1180,
+        height: 64,
+        toJSON: () => ({}),
+      });
+
+      fireEvent.click(screen.getByTestId('compact-search-btn'));
+      const popover = await screen.findByTestId('search-popover');
+      expect(popover).toHaveStyle({ width: '360px', top: '125px' });
+      rectSpy.mockRestore();
+      const searchInput = screen.getByTestId('global-search-input');
+      expect(searchInput).toBeInTheDocument();
+
+      // G3 & G4: Typing shows wide results dropdown (>= 320px); selecting result navigates and closes popover
+      fireEvent.change(searchInput, { target: { value: 'Okafor' } });
+      const dropdown = screen.getByTestId('search-results-dropdown');
+      expect(dropdown).toHaveStyle({ minWidth: '320px' });
+
+      fireEvent.click(screen.getByTestId('search-result-entity-e-okafor'));
+      expect(screen.getByTestId('inspector-entity-name')).toHaveTextContent('Chief Dana Okafor');
+      expect(screen.queryByTestId('search-popover')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('close-entity-inspector-btn'));
+
+      // G4: Tapping outside backdrop closes popover
+      fireEvent.click(screen.getByTestId('compact-search-btn'));
+      expect(screen.getByTestId('search-popover')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('search-popover-backdrop'));
+      expect(screen.queryByTestId('search-popover')).not.toBeInTheDocument();
+
+      // G4: Pressing Escape closes popover
+      fireEvent.click(screen.getByTestId('compact-search-btn'));
+      expect(screen.getByTestId('search-popover')).toBeInTheDocument();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByTestId('search-popover')).not.toBeInTheDocument();
+
+      // Resizing to >= 1280px restores inline search input with wide results dropdown
+      Object.defineProperty(window, 'innerWidth', {
+        writable: true,
+        configurable: true,
+        value: 1366,
+      });
+      fireEvent(window, new Event('resize'));
+      expect(screen.queryByTestId('compact-search-btn')).not.toBeInTheDocument();
+      const inlineInput = screen.getByTestId('global-search-input');
+      fireEvent.change(inlineInput, { target: { value: 'Okafor' } });
+      expect(screen.getByTestId('search-results-dropdown')).toHaveStyle({ minWidth: '320px' });
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        writable: true,
+        configurable: true,
+        value: originalWidth,
+      });
+      fireEvent(window, new Event('resize'));
+    }
+  });
 });

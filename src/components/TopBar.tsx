@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { MapDisplayMode } from '../storage/types';
 import { getEffectiveConnections, getEffectiveScenes } from '../lib/improvised';
 import {
@@ -51,6 +51,9 @@ const SEARCH_TYPE_HEADINGS: Record<SearchResultType, string> = {
   table: 'Random Tables',
 };
 
+const NARROW_TOPBAR_BREAKPOINT = 1280;
+const SEARCH_POPOVER_WIDTH = 360;
+
 export const TopBar: React.FC<TopBarProps> = ({
   campaignLabel = 'TopBar · No module loaded',
   reviewCount = 0,
@@ -70,8 +73,75 @@ export const TopBar: React.FC<TopBarProps> = ({
 }) => {
   const { merged, live, adjustTrackerValue, goToScene } = useCampaignStore();
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isNarrowTopBar, setIsNarrowTopBar] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < NARROW_TOPBAR_BREAKPOINT : false
+  );
+  const [searchPopoverOpen, setSearchPopoverOpen] = useState<boolean>(false);
+  const [popoverPos, setPopoverPos] = useState<{ left: number; top: number }>({
+    left: 8,
+    top: 68,
+  });
+  const headerRef = useRef<HTMLElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const compactSearchBtnRef = useRef<HTMLButtonElement | null>(null);
   const mapLongPressTimerRef = useRef<number | null>(null);
   const mapLongPressFiredRef = useRef(false);
+
+  const computePopoverPos = (): { left: number; top: number } => {
+    if (typeof window === 'undefined') return { left: 8, top: 68 };
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const popWidth = Math.min(SEARCH_POPOVER_WIDTH, vw - 16);
+    const btnRect = compactSearchBtnRef.current?.getBoundingClientRect();
+    const headerRect = headerRef.current?.getBoundingClientRect();
+    const desiredLeft =
+      btnRect && btnRect.width > 0
+        ? btnRect.left + btnRect.width / 2 - popWidth / 2
+        : (vw - popWidth) / 2;
+    const left = Math.max(8, Math.min(desiredLeft, vw - popWidth - 8));
+    const anchorBottom =
+      headerRect && headerRect.height > 0
+        ? headerRect.bottom
+        : btnRect && btnRect.height > 0
+          ? btnRect.bottom
+          : 64;
+    const top = Math.max(8, Math.min(anchorBottom + 4, Math.max(8, vh - 80)));
+    return { left, top };
+  };
+
+  useEffect(() => {
+    const handleResize = () => {
+      const narrow = window.innerWidth < NARROW_TOPBAR_BREAKPOINT;
+      setIsNarrowTopBar(narrow);
+      if (!narrow) {
+        setSearchPopoverOpen(false);
+      } else if (searchPopoverOpen) {
+        setPopoverPos(computePopoverPos());
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [searchPopoverOpen]);
+
+  useEffect(() => {
+    if (!isNarrowTopBar || !searchPopoverOpen) return;
+    setPopoverPos(computePopoverPos());
+    const frame = window.requestAnimationFrame(() => {
+      setPopoverPos(computePopoverPos());
+      searchInputRef.current?.focus();
+    });
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSearchPopoverOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isNarrowTopBar, searchPopoverOpen]);
 
   const clearMapLongPress = () => {
     if (mapLongPressTimerRef.current !== null) {
@@ -115,6 +185,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const handleSelectSearchResult = (res: SearchResultEntry) => {
     setSearchQuery('');
+    setSearchPopoverOpen(false);
     if (res.type === 'scene' && res.sceneId) {
       goToScene(res.sceneId);
       return;
@@ -134,8 +205,124 @@ export const TopBar: React.FC<TopBarProps> = ({
       }, 20);
     }
   };
+
+  const renderSearchResultsDropdown = (inPopover: boolean) => {
+    if (searchQuery.trim().length === 0) return null;
+    return (
+      <div
+        data-testid="search-results-dropdown"
+        style={{
+          ...(inPopover
+            ? {
+                marginTop: '8px',
+                width: '100%',
+                minWidth: '320px',
+              }
+            : {
+                position: 'absolute' as const,
+                top: '48px',
+                left: 0,
+                width: '100%',
+                minWidth: '320px',
+                maxWidth: 'min(420px, calc(100vw - 16px))',
+                zIndex: 40,
+              }),
+          maxHeight: '360px',
+          overflowY: 'auto',
+          background: 'var(--panel)',
+          border: '1px solid var(--line2)',
+          borderRadius: '12px',
+          boxShadow: inPopover ? 'none' : '0 16px 40px rgba(0,0,0,.45)',
+          padding: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          boxSizing: 'border-box',
+        }}
+      >
+        {searchResults.length === 0 ? (
+          <div
+            data-testid="search-no-results"
+            style={{
+              padding: '8px 10px',
+              fontSize: '13px',
+              color: 'var(--muted)',
+            }}
+          >
+            Nothing matches that.
+          </div>
+        ) : (
+          SEARCH_TYPE_ORDER.map((typeKey) => {
+            const groupItems = searchResults.filter((r) => r.type === typeKey);
+            if (groupItems.length === 0) return null;
+            return (
+              <div
+                key={typeKey}
+                data-testid={`search-group-${typeKey}`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: 'var(--mono)',
+                    fontSize: '11px',
+                    letterSpacing: '.1em',
+                    color: 'var(--muted)',
+                    textTransform: 'uppercase',
+                    padding: '4px 8px 2px',
+                    fontWeight: 600,
+                  }}
+                >
+                  {SEARCH_TYPE_HEADINGS[typeKey]}
+                </div>
+                {groupItems.map((res) => (
+                  <button
+                    key={`${res.type}-${res.id}`}
+                    type="button"
+                    data-testid={`search-result-${res.type}-${res.id}`}
+                    onClick={() => handleSelectSearchResult(res)}
+                    style={{
+                      minHeight: '44px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      alignItems: 'flex-start',
+                      gap: '2px',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'var(--p2)',
+                      color: 'var(--text)',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <span style={{ fontSize: '14px', fontWeight: 600 }}>
+                      {res.label}
+                    </span>
+                    {res.sublabel && (
+                      <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                        {res.sublabel}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            );
+          })
+        )}
+      </div>
+    );
+  };
+
   return (
     <header
+      ref={headerRef}
       data-testid="zone-topbar"
       style={{
         height: '64px',
@@ -294,177 +481,269 @@ export const TopBar: React.FC<TopBarProps> = ({
         })}
       </div>
 
-      {/* 3. Search field + grouped results dropdown */}
+      {/* 3. Search field (inline >= 1280px, compact button + wide floating popover < 1280px) */}
       <div
         style={{
           flex: 1,
           position: 'relative',
-          minWidth: '80px',
+          minWidth: isNarrowTopBar ? '44px' : '140px',
+          display: isNarrowTopBar ? 'flex' : 'block',
+          justifyContent: isNarrowTopBar ? 'flex-end' : undefined,
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            background: 'var(--bg)',
-            border: '1px solid var(--line)',
-            borderRadius: '10px',
-            padding: '0 8px',
-            height: '44px',
-            boxSizing: 'border-box',
-          }}
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden="true"
-            style={{ color: 'var(--muted)', flexShrink: 0 }}
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="M20 20l-4-4" />
-          </svg>
-          <label htmlFor="gm-search" className="gm-sr">
-            Search the module
-          </label>
-          <input
-            id="gm-search"
-            data-testid="global-search-input"
-            type="search"
-            placeholder="Search…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              all: 'unset',
-              flex: 1,
-              width: '100%',
-              minWidth: 0,
-              color: 'var(--text)',
-              fontSize: '14px',
-            }}
-          />
-          {searchQuery.trim().length > 0 && (
+        {isNarrowTopBar ? (
+          <>
             <button
+              ref={compactSearchBtnRef}
               type="button"
-              data-testid="clear-search-btn"
-              aria-label="Clear search"
-              onClick={() => setSearchQuery('')}
+              data-testid="compact-search-btn"
+              aria-label="Search the module"
+              aria-expanded={searchPopoverOpen}
+              onClick={() => {
+                if (!searchPopoverOpen) {
+                  setPopoverPos(computePopoverPos());
+                  setSearchPopoverOpen(true);
+                } else {
+                  setSearchPopoverOpen(false);
+                }
+              }}
               style={{
-                all: 'unset',
+                width: '44px',
+                height: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '10px',
+                border:
+                  searchPopoverOpen || searchQuery.trim().length > 0
+                    ? '1px solid var(--accent)'
+                    : '1px solid var(--line)',
+                background:
+                  searchPopoverOpen || searchQuery.trim().length > 0
+                    ? 'var(--accentBg)'
+                    : 'var(--p2)',
+                color:
+                  searchPopoverOpen || searchQuery.trim().length > 0
+                    ? 'var(--accent)'
+                    : 'var(--text)',
                 cursor: 'pointer',
-                color: 'var(--muted)',
-                fontSize: '12px',
-                padding: '4px 6px',
+                flexShrink: 0,
+                padding: 0,
               }}
             >
-              ✕
-            </button>
-          )}
-        </div>
-
-        {searchQuery.trim().length > 0 && (
-          <div
-            data-testid="search-results-dropdown"
-            style={{
-              position: 'absolute',
-              top: '48px',
-              left: 0,
-              right: 0,
-              maxHeight: '360px',
-              overflowY: 'auto',
-              background: 'var(--panel)',
-              border: '1px solid var(--line2)',
-              borderRadius: '12px',
-              boxShadow: '0 16px 40px rgba(0,0,0,.45)',
-              padding: '8px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-              zIndex: 40,
-              boxSizing: 'border-box',
-            }}
-          >
-            {searchResults.length === 0 ? (
-              <div
-                data-testid="search-no-results"
-                style={{
-                  padding: '8px 10px',
-                  fontSize: '13px',
-                  color: 'var(--muted)',
-                }}
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
               >
-                Nothing matches that.
-              </div>
-            ) : (
-              SEARCH_TYPE_ORDER.map((typeKey) => {
-                const groupItems = searchResults.filter((r) => r.type === typeKey);
-                if (groupItems.length === 0) return null;
-                return (
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20l-4-4" />
+              </svg>
+            </button>
+
+            {searchPopoverOpen && (
+              <>
+                <div
+                  data-testid="search-popover-backdrop"
+                  onClick={() => setSearchPopoverOpen(false)}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 49,
+                    background: 'transparent',
+                  }}
+                />
+                <div
+                  data-testid="search-popover"
+                  role="dialog"
+                  aria-label="Search the module"
+                  style={{
+                    position: 'fixed',
+                    top: `${popoverPos.top}px`,
+                    left: `${popoverPos.left}px`,
+                    width: `${SEARCH_POPOVER_WIDTH}px`,
+                    maxWidth: 'calc(100vw - 16px)',
+                    background: 'var(--panel)',
+                    border: '1px solid var(--line2)',
+                    borderRadius: '14px',
+                    boxShadow: '0 18px 44px rgba(0,0,0,.5)',
+                    padding: '10px',
+                    zIndex: 50,
+                    boxSizing: 'border-box',
+                  }}
+                >
                   <div
-                    key={typeKey}
-                    data-testid={`search-group-${typeKey}`}
                     style={{
                       display: 'flex',
-                      flexDirection: 'column',
-                      gap: '2px',
+                      alignItems: 'center',
+                      gap: '6px',
                     }}
                   >
                     <div
                       style={{
-                        fontFamily: 'var(--mono)',
-                        fontSize: '11px',
-                        letterSpacing: '.1em',
-                        color: 'var(--muted)',
-                        textTransform: 'uppercase',
-                        padding: '4px 8px 2px',
-                        fontWeight: 600,
+                        flex: 1,
+                        minWidth: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '10px',
+                        padding: '0 10px',
+                        height: '44px',
+                        boxSizing: 'border-box',
                       }}
                     >
-                      {SEARCH_TYPE_HEADINGS[typeKey]}
-                    </div>
-                    {groupItems.map((res) => (
-                      <button
-                        key={`${res.type}-${res.id}`}
-                        type="button"
-                        data-testid={`search-result-${res.type}-${res.id}`}
-                        onClick={() => handleSelectSearchResult(res)}
-                        style={{
-                          minHeight: '44px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'center',
-                          alignItems: 'flex-start',
-                          gap: '2px',
-                          padding: '6px 10px',
-                          borderRadius: '8px',
-                          border: 'none',
-                          background: 'var(--p2)',
-                          color: 'var(--text)',
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          width: '100%',
-                          boxSizing: 'border-box',
-                        }}
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        aria-hidden="true"
+                        style={{ color: 'var(--muted)', flexShrink: 0 }}
                       >
-                        <span style={{ fontSize: '14px', fontWeight: 600 }}>
-                          {res.label}
-                        </span>
-                        {res.sublabel && (
-                          <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                            {res.sublabel}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="M20 20l-4-4" />
+                      </svg>
+                      <label htmlFor="gm-search" className="gm-sr">
+                        Search the module
+                      </label>
+                      <input
+                        ref={searchInputRef}
+                        id="gm-search"
+                        data-testid="global-search-input"
+                        type="search"
+                        placeholder="Search…"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{
+                          all: 'unset',
+                          flex: 1,
+                          width: '100%',
+                          minWidth: 0,
+                          color: 'var(--text)',
+                          fontSize: '14px',
+                        }}
+                      />
+                      {searchQuery.trim().length > 0 && (
+                        <button
+                          type="button"
+                          data-testid="clear-search-btn"
+                          aria-label="Clear search"
+                          onClick={() => setSearchQuery('')}
+                          style={{
+                            all: 'unset',
+                            cursor: 'pointer',
+                            color: 'var(--muted)',
+                            fontSize: '12px',
+                            padding: '4px 6px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="close-search-popover-btn"
+                      aria-label="Close search"
+                      onClick={() => setSearchPopoverOpen(false)}
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--line)',
+                        background: 'var(--p3)',
+                        color: 'var(--text)',
+                        fontSize: '16px',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✕
+                    </button>
                   </div>
-                );
-              })
+                  {renderSearchResultsDropdown(true)}
+                </div>
+              </>
             )}
-          </div>
+          </>
+        ) : (
+          <>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                background: 'var(--bg)',
+                border: '1px solid var(--line)',
+                borderRadius: '10px',
+                padding: '0 8px',
+                height: '44px',
+                boxSizing: 'border-box',
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+                style={{ color: 'var(--muted)', flexShrink: 0 }}
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20l-4-4" />
+              </svg>
+              <label htmlFor="gm-search" className="gm-sr">
+                Search the module
+              </label>
+              <input
+                ref={searchInputRef}
+                id="gm-search"
+                data-testid="global-search-input"
+                type="search"
+                placeholder="Search…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  all: 'unset',
+                  flex: 1,
+                  width: '100%',
+                  minWidth: 0,
+                  color: 'var(--text)',
+                  fontSize: '14px',
+                }}
+              />
+              {searchQuery.trim().length > 0 && (
+                <button
+                  type="button"
+                  data-testid="clear-search-btn"
+                  aria-label="Clear search"
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    all: 'unset',
+                    cursor: 'pointer',
+                    color: 'var(--muted)',
+                    fontSize: '12px',
+                    padding: '4px 6px',
+                    flexShrink: 0,
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {renderSearchResultsDropdown(false)}
+          </>
         )}
       </div>
 
@@ -492,73 +771,75 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
       )}
 
-      {/* 5. Map mode segmented control */}
-      <div
-        data-testid="map-mode-control"
-        onPointerDown={() => {
-          if (!onOpenMapLibrary) return;
-          clearMapLongPress();
-          mapLongPressFiredRef.current = false;
-          mapLongPressTimerRef.current = window.setTimeout(() => {
-            mapLongPressFiredRef.current = true;
-            mapLongPressTimerRef.current = null;
-            onOpenMapLibrary();
-            window.setTimeout(() => {
-              mapLongPressFiredRef.current = false;
-            }, 400);
-          }, 500);
-        }}
-        onPointerUp={clearMapLongPress}
-        onPointerCancel={clearMapLongPress}
-        onPointerLeave={clearMapLongPress}
-        onContextMenu={(e) => {
-          if (onOpenMapLibrary) {
-            e.preventDefault();
-          }
-        }}
-        style={{
-          display: 'flex',
-          background: 'var(--p2)',
-          border: '1px solid var(--line)',
-          borderRadius: '10px',
-          padding: '2px',
-          gap: '2px',
-          flexShrink: 0,
-        }}
-        role="group"
-        aria-label="Map view"
-      >
-        {MAP_MODES.map((m) => {
-          const active = mapMode === m.id;
-          return (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => {
-                if (mapLongPressFiredRef.current) {
-                  mapLongPressFiredRef.current = false;
-                  return;
-                }
-                onSelectMapMode(m.id);
-              }}
-              aria-pressed={active}
-              style={{
-                height: '44px',
-                minWidth: '44px',
-                padding: '0 6px',
-                borderRadius: '8px',
-                border: 'none',
-                fontSize: '13px',
-                fontWeight: 600,
-                background: active ? 'var(--accent)' : 'transparent',
-                color: active ? 'var(--onAccent)' : 'var(--text)',
-              }}
-            >
-              {m.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* 5. Map mode segmented control (hidden in Desk View) */}
+      {!deskMode && (
+        <div
+          data-testid="map-mode-control"
+          onPointerDown={() => {
+            if (!onOpenMapLibrary) return;
+            clearMapLongPress();
+            mapLongPressFiredRef.current = false;
+            mapLongPressTimerRef.current = window.setTimeout(() => {
+              mapLongPressFiredRef.current = true;
+              mapLongPressTimerRef.current = null;
+              onOpenMapLibrary();
+              window.setTimeout(() => {
+                mapLongPressFiredRef.current = false;
+              }, 400);
+            }, 500);
+          }}
+          onPointerUp={clearMapLongPress}
+          onPointerCancel={clearMapLongPress}
+          onPointerLeave={clearMapLongPress}
+          onContextMenu={(e) => {
+            if (onOpenMapLibrary) {
+              e.preventDefault();
+            }
+          }}
+          style={{
+            display: 'flex',
+            background: 'var(--p2)',
+            border: '1px solid var(--line)',
+            borderRadius: '10px',
+            padding: '2px',
+            gap: '2px',
+            flexShrink: 0,
+          }}
+          role="group"
+          aria-label="Map view"
+        >
+          {MAP_MODES.map((m) => {
+            const active = mapMode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  if (mapLongPressFiredRef.current) {
+                    mapLongPressFiredRef.current = false;
+                    return;
+                  }
+                  onSelectMapMode(m.id);
+                }}
+                aria-pressed={active}
+                style={{
+                  height: '44px',
+                  minWidth: '44px',
+                  padding: '0 6px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  background: active ? 'var(--accent)' : 'transparent',
+                  color: active ? 'var(--onAccent)' : 'var(--text)',
+                }}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* 6. Solo Mask toggle */}
       <button
@@ -596,8 +877,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         <span>{soloMask ? 'Solo' : 'GM'}</span>
       </button>
 
-      {/* 6b. Table Focus Mode toggle */}
-      {onToggleFocusMode && (
+      {/* 6b. Table Focus Mode toggle (hidden in Desk View) */}
+      {!deskMode && onToggleFocusMode && (
         <button
           type="button"
           data-testid="focus-mode-toggle"
