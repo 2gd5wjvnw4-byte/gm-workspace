@@ -111,6 +111,7 @@ export type DeskCardType =
 
 export type DeskViewMode = 'structured' | 'desk';
 export type DeskLayoutMode = 'free' | 'standard';
+export type DeskLinkOpenMode = 'in-place' | 'new-card';
 
 export interface DeskCardRecord {
   id: string;
@@ -131,6 +132,7 @@ export interface DeskCardRecord {
 export interface DeskState {
   viewMode: DeskViewMode;
   layoutMode: DeskLayoutMode;
+  linkOpenMode?: DeskLinkOpenMode;
   snapToGrid: boolean;
   gridSize: number;
   viewport: {

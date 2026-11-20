@@ -347,7 +347,18 @@ export const App: React.FC = () => {
 
           <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
             {deskMode ? (
-              <DeskCanvas />
+              <DeskCanvas
+                onOpenPdfDrawer={(page) => openPdfAtPage(page)}
+                onOpenEntityInspector={(entityId) => {
+                  setInspectedEntityId(entityId);
+                  setDrawer('entity');
+                }}
+                onEditNote={(note) => {
+                  setEditingNote(note);
+                  setNoteModalOpen(true);
+                }}
+                onOpenMapLibrary={() => setMapLibraryOpen(true)}
+              />
             ) : (
               <>
                 <LeftPanel

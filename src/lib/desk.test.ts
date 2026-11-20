@@ -3,6 +3,7 @@ import {
   bringCardToFront,
   clampDeskCardSize,
   computeDeskCardsBounds,
+  computeDeskPdfRenderWidth,
   DESK_CARD_CATALOG,
   DESK_CARD_HEADER_HEIGHT,
   DESK_MIN_CARD_HEIGHT,
@@ -10,6 +11,7 @@ import {
   ensureDeskState,
   fitAllDeskCards,
   isDeskCardTargetMissing,
+  isDeskCardVisibleInViewport,
   resizeDeskCardFromCorner,
   snapToDeskGrid,
 } from './desk';
@@ -154,6 +156,43 @@ describe('desk pure helpers', () => {
 
     const safeDefaultDesk = ensureDeskState(undefined);
     expect(safeDefaultDesk.viewMode).toBe('structured');
+    expect(safeDefaultDesk.linkOpenMode).toBe('in-place');
     expect(safeDefaultDesk.cards).toEqual([]);
+    expect(
+      ensureDeskState({ ...safeDefaultDesk, linkOpenMode: 'new-card' }).linkOpenMode
+    ).toBe('new-card');
+  });
+
+  it('determines viewport visibility for off-screen and minimized cards', () => {
+    const vp = { x: 0, y: 0, scale: 1 };
+    const visibleCard = makeCard({ x: 100, y: 100, width: 400, height: 300 });
+    expect(isDeskCardVisibleInViewport(visibleCard, vp, 1180, 720)).toBe(true);
+
+    const minimizedCard = makeCard({ x: 100, y: 100, width: 400, height: 300, minimized: true });
+    expect(isDeskCardVisibleInViewport(minimizedCard, vp, 1180, 720)).toBe(false);
+
+    const farRightCard = makeCard({ x: 2500, y: 100, width: 400, height: 300 });
+    expect(isDeskCardVisibleInViewport(farRightCard, vp, 1180, 720)).toBe(false);
+
+    // Panning left brings farRightCard into view
+    expect(
+      isDeskCardVisibleInViewport(farRightCard, { x: -1800, y: 0, scale: 1 }, 1180, 720)
+    ).toBe(true);
+
+    // Zooming out to 0.4x brings x=2500 (screen x=1000) into view
+    expect(
+      isDeskCardVisibleInViewport(farRightCard, { x: 0, y: 0, scale: 0.4 }, 1180, 720)
+    ).toBe(true);
+  });
+
+  it('computes zoom-matched PDF render widths quantized to 24px steps and clamped', () => {
+    // 480 - 28 = 452 * 1 = 452 -> rounded to 24px step = 456
+    expect(computeDeskPdfRenderWidth(480, 1)).toBe(456);
+    // Zoomed out to 0.25x clamps to minPx=180
+    expect(computeDeskPdfRenderWidth(480, 0.25)).toBe(180);
+    // Zoomed in to 3x: 452 * 3 = 1356 -> rounded to 24px step = 1368
+    expect(computeDeskPdfRenderWidth(480, 3)).toBe(1368);
+    // Huge card at 3x clamps to maxPx=1400
+    expect(computeDeskPdfRenderWidth(1200, 3)).toBe(1400);
   });
 });

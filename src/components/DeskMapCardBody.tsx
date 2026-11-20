@@ -67,7 +67,6 @@ export const DeskMapCardBody: React.FC<DeskMapCardBodyProps> = ({
             data-testid={`desk-map-card-select-${card.id}`}
             aria-label="Select map"
             value={selectedMap.id}
-            onPointerDown={(e) => e.stopPropagation()}
             onChange={(e) => {
               const nextMap = maps.find((m) => m.id === e.target.value);
               if (nextMap) {

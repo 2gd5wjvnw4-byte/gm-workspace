@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  computeDeskPdfRenderWidth,
   DESK_CARD_CATALOG,
   DESK_GRID_SIZE,
   DESK_MAX_ZOOM,
@@ -7,6 +8,7 @@ import {
   ensureDeskState,
   fitAllDeskCards,
   isDeskCardTargetMissing,
+  isDeskCardVisibleInViewport,
 } from '../lib/desk';
 import { getEffectiveScenes } from '../lib/improvised';
 import {
@@ -19,10 +21,21 @@ import {
   zoomAtPoint,
 } from '../lib/panzoom';
 import { useCampaignStore } from '../store/campaignStore';
-import type { DeskCardRecord, DeskCardType } from '../storage/types';
+import type { DeskCardRecord, DeskCardType, TableNote } from '../storage/types';
 import { DeskCardShell } from './DeskCardShell';
 import { DeskMapCardBody } from './DeskMapCardBody';
+import { DeskPageCardBody } from './DeskPageCardBody';
+import { DeskPdfCardBody } from './DeskPdfCardBody';
+import { DeskSceneCardBody } from './DeskSceneCardBody';
+import { DeskSheetCardBody } from './DeskSheetCardBody';
 import { resolveActiveMap } from './MapArea';
+
+export interface DeskCanvasProps {
+  onOpenPdfDrawer?: (printedPage?: number) => void;
+  onOpenEntityInspector?: (entityId: string) => void;
+  onEditNote?: (note: TableNote) => void;
+  onOpenMapLibrary?: () => void;
+}
 
 interface ActivePointer {
   x: number;
@@ -38,12 +51,18 @@ interface PinchAnchor {
 
 const DEFAULT_VIEWPORT = { width: 1180, height: 720 };
 
-export const DeskCanvas: React.FC = () => {
+export const DeskCanvas: React.FC<DeskCanvasProps> = ({
+  onOpenPdfDrawer,
+  onOpenEntityInspector,
+  onEditNote,
+  onOpenMapLibrary,
+}) => {
   const {
     merged,
     live,
     pdfInfo,
     setDeskSnapToGrid,
+    setDeskLinkOpenMode,
     setDeskViewport,
     addDeskCard,
     moveDeskCard,
@@ -51,12 +70,15 @@ export const DeskCanvas: React.FC = () => {
     bringDeskCardToFront,
     toggleDeskCardMinimized,
     setDeskCardTarget,
+    updateDeskCard,
     removeDeskCard,
   } = useCampaignStore();
 
   const desk = ensureDeskState(live?.desk);
+  const linkOpenMode = desk.linkOpenMode ?? 'in-place';
   const [transform, setTransform] = useState<PanZoomTransform>(desk.viewport);
   const transformRef = useRef<PanZoomTransform>(desk.viewport);
+  const [viewportSize, setViewportSize] = useState(DEFAULT_VIEWPORT);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   // Sync local transform when campaign changes or external viewport update happens
@@ -85,6 +107,18 @@ export const DeskCanvas: React.FC = () => {
     return DEFAULT_VIEWPORT;
   }, []);
 
+  useEffect(() => {
+    const updateSize = () => {
+      const next = getViewportSize();
+      setViewportSize((prev) =>
+        prev.width === next.width && prev.height === next.height ? prev : next
+      );
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, [getViewportSize]);
+
   const applyAndSaveTransform = useCallback(
     (next: PanZoomTransform) => {
       transformRef.current = next;
@@ -107,10 +141,15 @@ export const DeskCanvas: React.FC = () => {
       }
       const cardBody = target?.closest('[data-testid^="desk-card-body-"]') as HTMLElement | null;
       if (cardBody && !e.ctrlKey && !e.metaKey) {
-        const canScrollY = cardBody.scrollHeight > cardBody.clientHeight;
-        const canScrollX = cardBody.scrollWidth > cardBody.clientWidth;
-        if (canScrollY || canScrollX) {
-          return;
+        let curEl: HTMLElement | null = target;
+        while (curEl) {
+          const canScrollY = curEl.scrollHeight > curEl.clientHeight;
+          const canScrollX = curEl.scrollWidth > curEl.clientWidth;
+          if (canScrollY || canScrollX) {
+            return;
+          }
+          if (curEl === cardBody) break;
+          curEl = curEl.parentElement;
         }
       }
       e.preventDefault();
@@ -332,6 +371,14 @@ export const DeskCanvas: React.FC = () => {
         x: spawnX,
         y: spawnY,
       });
+    } else if (type === 'pdf') {
+      addDeskCard({
+        type: 'pdf',
+        title: pdfInfo ? pdfInfo.fileName : 'Source PDF',
+        pageNumber: currentScene?.page ?? 1,
+        x: spawnX,
+        y: spawnY,
+      });
     } else if (type === 'page') {
       addDeskCard({
         type: 'page',
@@ -360,111 +407,115 @@ export const DeskCanvas: React.FC = () => {
     setAddMenuOpen(false);
   };
 
-  const renderCardBodySummary = (card: DeskCardRecord) => {
+  const handleSpawnSceneCard = (sceneId: string, nearCard: DeskCardRecord) => {
     const effectiveScenes = getEffectiveScenes(merged.scenes, live);
-    const currentScene =
-      effectiveScenes.find((s) => s.id === live?.currentSceneId) ??
-      effectiveScenes[0] ??
-      null;
+    const scene = effectiveScenes.find((s) => s.id === sceneId);
+    addDeskCard({
+      type: 'scene',
+      title: scene ? `${scene.code} · ${scene.title}` : 'Scene',
+      targetId: sceneId,
+      followCurrentScene: false,
+      x: nearCard.x + nearCard.width + 24,
+      y: nearCard.y,
+    });
+  };
+
+  const handleSpawnSheetCard = (entityId: string, nearCard: DeskCardRecord) => {
+    const base = merged.entities.find((e) => e.id === entityId);
+    const imp = (live?.improvisedEntities ?? []).find((e) => e.id === entityId);
+    addDeskCard({
+      type: 'sheet',
+      title: base?.name ?? imp?.name ?? 'Character Sheet',
+      targetId: entityId,
+      x: nearCard.x + nearCard.width + 24,
+      y: nearCard.y,
+    });
+  };
+
+  const handleSpawnPageCard = (printedPage: number, nearCard: DeskCardRecord) => {
+    addDeskCard({
+      type: 'page',
+      title: `PDF Page ${printedPage}`,
+      pageNumber: printedPage,
+      x: nearCard.x + nearCard.width + 24,
+      y: nearCard.y,
+    });
+  };
+
+  const handleGoToInPdf = (printedPage?: number) => {
+    const page = printedPage ?? 1;
+    const openPdfCard = desk.cards.find((c) => c.type === 'pdf');
+    if (openPdfCard) {
+      updateDeskCard(openPdfCard.id, { pageNumber: page });
+      if (openPdfCard.minimized) {
+        toggleDeskCardMinimized(openPdfCard.id);
+      }
+      bringDeskCardToFront(openPdfCard.id);
+      return;
+    }
+    onOpenPdfDrawer?.(page);
+  };
+
+  const renderCardBodySummary = (card: DeskCardRecord) => {
+    const isCardVisible = isDeskCardVisibleInViewport(
+      card,
+      transform,
+      viewportSize.width,
+      viewportSize.height
+    );
+    const pdfRenderWidth = computeDeskPdfRenderWidth(card.width, transform.scale);
 
     switch (card.type) {
-      case 'scene': {
-        const scene = card.followCurrentScene
-          ? currentScene
-          : effectiveScenes.find((s) => s.id === card.targetId) ?? currentScene;
-        if (!scene) {
-          return <div style={{ color: 'var(--muted)' }}>No scene selected.</div>;
-        }
+      case 'scene':
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: '12px',
-                color: 'var(--accent)',
-              }}
-            >
-              {scene.id} · #{scene.code} · p.{scene.page}
-            </div>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)' }}>
-              {scene.title}
-            </div>
-            <div style={{ fontSize: '13px', color: 'var(--readText)', lineHeight: 1.45 }}>
-              {scene.summary || 'Interactive scene stage.'}
-            </div>
-          </div>
+          <DeskSceneCardBody
+            card={card}
+            linkOpenMode={linkOpenMode}
+            onUpdateCard={updateDeskCard}
+            onSpawnSceneCard={handleSpawnSceneCard}
+            onSpawnSheetCard={handleSpawnSheetCard}
+            onSpawnPageCard={handleSpawnPageCard}
+            onOpenPdfInPlace={handleGoToInPdf}
+            onOpenEntityInspector={(entityId) => onOpenEntityInspector?.(entityId)}
+            onEditNote={onEditNote}
+            onOpenMapLibrary={onOpenMapLibrary}
+          />
         );
-      }
       case 'pdf':
         return (
-          <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
-            {pdfInfo
-              ? `Attached: ${pdfInfo.fileName}`
-              : 'Source PDF book card (attach a PDF in the campaign switcher).'}
-          </div>
+          <DeskPdfCardBody
+            card={card}
+            isVisible={isCardVisible}
+            renderWidth={pdfRenderWidth}
+            onUpdatePage={(cardId, printedPage) =>
+              updateDeskCard(cardId, { pageNumber: printedPage })
+            }
+            onDetachPage={handleSpawnPageCard}
+          />
         );
       case 'page':
         return (
-          <div style={{ fontSize: '13px', color: 'var(--text)' }}>
-            Detached PDF Page · p.{card.pageNumber ?? 1}
-          </div>
+          <DeskPageCardBody
+            card={card}
+            isVisible={isCardVisible}
+            renderWidth={pdfRenderWidth}
+            onGoToInPdf={handleGoToInPdf}
+          />
         );
-      case 'sheet': {
-        const baseEntity =
-          merged.entities.find((e) => e.id === card.targetId) ?? null;
-        const impEntity =
-          (live?.improvisedEntities ?? []).find((e) => e.id === card.targetId) ??
-          null;
-        const entity =
-          baseEntity ?? (card.targetId ? null : merged.entities[0] ?? null);
+      case 'sheet':
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>
-              {entity ? entity.name : impEntity ? impEntity.name : card.title}
-            </div>
-            {entity && (
-              <>
-                <div
-                  style={{
-                    fontFamily: 'var(--mono)',
-                    fontSize: '12px',
-                    padding: '6px 8px',
-                    borderRadius: '6px',
-                    background: 'var(--bg)',
-                    color: 'var(--text)',
-                  }}
-                >
-                  {entity.stat_line}
-                </div>
-                <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
-                  {entity.summary}
-                </div>
-              </>
-            )}
-            {!entity && impEntity && (
-              <>
-                {impEntity.track && (
-                  <div
-                    style={{
-                      fontFamily: 'var(--mono)',
-                      fontSize: '12px',
-                      padding: '6px 8px',
-                      borderRadius: '6px',
-                      background: 'var(--bg)',
-                      color: 'var(--text)',
-                    }}
-                  >
-                    {impEntity.track.label} (max {impEntity.track.max})
-                  </div>
-                )}
-                <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
-                  {impEntity.summary}
-                </div>
-              </>
-            )}
-          </div>
+          <DeskSheetCardBody
+            card={card}
+            onSelectEntity={(entityId, title) => setDeskCardTarget(card.id, entityId, title)}
+            onOpenPdfPage={(printedPage) => {
+              if (linkOpenMode === 'new-card') {
+                handleSpawnPageCard(printedPage, card);
+              } else {
+                handleGoToInPdf(printedPage);
+              }
+            }}
+          />
         );
-      }
       case 'tracker': {
         const tracker =
           merged.trackers.find((t) => t.id === card.targetId) ??
@@ -549,26 +600,44 @@ export const DeskCanvas: React.FC = () => {
           transformOrigin: '0 0',
         }}
       >
-        {desk.cards.map((card) => (
-          <DeskCardShell
-            key={card.id}
-            card={card}
-            scale={transform.scale}
-            snapToGrid={desk.snapToGrid}
-            gridSize={gridSize}
-            isMissingTarget={isDeskCardTargetMissing(card, merged, live)}
-            onBringToFront={(id) => {
-              if (addMenuOpen) setAddMenuOpen(false);
-              bringDeskCardToFront(id);
-            }}
-            onMove={moveDeskCard}
-            onResize={resizeDeskCard}
-            onToggleMinimize={toggleDeskCardMinimized}
-            onClose={removeDeskCard}
-          >
-            {renderCardBodySummary(card)}
-          </DeskCardShell>
-        ))}
+        {desk.cards.map((card) => {
+          const effectiveScenes =
+            card.type === 'scene' && card.followCurrentScene
+              ? getEffectiveScenes(merged.scenes, live)
+              : null;
+          const activeFollowScene = effectiveScenes
+            ? effectiveScenes.find((s) => s.id === live?.currentSceneId) ??
+              effectiveScenes[0] ??
+              null
+            : null;
+          const displayCard = activeFollowScene
+            ? {
+                ...card,
+                title: `${activeFollowScene.code} · ${activeFollowScene.title}`,
+              }
+            : card;
+
+          return (
+            <DeskCardShell
+              key={card.id}
+              card={displayCard}
+              scale={transform.scale}
+              snapToGrid={desk.snapToGrid}
+              gridSize={gridSize}
+              isMissingTarget={isDeskCardTargetMissing(card, merged, live)}
+              onBringToFront={(id) => {
+                if (addMenuOpen) setAddMenuOpen(false);
+                bringDeskCardToFront(id);
+              }}
+              onMove={moveDeskCard}
+              onResize={resizeDeskCard}
+              onToggleMinimize={toggleDeskCardMinimized}
+              onClose={removeDeskCard}
+            >
+              {renderCardBodySummary(card)}
+            </DeskCardShell>
+          );
+        })}
       </div>
 
       {/* Empty Desk Hint */}
@@ -668,6 +737,32 @@ export const DeskCanvas: React.FC = () => {
             }}
           >
             Snap {desk.snapToGrid ? 'On' : 'Off'}
+          </button>
+
+          <button
+            type="button"
+            data-testid="desk-link-mode-toggle"
+            aria-pressed={linkOpenMode === 'new-card'}
+            onClick={() =>
+              setDeskLinkOpenMode(linkOpenMode === 'new-card' ? 'in-place' : 'new-card')
+            }
+            style={{
+              height: '44px',
+              padding: '0 12px',
+              borderRadius: '10px',
+              border:
+                linkOpenMode === 'new-card'
+                  ? '1px solid var(--tealLine)'
+                  : '1px solid var(--line)',
+              background: linkOpenMode === 'new-card' ? 'var(--tealBg)' : 'var(--panel)',
+              color: linkOpenMode === 'new-card' ? 'var(--teal)' : 'var(--text)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+            }}
+          >
+            Links: {linkOpenMode === 'new-card' ? 'New card' : 'In place'}
           </button>
 
           {addMenuOpen && (

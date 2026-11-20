@@ -165,7 +165,8 @@ export function renderPdfPageToCanvas(
   doc: PdfDocumentProxy,
   pdfPageNum: number,
   canvas: HTMLCanvasElement,
-  targetWidth = 440
+  targetWidth = 440,
+  options?: { fitCssToContainer?: boolean }
 ): { promise: Promise<void>; cancel: () => void } {
   let activeTask: PdfRenderTask | null = null;
   let cancelled = false;
@@ -181,8 +182,13 @@ export function renderPdfPageToCanvas(
 
     canvas.width = Math.max(1, Math.floor(viewport.width));
     canvas.height = Math.max(1, Math.floor(viewport.height));
-    canvas.style.width = `${Math.floor(viewport.width / dpr)}px`;
-    canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
+    if (options?.fitCssToContainer) {
+      canvas.style.width = '100%';
+      canvas.style.height = 'auto';
+    } else {
+      canvas.style.width = `${Math.floor(viewport.width / dpr)}px`;
+      canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
+    }
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -274,4 +280,72 @@ export async function renderPdfCropToPngBlob(
   });
 
   return { blob, width: sw, height: sh };
+}
+
+const sharedPdfCache = new Map<string, Promise<PdfDocumentProxy | null>>();
+const resolvedPdfDocs = new Map<string, PdfDocumentProxy>();
+
+export function acquireSharedPdfDocument(
+  cacheKey: string,
+  loadData: () => Promise<Blob | Uint8Array | string | null>,
+  loader: (data: Blob | Uint8Array | string) => Promise<PdfDocumentProxy> = loadPdfDocument
+): Promise<PdfDocumentProxy | null> {
+  const existing = sharedPdfCache.get(cacheKey);
+  if (existing) {
+    return existing;
+  }
+
+  // Evict stale versions for the same module prefix (`moduleId:version`)
+  const prefix = cacheKey.includes(':') ? cacheKey.slice(0, cacheKey.lastIndexOf(':') + 1) : null;
+  if (prefix) {
+    for (const [k, doc] of resolvedPdfDocs.entries()) {
+      if (k !== cacheKey && k.startsWith(prefix)) {
+        resolvedPdfDocs.delete(k);
+        sharedPdfCache.delete(k);
+        void doc.destroy();
+      }
+    }
+  }
+
+  const pending = (async () => {
+    try {
+      const data = await loadData();
+      if (!data) {
+        sharedPdfCache.delete(cacheKey);
+        return null;
+      }
+      const proxy = await loader(data);
+      resolvedPdfDocs.set(cacheKey, proxy);
+      return proxy;
+    } catch (err) {
+      sharedPdfCache.delete(cacheKey);
+      throw err;
+    }
+  })();
+
+  sharedPdfCache.set(cacheKey, pending);
+  return pending;
+}
+
+export function clearSharedPdfDocumentCache(cacheKey?: string): void {
+  if (cacheKey) {
+    sharedPdfCache.delete(cacheKey);
+    const doc = resolvedPdfDocs.get(cacheKey);
+    if (doc) {
+      resolvedPdfDocs.delete(cacheKey);
+      void doc.destroy();
+    }
+    return;
+  }
+  for (const doc of resolvedPdfDocs.values()) {
+    void doc.destroy();
+  }
+  resolvedPdfDocs.clear();
+  sharedPdfCache.clear();
+}
+
+export function releasePdfCanvasMemory(canvas: HTMLCanvasElement | null): void {
+  if (!canvas) return;
+  canvas.width = 0;
+  canvas.height = 0;
 }

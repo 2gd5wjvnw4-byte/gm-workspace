@@ -136,6 +136,7 @@ export function createDefaultDeskState(): DeskState {
   return {
     viewMode: 'structured',
     layoutMode: 'free',
+    linkOpenMode: 'in-place',
     snapToGrid: false,
     gridSize: DESK_GRID_SIZE,
     viewport: { x: 0, y: 0, scale: 1 },
@@ -150,6 +151,7 @@ export function ensureDeskState(desk?: DeskState | null): DeskState {
   return {
     viewMode: desk.viewMode === 'desk' ? 'desk' : 'structured',
     layoutMode: desk.layoutMode === 'standard' ? 'standard' : 'free',
+    linkOpenMode: desk.linkOpenMode === 'new-card' ? 'new-card' : 'in-place',
     snapToGrid: Boolean(desk.snapToGrid),
     gridSize:
       Number.isFinite(desk.gridSize) && desk.gridSize > 0
@@ -375,4 +377,49 @@ export function isDeskCardTargetMissing(
     default:
       return true;
   }
+}
+
+export function isDeskCardVisibleInViewport(
+  card: Pick<DeskCardRecord, 'x' | 'y' | 'width' | 'height' | 'minimized'>,
+  viewport: PanZoomTransform,
+  viewportWidth: number,
+  viewportHeight: number,
+  marginPx = 80
+): boolean {
+  if (card.minimized) return false;
+  if (
+    !Number.isFinite(viewportWidth) ||
+    !Number.isFinite(viewportHeight) ||
+    viewportWidth <= 0 ||
+    viewportHeight <= 0
+  ) {
+    return true;
+  }
+  const scale = Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
+  const vx = Number.isFinite(viewport.x) ? viewport.x : 0;
+  const vy = Number.isFinite(viewport.y) ? viewport.y : 0;
+  const left = card.x * scale + vx;
+  const top = card.y * scale + vy;
+  const right = (card.x + Math.max(DESK_MIN_CARD_WIDTH, card.width)) * scale + vx;
+  const bottom = (card.y + Math.max(DESK_CARD_HEADER_HEIGHT, card.height)) * scale + vy;
+
+  return (
+    right >= -marginPx &&
+    left <= viewportWidth + marginPx &&
+    bottom >= -marginPx &&
+    top <= viewportHeight + marginPx
+  );
+}
+
+export function computeDeskPdfRenderWidth(
+  cardWidth: number,
+  deskScale: number,
+  minPx = 180,
+  maxPx = 1400
+): number {
+  const safeWidth = Number.isFinite(cardWidth) && cardWidth > 0 ? cardWidth : 440;
+  const safeScale = Number.isFinite(deskScale) && deskScale > 0 ? deskScale : 1;
+  const contentWidth = Math.max(120, safeWidth - 28);
+  const quantized = Math.round((contentWidth * safeScale) / 24) * 24;
+  return Math.min(maxPx, Math.max(minPx, quantized));
 }

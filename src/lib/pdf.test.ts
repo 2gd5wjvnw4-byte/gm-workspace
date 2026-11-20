@@ -1,15 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   PDF_RIBBON_COLORS,
+  acquireSharedPdfDocument,
   clampCropRect,
   clampPdfPan,
+  clearSharedPdfDocumentCache,
   detectHorizontalPageSwipe,
   getPdfRibbonColorHex,
   isPdfRibbonOutOfRange,
   pdfToPrintedPage,
   printedToPdfPage,
+  releasePdfCanvasMemory,
   renderPdfCropToPngBlob,
   sortPdfRibbonsByPage,
+  type PdfDocumentProxy,
 } from './pdf';
 import type { PdfRibbon } from '../storage/types';
 
@@ -151,5 +155,51 @@ describe('PDF printed-page offset helpers', () => {
       y: 30,
       scale: 1.5,
     });
+  });
+
+  it('shares a single cached PDF document across multiple cards and evicts stale versions', async () => {
+    clearSharedPdfDocumentCache();
+    const destroyV1 = vi.fn().mockResolvedValue(undefined);
+    const destroyV2 = vi.fn().mockResolvedValue(undefined);
+    const docV1 = { numPages: 12, destroy: destroyV1 } as unknown as PdfDocumentProxy;
+    const docV2 = { numPages: 18, destroy: destroyV2 } as unknown as PdfDocumentProxy;
+
+    const loadData = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const loader = vi.fn().mockResolvedValueOnce(docV1).mockResolvedValueOnce(docV2);
+
+    // 3 concurrent cards request the same module:version -> only 1 load happens
+    const [a, b, c] = await Promise.all([
+      acquireSharedPdfDocument('mod-test:1', loadData, loader),
+      acquireSharedPdfDocument('mod-test:1', loadData, loader),
+      acquireSharedPdfDocument('mod-test:1', loadData, loader),
+    ]);
+    expect(a).toBe(docV1);
+    expect(b).toBe(docV1);
+    expect(c).toBe(docV1);
+    expect(loadData).toHaveBeenCalledTimes(1);
+    expect(loader).toHaveBeenCalledTimes(1);
+
+    // Upgrading to version 2 evicts & destroys version 1
+    const next = await acquireSharedPdfDocument('mod-test:2', loadData, loader);
+    expect(next).toBe(docV2);
+    expect(destroyV1).toHaveBeenCalledTimes(1);
+
+    // Missing PDF (null) is not permanently cached
+    const missingLoader = vi.fn().mockResolvedValue(null);
+    expect(await acquireSharedPdfDocument('mod-missing:1', missingLoader, loader)).toBeNull();
+    expect(await acquireSharedPdfDocument('mod-missing:1', missingLoader, loader)).toBeNull();
+    expect(missingLoader).toHaveBeenCalledTimes(2);
+
+    clearSharedPdfDocumentCache();
+    expect(destroyV2).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases canvas backing memory when a PDF card goes off-screen', () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    releasePdfCanvasMemory(canvas);
+    expect(canvas.width).toBe(0);
+    expect(canvas.height).toBe(0);
   });
 });

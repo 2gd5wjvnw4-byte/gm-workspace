@@ -11,6 +11,9 @@ import type { EntityRoleplay, SceneItemKind } from '../lib/import/types';
 
 export interface CenterProps {
   mapMode: MapDisplayMode;
+  sceneId?: string | null;
+  embeddedInDesk?: boolean;
+  onSelectScene?: (sceneId: string) => void;
   onOpenPdf?: (printedPage?: number) => void;
   onEditNote?: (note: TableNote) => void;
   onOpenEntityInspector?: (entityId: string) => void;
@@ -59,6 +62,9 @@ const ANCHOR_PREFIX_RE = /^(Trigger|Check|Loot|Secret):\s*(.+)$/i;
 
 export const Center: React.FC<CenterProps> = ({
   mapMode,
+  sceneId,
+  embeddedInDesk = false,
+  onSelectScene,
   onOpenPdf,
   onEditNote,
   onOpenEntityInspector,
@@ -85,9 +91,13 @@ export const Center: React.FC<CenterProps> = ({
 
   const effectiveScenes = getEffectiveScenes(merged.scenes, live);
   const effectiveConnections = getEffectiveConnections(merged.connections, live);
-  const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? null;
+  const currentSceneId =
+    sceneId !== undefined && sceneId !== null
+      ? sceneId
+      : (live?.currentSceneId ?? effectiveScenes[0]?.id ?? null);
   const currentScene =
     effectiveScenes.find((s) => s.id === currentSceneId) ?? effectiveScenes[0] ?? null;
+  const handleSelectScene = onSelectScene ?? goToScene;
 
   useEffect(() => {
     setReadOpen(true);
@@ -560,12 +570,15 @@ export const Center: React.FC<CenterProps> = ({
     );
   };
 
+  const ContainerTag = embeddedInDesk ? 'div' : 'main';
+
   return (
-    <main
-      data-testid="zone-center"
+    <ContainerTag
+      data-testid={embeddedInDesk ? undefined : 'zone-center'}
       style={{
         flex: 1,
         minWidth: 0,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
@@ -632,7 +645,7 @@ export const Center: React.FC<CenterProps> = ({
             connectionState={live?.connectionState ?? {}}
             soloMask={soloMask}
             scenesWithNotes={scenesWithNotes}
-            onSelectScene={goToScene}
+            onSelectScene={handleSelectScene}
             onSetScenePin={setScenePin}
             onOpenMapLibrary={onOpenMapLibrary}
           />
@@ -2055,7 +2068,7 @@ export const Center: React.FC<CenterProps> = ({
         </div>
       )}
 
-      <ExitsBar />
-    </main>
+      <ExitsBar sceneId={currentSceneId} onSelectScene={handleSelectScene} />
+    </ContainerTag>
   );
 };

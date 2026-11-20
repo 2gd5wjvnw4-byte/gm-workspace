@@ -3,14 +3,26 @@ import { getEffectiveConnections, getEffectiveScenes } from '../lib/improvised';
 import { getArchetypeLabels, getSceneExits } from '../lib/solo';
 import { useCampaignStore } from '../store/campaignStore';
 
-export const ExitsBar: React.FC = () => {
+export interface ExitsBarProps {
+  sceneId?: string | null;
+  onSelectScene?: (sceneId: string) => void;
+}
+
+export const ExitsBar: React.FC<ExitsBarProps> = ({
+  sceneId,
+  onSelectScene,
+}) => {
   const { merged, live, goToScene } = useCampaignStore();
 
   const effectiveScenes = getEffectiveScenes(merged.scenes, live);
   const effectiveConnections = getEffectiveConnections(merged.connections, live);
-  const currentSceneId = live?.currentSceneId ?? effectiveScenes[0]?.id ?? null;
+  const currentSceneId =
+    sceneId !== undefined && sceneId !== null
+      ? sceneId
+      : (live?.currentSceneId ?? effectiveScenes[0]?.id ?? null);
   const currentScene =
     effectiveScenes.find((s) => s.id === currentSceneId) ?? effectiveScenes[0] ?? null;
+  const handleSelectScene = onSelectScene ?? goToScene;
 
   const archetypeLabels = getArchetypeLabels(
     currentScene ? currentScene.archetype : 'unknown'
@@ -86,7 +98,7 @@ export const ExitsBar: React.FC = () => {
               disabled={exit.disabled}
               onClick={() => {
                 if (!exit.disabled) {
-                  goToScene(exit.targetSceneId);
+                  handleSelectScene(exit.targetSceneId);
                 }
               }}
               style={{

@@ -19,6 +19,7 @@ import {
   type ConnectionOverrideState,
   type DeskCardRecord,
   type DeskCardType,
+  type DeskLinkOpenMode,
   type DeskViewMode,
   type DispositionState,
   type ImportedBackupResult,
@@ -116,6 +117,7 @@ export interface CampaignStoreState {
   ) => void;
   deletePdfRibbon: (moduleId: string, ribbonId: string) => void;
   setDeskViewMode: (viewMode: DeskViewMode) => void;
+  setDeskLinkOpenMode: (linkOpenMode: DeskLinkOpenMode) => void;
   setDeskSnapToGrid: (snapToGrid: boolean) => void;
   setDeskViewport: (viewport: { x: number; y: number; scale: number }) => void;
   addDeskCard: (input: {
@@ -137,6 +139,12 @@ export interface CampaignStoreState {
   bringDeskCardToFront: (cardId: string) => void;
   toggleDeskCardMinimized: (cardId: string) => void;
   setDeskCardTarget: (cardId: string, targetId: string | null, title?: string) => void;
+  updateDeskCard: (
+    cardId: string,
+    patch: Partial<
+      Pick<DeskCardRecord, 'title' | 'targetId' | 'followCurrentScene' | 'pageNumber'>
+    >
+  ) => void;
   removeDeskCard: (cardId: string) => void;
   refreshCampaigns: () => Promise<CampaignRecord[]>;
   openCampaign: (campaignId: string) => Promise<LoadedCampaign | null>;
@@ -1615,6 +1623,19 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
       });
     },
 
+    setDeskLinkOpenMode: (linkOpenMode) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            linkOpenMode,
+          },
+        };
+      });
+    },
+
     setDeskSnapToGrid: (snapToGrid) => {
       commitLive((prev) => {
         const desk = ensureDeskState(prev.desk);
@@ -1789,6 +1810,19 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
                   }
                 : c
             ),
+          },
+        };
+      });
+    },
+
+    updateDeskCard: (cardId, patch) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            cards: desk.cards.map((c) => (c.id === cardId ? { ...c, ...patch } : c)),
           },
         };
       });

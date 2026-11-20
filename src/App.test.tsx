@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { App } from './App';
 import { THEMES, TOKEN_KEYS, useThemeStore } from './store/themeStore';
 import { useCampaignStore } from './store/campaignStore';
@@ -2494,5 +2494,355 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       URL.createObjectURL = origCreateObjectURL;
       URL.revokeObjectURL = origRevokeObjectURL;
     }
+  });
+
+  it('Stage 8e: Desk Scene card reuses Center, toggles Follow/Pin, supports multiple pinned scenes, and honors In-place vs New-card link mode', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 8e Scene Card Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    const scenes = useCampaignStore.getState().merged.scenes;
+    const firstScene = scenes[0];
+    const secondScene = scenes[1];
+    expect(firstScene).toBeDefined();
+    expect(secondScene).toBeDefined();
+
+    render(<App />);
+    await screen.findByTestId('zone-topbar');
+
+    // Switch to Desk View
+    fireEvent.click(screen.getByTestId('desk-view-toggle'));
+    expect(await screen.findByTestId('desk-canvas')).toBeInTheDocument();
+
+    // Add first Scene card (defaults to Follow Current)
+    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+    fireEvent.click(screen.getByTestId('desk-add-card-option-scene'));
+    const cardA = useCampaignStore.getState().live!.desk!.cards.find((c) => c.type === 'scene')!;
+    expect(cardA.followCurrentScene).toBe(true);
+    const bodyA = screen.getByTestId(`desk-scene-card-body-${cardA.id}`);
+    expect(within(bodyA).getByText(firstScene.title)).toBeInTheDocument();
+
+    // Add second Scene card, pin it to secondScene -> both scenes render simultaneously
+    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+    fireEvent.click(screen.getByTestId('desk-add-card-option-scene'));
+    const cardB = useCampaignStore
+      .getState()
+      .live!.desk!.cards.filter((c) => c.type === 'scene')
+      .find((c) => c.id !== cardA.id)!;
+
+    fireEvent.click(screen.getByTestId(`desk-scene-follow-toggle-${cardB.id}`));
+    const selectB = screen.getByTestId(`desk-scene-select-${cardB.id}`);
+    fireEvent.change(selectB, { target: { value: secondScene.id } });
+
+    expect(
+      within(screen.getByTestId(`desk-scene-card-body-${cardA.id}`)).getByText(firstScene.title)
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId(`desk-scene-card-body-${cardB.id}`)).getByText(secondScene.title)
+    ).toBeInTheDocument();
+
+    // Default link mode is In place -> tapping an open exit on cardB (secondScene) navigates in-place without adding a card
+    const linkToggle = screen.getByTestId('desk-link-mode-toggle');
+    expect(linkToggle).toHaveTextContent('Links: In place');
+    const cardCountBeforeInPlace = useCampaignStore.getState().live!.desk!.cards.length;
+    const openExitInB = within(screen.getByTestId(`desk-scene-card-body-${cardB.id}`))
+      .getAllByRole('button')
+      .find((btn) => btn.getAttribute('data-testid')?.startsWith('exit-btn-') && !btn.hasAttribute('disabled'));
+    expect(openExitInB).toBeDefined();
+    fireEvent.click(openExitInB!);
+    expect(useCampaignStore.getState().live!.desk!.cards.length).toBe(cardCountBeforeInPlace);
+
+    // Pin cardB back to secondScene, then switch to Links: New card -> tapping exit, NPC, and Book page spawns new cards
+    fireEvent.change(screen.getByTestId(`desk-scene-select-${cardB.id}`), {
+      target: { value: secondScene.id },
+    });
+    fireEvent.click(linkToggle);
+    expect(linkToggle).toHaveTextContent('Links: New card');
+    expect(useCampaignStore.getState().live!.desk!.linkOpenMode).toBe('new-card');
+
+    const exitInB = within(screen.getByTestId(`desk-scene-card-body-${cardB.id}`))
+      .getAllByRole('button')
+      .find((btn) => btn.getAttribute('data-testid')?.startsWith('exit-btn-') && !btn.hasAttribute('disabled'));
+    expect(exitInB).toBeDefined();
+    const countBeforeExitSpawn = useCampaignStore.getState().live!.desk!.cards.length;
+    fireEvent.click(exitInB!);
+    expect(useCampaignStore.getState().live!.desk!.cards.length).toBe(countBeforeExitSpawn + 1);
+    const spawnedSceneCard = useCampaignStore
+      .getState()
+      .live!.desk!.cards[useCampaignStore.getState().live!.desk!.cards.length - 1];
+    expect(spawnedSceneCard.type).toBe('scene');
+    expect(spawnedSceneCard.followCurrentScene).toBe(false);
+
+    // Tap Book p.N button in cardA -> spawns a new Page card
+    const bookBtnInA = within(screen.getByTestId(`desk-scene-card-body-${cardA.id}`)).getByTestId(
+      'scene-book-page-btn'
+    );
+    fireEvent.click(bookBtnInA);
+    expect(
+      useCampaignStore.getState().live!.desk!.cards.some((c) => c.type === 'page')
+    ).toBe(true);
+
+    // Tap an inline NPC inspect button in cardB -> spawns a new Sheet card
+    const npcBtn = screen
+      .getAllByRole('button')
+      .find((btn) => btn.getAttribute('data-testid')?.startsWith('inspect-entity-'));
+    expect(npcBtn).toBeDefined();
+    fireEvent.click(npcBtn!);
+    expect(
+      useCampaignStore.getState().live!.desk!.cards.some((c) => c.type === 'sheet')
+    ).toBe(true);
+
+    // G10: Tapping inside background Scene card's control bar brings it to front
+    const cardsBeforeFront = useCampaignStore.getState().live!.desk!.cards;
+    const backScene = cardsBeforeFront.find((c) => c.id === cardA.id)!;
+    const maxZBefore = Math.max(...cardsBeforeFront.map((c) => c.z));
+    expect(backScene.z).toBeLessThan(maxZBefore);
+    const followBtnA = screen.getByTestId(`desk-scene-follow-toggle-${cardA.id}`);
+    const ptrDown = new Event('pointerdown', { bubbles: true, cancelable: true });
+    Object.assign(ptrDown, { pointerId: 91, clientX: 50, clientY: 50, pointerType: 'touch' });
+    fireEvent(followBtnA, ptrDown);
+    const cardsAfterFront = useCampaignStore.getState().live!.desk!.cards;
+    const frontScene = cardsAfterFront.find((c) => c.id === cardA.id)!;
+    const maxZAfter = Math.max(...cardsAfterFront.map((c) => c.z));
+    expect(frontScene.z).toBe(maxZAfter);
+  });
+
+  it('Stage 8e: Desk PDF card (arrows, swipe, ribbons, Detach page), Page card (Go to in PDF), and visible-only deferred rendering', async () => {
+    pdfLib.clearSharedPdfDocumentCache();
+    const loadSpy = vi.spyOn(pdfLib, 'loadPdfDocument').mockResolvedValue({
+      numPages: 25,
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as unknown as pdfLib.PdfDocumentProxy);
+    const renderSpy = vi.spyOn(pdfLib, 'renderPdfPageToCanvas').mockImplementation(() => ({
+      promise: Promise.resolve(),
+      cancel: vi.fn(),
+    }));
+
+    try {
+      await useCampaignStore.getState().createNewCampaign({
+        title: 'Stage 8e PDF & Page Card Test',
+        system: 'Mothership 1e',
+        genre: 'sci-fi horror',
+      });
+      await useCampaignStore.getState().importJsonChunk(sampleRawText);
+      const pdfFile = new File([new Uint8Array([1, 2, 3, 4])], 'relay.pdf', {
+        type: 'application/pdf',
+      });
+      await useCampaignStore.getState().attachPdf(pdfFile);
+
+      render(<App />);
+      await screen.findByTestId('zone-topbar');
+
+      fireEvent.click(screen.getByTestId('desk-view-toggle'));
+      expect(await screen.findByTestId('desk-canvas')).toBeInTheDocument();
+
+      // Add a PDF card
+      fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+      fireEvent.click(screen.getByTestId('desk-add-card-option-pdf'));
+
+      const pdfCard = useCampaignStore.getState().live!.desk!.cards.find((c) => c.type === 'pdf')!;
+      expect(pdfCard).toBeDefined();
+      const startPage = pdfCard.pageNumber ?? 1;
+
+      await waitFor(() => {
+        expect(screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`)).toHaveTextContent(
+          `p.${startPage} / 25`
+        );
+      });
+
+      // Turn page forward with Next arrow
+      fireEvent.click(screen.getByTestId(`desk-pdf-next-${pdfCard.id}`));
+      expect(screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`)).toHaveTextContent(
+        `p.${startPage + 1} / 25`
+      );
+      expect(
+        useCampaignStore.getState().live!.desk!.cards.find((c) => c.id === pdfCard.id)?.pageNumber
+      ).toBe(startPage + 1);
+
+      // G8: touchAction none on swipe stage, inner wrap, and canvas prevents pointercancel on touch
+      const swipeStage = screen.getByTestId(`desk-pdf-swipe-stage-${pdfCard.id}`);
+      const pdfWrap = screen.getByTestId(`desk-pdf-canvas-wrap-${pdfCard.id}`);
+      const pdfCanvas = screen.getByTestId(`desk-pdf-canvas-${pdfCard.id}`);
+      expect(swipeStage.style.touchAction).toBe('none');
+      expect(pdfWrap.style.touchAction).toBe('none');
+      expect(pdfCanvas.style.touchAction).toBe('none');
+      // G12: CSS width 100% + height auto preserves exact aspect ratio at any Desk zoom scale
+      expect(pdfCanvas.style.width).toBe('100%');
+      expect(pdfCanvas.style.height).toBe('auto');
+      expect(renderSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(Number),
+        expect.anything(),
+        expect.any(Number),
+        { fitCssToContainer: true }
+      );
+      const firePtr = (
+        el: Element,
+        type: 'pointerdown' | 'pointermove' | 'pointerup',
+        props: { pointerId: number; clientX: number; clientY: number }
+      ) => {
+        const ev = new Event(type, { bubbles: true, cancelable: true });
+        Object.assign(ev, props);
+        fireEvent(el, ev);
+      };
+      firePtr(swipeStage, 'pointerdown', { pointerId: 10, clientX: 300, clientY: 200 });
+      firePtr(swipeStage, 'pointermove', { pointerId: 10, clientX: 160, clientY: 205 });
+      firePtr(swipeStage, 'pointerup', { pointerId: 10, clientX: 160, clientY: 205 });
+      expect(screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`)).toHaveTextContent(
+        `p.${startPage + 2} / 25`
+      );
+
+      // G9: PDF canvas wrap uses flex-start so top of portrait pages is never clipped
+      expect(screen.getByTestId(`desk-pdf-canvas-wrap-${pdfCard.id}`).style.alignItems).toBe(
+        'flex-start'
+      );
+
+      // Add a ribbon on this page and verify page-only right-edge ribbon renders
+      fireEvent.click(screen.getByTestId(`desk-pdf-ribbons-btn-${pdfCard.id}`));
+      fireEvent.click(screen.getByTestId(`desk-pdf-add-ribbon-toggle-${pdfCard.id}`));
+      fireEvent.change(screen.getByTestId(`desk-pdf-ribbon-label-input-${pdfCard.id}`), {
+        target: { value: 'Airlock Map' },
+      });
+      fireEvent.click(screen.getByTestId(`desk-pdf-ribbon-save-${pdfCard.id}`));
+      expect(screen.getByTestId(`desk-pdf-edge-ribbons-${pdfCard.id}`)).toHaveTextContent(
+        'Airlock Map'
+      );
+
+      // Detach page -> spawns a Page card at startPage + 2
+      fireEvent.click(screen.getByTestId(`desk-pdf-detach-${pdfCard.id}`));
+      const pageCard = useCampaignStore.getState().live!.desk!.cards.find((c) => c.type === 'page')!;
+      expect(pageCard).toBeDefined();
+      expect(pageCard.pageNumber).toBe(startPage + 2);
+      expect(screen.getByTestId(`desk-page-number-${pageCard.id}`)).toHaveTextContent(
+        `Page ${startPage + 2}`
+      );
+
+      // Move PDF card to another page, then tap Go to in PDF on the Page card -> jumps PDF card back to startPage + 2
+      fireEvent.click(screen.getByTestId(`desk-pdf-prev-${pdfCard.id}`));
+      expect(screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`)).toHaveTextContent(
+        `p.${startPage + 1} / 25`
+      );
+      fireEvent.click(screen.getByTestId(`desk-page-goto-pdf-${pageCard.id}`));
+      expect(screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`)).toHaveTextContent(
+        `p.${startPage + 2} / 25`
+      );
+
+      // Shared PDF document cache: both PDF card and Page card only loaded the PDF once
+      expect(loadSpy).toHaveBeenCalledTimes(1);
+
+      // G10: Tapping background PDF card's swipe stage brings it to front above the detached Page card
+      act(() => {
+        useCampaignStore.getState().bringDeskCardToFront(pageCard.id);
+      });
+      const pdfBeforeTap = useCampaignStore
+        .getState()
+        .live!.desk!.cards.find((c) => c.id === pdfCard.id)!;
+      const pageBeforeTap = useCampaignStore
+        .getState()
+        .live!.desk!.cards.find((c) => c.id === pageCard.id)!;
+      expect(pdfBeforeTap.z).toBeLessThan(pageBeforeTap.z);
+      firePtr(swipeStage, 'pointerdown', { pointerId: 11, clientX: 200, clientY: 200 });
+      firePtr(swipeStage, 'pointerup', { pointerId: 11, clientX: 200, clientY: 200 });
+      const pdfAfterTap = useCampaignStore
+        .getState()
+        .live!.desk!.cards.find((c) => c.id === pdfCard.id)!;
+      const pageAfterTap = useCampaignStore
+        .getState()
+        .live!.desk!.cards.find((c) => c.id === pageCard.id)!;
+      expect(pdfAfterTap.z).toBeGreaterThan(pageAfterTap.z);
+
+      // G11: Off-screen visibility check zeros the actual canvas element before unmount
+      const pageCanvasBefore = screen.getByTestId(
+        `desk-pdf-canvas-${pageCard.id}`
+      ) as HTMLCanvasElement;
+      pageCanvasBefore.width = 400;
+      pageCanvasBefore.height = 520;
+      act(() => {
+        useCampaignStore.getState().moveDeskCard(pageCard.id, 5000, 5000);
+      });
+      expect(pageCanvasBefore.width).toBe(0);
+      expect(pageCanvasBefore.height).toBe(0);
+      expect(screen.getByTestId(`desk-pdf-canvas-wrap-${pageCard.id}`)).toHaveAttribute(
+        'data-visible',
+        'false'
+      );
+      expect(screen.getByTestId(`desk-pdf-deferred-${pageCard.id}`)).toBeInTheDocument();
+
+      // Close PDF card, then tap Go to in PDF on Page card -> opens the PDF drawer at startPage + 2
+      fireEvent.click(screen.getByTestId(`desk-card-close-${pdfCard.id}`));
+      fireEvent.click(screen.getByTestId(`desk-page-goto-pdf-${pageCard.id}`));
+      expect(screen.getByTestId('zone-drawer-host')).toHaveAttribute('aria-hidden', 'false');
+    } finally {
+      loadSpy.mockRestore();
+      renderSpy.mockRestore();
+      pdfLib.clearSharedPdfDocumentCache();
+    }
+  });
+
+  it('Stage 8e: Desk Sheet card renders interactive NPC details, switcher, Solo Mask, and persists Desk state across backup round-trip', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Stage 8e Sheet & Backup Test',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    const entities = useCampaignStore.getState().merged.entities;
+    expect(entities.length).toBeGreaterThanOrEqual(2);
+
+    render(<App />);
+    await screen.findByTestId('zone-topbar');
+
+    fireEvent.click(screen.getByTestId('desk-view-toggle'));
+    expect(await screen.findByTestId('desk-canvas')).toBeInTheDocument();
+
+    // Add Sheet card
+    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+    fireEvent.click(screen.getByTestId('desk-add-card-option-sheet'));
+
+    const sheetCard = useCampaignStore.getState().live!.desk!.cards.find((c) => c.type === 'sheet')!;
+    expect(sheetCard).toBeDefined();
+    expect(screen.getByTestId(`desk-sheet-${sheetCard.id}-entity-name`)).toHaveTextContent(
+      entities[0].name
+    );
+
+    // Switch entity in Sheet card
+    const sheetSelect = screen.getByTestId(`desk-sheet-select-${sheetCard.id}`);
+    fireEvent.change(sheetSelect, { target: { value: entities[1].id } });
+    expect(screen.getByTestId(`desk-sheet-${sheetCard.id}-entity-name`)).toHaveTextContent(
+      entities[1].name
+    );
+
+    // Cycle disposition on Sheet card
+    const dispChip = screen.getByTestId(`desk-sheet-${sheetCard.id}-disp-chip`);
+    const beforeDisp = dispChip.textContent;
+    fireEvent.click(dispChip);
+    expect(dispChip.textContent).not.toBe(beforeDisp);
+
+    // Set linkOpenMode to new-card and add a pinned scene card + page card, then round-trip Save/Load Backup
+    useCampaignStore.getState().setDeskLinkOpenMode('new-card');
+    useCampaignStore.getState().addDeskCard({
+      type: 'page',
+      title: 'PDF Page 9',
+      pageNumber: 9,
+      x: 500,
+      y: 120,
+    });
+
+    const backupPayload = await useCampaignStore.getState().saveBackup();
+    expect(backupPayload).not.toBeNull();
+    expect(backupPayload!.live.desk?.linkOpenMode).toBe('new-card');
+
+    await useCampaignStore
+      .getState()
+      .restoreBackup(JSON.stringify(backupPayload), { mode: 'new' });
+
+    const restoredDesk = useCampaignStore.getState().live?.desk;
+    expect(restoredDesk?.linkOpenMode).toBe('new-card');
+    expect(restoredDesk?.cards.some((c) => c.type === 'sheet' && c.targetId === entities[1].id)).toBe(
+      true
+    );
+    expect(restoredDesk?.cards.some((c) => c.type === 'page' && c.pageNumber === 9)).toBe(true);
   });
 });
