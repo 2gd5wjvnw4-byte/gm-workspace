@@ -122,7 +122,7 @@ On widths < 1200px the right panel collapses to a 56px rail with icons that open
 
 ## 4. Motion
 - Current-location pulse: `box-shadow 0 0 0 0 var(--accent)` → `0 0 0 12px transparent`, 2s infinite. Respect `prefers-reduced-motion` (no pulse; keep the 2px ring).
-- Drawers slide 200ms ease-out. No other animation.
+- Drawers slide 200ms ease-out. Optional 3D dice roll overlay animation is allowed when 3D dice is enabled (falls back to instant plain text when disabled, when `prefers-reduced-motion` is set, or if WebGL fails). No other animation.
 
 ## 5. Gestures (node map and map image)
 - Pointer Events on the canvas container with `touch-action: none`.

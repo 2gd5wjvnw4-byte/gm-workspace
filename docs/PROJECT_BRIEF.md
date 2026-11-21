@@ -31,7 +31,8 @@ It works for **any genre and any system**: fantasy dungeons, sci-fi derelicts, m
 - pdfjs-dist for the PDF drawer and the map cropper.
 - vite-plugin-pwa for the service worker and manifest.
 - Vitest for unit tests.
-- No other runtime dependencies without a clear reason stated in the PR/commit message. Write pinch-zoom, dice rolling, and cropping by hand.
+- `@3d-dice/dice-box` for optional offline 3D physics dice rolling (self-hosted static assets, lazy-loaded, with hand-written plain random fallback in `src/lib/dice.ts`).
+- No other runtime dependencies without a clear reason stated in the PR/commit message. Write pinch-zoom, dice parsing/fallback rolling, and cropping by hand.
 
 ## Core architecture
 
