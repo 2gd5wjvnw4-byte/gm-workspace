@@ -4,6 +4,7 @@ import {
   clampDeskCardSize,
   computeDeskCardsBounds,
   computeDeskPdfRenderWidth,
+  computeStandardDeskLayout,
   DESK_CARD_CATALOG,
   DESK_CARD_HEADER_HEIGHT,
   DESK_MIN_CARD_HEIGHT,
@@ -13,6 +14,8 @@ import {
   isDeskCardTargetMissing,
   isDeskCardVisibleInViewport,
   resizeDeskCardFromCorner,
+  restoreFreeRects,
+  snapshotFreeRects,
   snapToDeskGrid,
 } from './desk';
 import { mergeParsedChunks, parseModuleChunk } from './import';
@@ -194,5 +197,72 @@ describe('desk pure helpers', () => {
     expect(computeDeskPdfRenderWidth(480, 3)).toBe(1368);
     // Huge card at 3x clamps to maxPx=1400
     expect(computeDeskPdfRenderWidth(1200, 3)).toBe(1400);
+  });
+
+  it('arranges Standard layout with Follow current scene centered and zero overlaps', () => {
+    const cards: DeskCardRecord[] = [
+      makeCard({ id: 'list', type: 'scene-list', x: 10, y: 10, width: 300, height: 300, createdAt: 1 }),
+      makeCard({ id: 'pinned', type: 'scene', followCurrentScene: false, x: 20, y: 20, width: 400, height: 300, createdAt: 2 }),
+      makeCard({ id: 'follow', type: 'scene', followCurrentScene: true, x: 30, y: 30, width: 420, height: 320, createdAt: 3 }),
+      makeCard({ id: 'clocks', type: 'clocks', x: 40, y: 40, width: 320, height: 280, createdAt: 4 }),
+      makeCard({ id: 'tracker', type: 'tracker', x: 50, y: 50, width: 280, height: 180, createdAt: 5 }),
+      makeCard({ id: 'notes', type: 'notes', x: 60, y: 60, width: 300, height: 300, createdAt: 6 }),
+    ];
+
+    const arranged = computeStandardDeskLayout(cards);
+    const byId = new Map(arranged.map((c) => [c.id, c]));
+
+    const follow = byId.get('follow')!;
+    const pinned = byId.get('pinned')!;
+    const list = byId.get('list')!;
+    const clocks = byId.get('clocks')!;
+
+    // Follow scene is placed at the top of the center column, between left and right columns
+    expect(follow.x).toBeGreaterThan(list.x);
+    expect(follow.x).toBeLessThan(clocks.x);
+    expect(follow.y).toBe(48);
+    expect(pinned.x).toBe(follow.x);
+    expect(pinned.y).toBeGreaterThanOrEqual(follow.y + follow.height + 24);
+
+    // Zero pairwise overlaps
+    for (let i = 0; i < arranged.length; i++) {
+      for (let j = i + 1; j < arranged.length; j++) {
+        const a = arranged[i];
+        const b = arranged[j];
+        const overlapsX = a.x < b.x + b.width && a.x + a.width > b.x;
+        const overlapsY = a.y < b.y + b.height && a.y + a.height > b.y;
+        expect(overlapsX && overlapsY).toBe(false);
+      }
+    }
+  });
+
+  it('snapshots and restores exact Free positions and sizes across Standard round-trip', () => {
+    const original: DeskCardRecord[] = [
+      makeCard({ id: 'c1', type: 'scene', followCurrentScene: true, x: 111, y: 222, width: 533, height: 444 }),
+      makeCard({ id: 'c2', type: 'tracker', x: 777, y: 88, width: 290, height: 196 }),
+    ];
+
+    const saved = snapshotFreeRects(original);
+    const standard = computeStandardDeskLayout(original);
+    expect(standard[0].x).not.toBe(111);
+    expect(standard[1].x).not.toBe(777);
+
+    const restored = restoreFreeRects(standard, saved);
+    expect(restored[0]).toMatchObject({ x: 111, y: 222, width: 533, height: 444 });
+    expect(restored[1]).toMatchObject({ x: 777, y: 88, width: 290, height: 196 });
+
+    // ensureDeskState sanitizes savedFreeRects and handles old saves without it
+    const ensured = ensureDeskState({
+      viewMode: 'desk',
+      layoutMode: 'standard',
+      snapToGrid: false,
+      gridSize: 24,
+      viewport: { x: 0, y: 0, scale: 1 },
+      cards: standard,
+      savedFreeRects: saved,
+    });
+    expect(ensured.layoutMode).toBe('standard');
+    expect(ensured.savedFreeRects?.c1).toEqual({ x: 111, y: 222, width: 533, height: 444 });
+    expect(ensureDeskState(undefined).savedFreeRects).toEqual({});
   });
 });

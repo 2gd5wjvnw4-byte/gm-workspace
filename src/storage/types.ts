@@ -129,6 +129,13 @@ export interface DeskCardRecord {
   createdAt: number;
 }
 
+export interface DeskCardRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface DeskState {
   viewMode: DeskViewMode;
   layoutMode: DeskLayoutMode;
@@ -141,6 +148,7 @@ export interface DeskState {
     scale: number;
   };
   cards: DeskCardRecord[];
+  savedFreeRects?: Record<string, DeskCardRect>;
 }
 
 export interface ImprovisedEntityRecord {

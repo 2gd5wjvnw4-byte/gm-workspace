@@ -10,6 +10,8 @@ import {
   getMaskedItemView,
   getSceneExits,
   getSceneVisibility,
+  getSoloVisibleEntityIds,
+  isSceneVisitedInLive,
   searchModuleRecords,
 } from './solo';
 
@@ -305,5 +307,47 @@ describe('Solo Mask and scene reachability rules (src/lib/solo.ts)', () => {
       soloMask: true,
     });
     expect(soloOkaforVisited.some((r) => r.id === 'e-okafor')).toBe(true);
+  });
+
+  it('filters entities in Solo Mask to only visited or summoned scenes', () => {
+    expect(isSceneVisitedInLive('a1-s01', { 'a1-s01': true }, 'a1-s01')).toBe(true);
+    expect(isSceneVisitedInLive('a1-s02', { 'a1-s01': true }, 'a1-s01')).toBe(false);
+
+    // GM mode sees all entities
+    const gmEntities = getSoloVisibleEntityIds({
+      scenes: sampleChunk.scenes,
+      entities: sampleChunk.entities,
+      visited: { 'a1-s01': true },
+      currentSceneId: 'a1-s01',
+      soloMask: false,
+    });
+    expect(gmEntities.has('e-okafor')).toBe(true);
+    expect(gmEntities.has('e-drones')).toBe(true);
+    expect(gmEntities.has('e-creature')).toBe(true);
+
+    // Solo mode with only a1-s01 visited hides Okafor (a1-s02), Drones (a1-s03), and unsummoned Vent Thing
+    const soloS1 = getSoloVisibleEntityIds({
+      scenes: sampleChunk.scenes,
+      entities: sampleChunk.entities,
+      visited: { 'a1-s01': true },
+      currentSceneId: 'a1-s01',
+      soloMask: true,
+    });
+    expect(soloS1.has('e-okafor')).toBe(false);
+    expect(soloS1.has('e-drones')).toBe(false);
+    expect(soloS1.has('e-creature')).toBe(false);
+
+    // Visiting a1-s02 reveals Okafor, and summoning Vent Thing into a1-s02 reveals it too
+    const soloS2 = getSoloVisibleEntityIds({
+      scenes: sampleChunk.scenes,
+      entities: sampleChunk.entities,
+      visited: { 'a1-s01': true, 'a1-s02': true },
+      summoned: { 'a1-s02': ['e-creature'] },
+      currentSceneId: 'a1-s02',
+      soloMask: true,
+    });
+    expect(soloS2.has('e-okafor')).toBe(true);
+    expect(soloS2.has('e-creature')).toBe(true);
+    expect(soloS2.has('e-drones')).toBe(false);
   });
 });

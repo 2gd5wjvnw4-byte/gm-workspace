@@ -162,6 +162,62 @@ export function getSceneVisibility(params: {
   return 'hidden';
 }
 
+export function isSceneVisitedInLive(
+  sceneId: string | null | undefined,
+  visited: Record<string, boolean>,
+  currentSceneId?: string | null
+): boolean {
+  if (!sceneId) return false;
+  return Boolean(visited[sceneId]) || sceneId === currentSceneId;
+}
+
+export function getSoloVisibleEntityIds(params: {
+  scenes: ModuleScene[];
+  entities: ModuleEntity[];
+  improvisedEntities?: ImprovisedEntityRecord[];
+  visited: Record<string, boolean>;
+  summoned?: Record<string, string[]>;
+  currentSceneId?: string | null;
+  soloMask: boolean;
+}): Set<string> {
+  const {
+    scenes,
+    entities,
+    improvisedEntities = [],
+    visited,
+    summoned = {},
+    currentSceneId,
+    soloMask,
+  } = params;
+
+  const visible = new Set<string>();
+  if (!soloMask) {
+    for (const e of entities) visible.add(e.id);
+    for (const imp of improvisedEntities) visible.add(imp.id);
+    return visible;
+  }
+
+  for (const scene of scenes) {
+    if (!isSceneVisitedInLive(scene.id, visited, currentSceneId)) {
+      continue;
+    }
+    for (const eid of scene.entity_ids) {
+      visible.add(eid);
+    }
+    for (const eid of summoned[scene.id] ?? []) {
+      visible.add(eid);
+    }
+  }
+
+  for (const imp of improvisedEntities) {
+    if (!imp.sceneId || isSceneVisitedInLive(imp.sceneId, visited, currentSceneId)) {
+      visible.add(imp.id);
+    }
+  }
+
+  return visible;
+}
+
 export interface MaskedItemView {
   id: string;
   tier: 2 | 3;

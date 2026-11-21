@@ -7,6 +7,7 @@ import {
 } from './panzoom';
 import type {
   DeskCardRecord,
+  DeskCardRect,
   DeskCardType,
   DeskState,
   LiveState,
@@ -141,7 +142,36 @@ export function createDefaultDeskState(): DeskState {
     gridSize: DESK_GRID_SIZE,
     viewport: { x: 0, y: 0, scale: 1 },
     cards: [],
+    savedFreeRects: {},
   };
+}
+
+function sanitizeSavedFreeRects(
+  raw?: Record<string, DeskCardRect> | null
+): Record<string, DeskCardRect> {
+  if (!raw || typeof raw !== 'object') {
+    return {};
+  }
+  const result: Record<string, DeskCardRect> = {};
+  for (const [id, rect] of Object.entries(raw)) {
+    if (
+      rect &&
+      Number.isFinite(rect.x) &&
+      Number.isFinite(rect.y) &&
+      Number.isFinite(rect.width) &&
+      Number.isFinite(rect.height) &&
+      rect.width > 0 &&
+      rect.height > 0
+    ) {
+      result[id] = {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    }
+  }
+  return result;
 }
 
 export function ensureDeskState(desk?: DeskState | null): DeskState {
@@ -166,6 +196,7 @@ export function ensureDeskState(desk?: DeskState | null): DeskState {
           : 1,
     },
     cards: Array.isArray(desk.cards) ? desk.cards : [],
+    savedFreeRects: sanitizeSavedFreeRects(desk.savedFreeRects),
   };
 }
 
@@ -422,4 +453,150 @@ export function computeDeskPdfRenderWidth(
   const contentWidth = Math.max(120, safeWidth - 28);
   const quantized = Math.round((contentWidth * safeScale) / 24) * 24;
   return Math.min(maxPx, Math.max(minPx, quantized));
+}
+
+const STANDARD_LEFT_TYPES = new Set<DeskCardType>([
+  'scene-list',
+  'node-map',
+  'map',
+  'tracker',
+]);
+
+const STANDARD_CENTER_TYPES = new Set<DeskCardType>(['scene', 'pdf', 'page']);
+
+const STANDARD_CARD_HEIGHTS: Record<DeskCardType, number> = {
+  scene: 520,
+  pdf: 540,
+  page: 480,
+  'scene-list': 420,
+  'node-map': 380,
+  map: 360,
+  tracker: 192,
+  sheet: 420,
+  clocks: 340,
+  timeline: 360,
+  'clue-matrix': 400,
+  factions: 340,
+  'random-tables': 380,
+  notes: 340,
+};
+
+export function snapshotFreeRects(
+  cards: DeskCardRecord[],
+  existing?: Record<string, DeskCardRect> | null
+): Record<string, DeskCardRect> {
+  const next: Record<string, DeskCardRect> = { ...(existing ?? {}) };
+  for (const card of cards) {
+    next[card.id] = {
+      x: Math.round(card.x),
+      y: Math.round(card.y),
+      width: Math.round(card.width),
+      height: Math.round(card.height),
+    };
+  }
+  return next;
+}
+
+export function restoreFreeRects(
+  cards: DeskCardRecord[],
+  savedFreeRects?: Record<string, DeskCardRect> | null
+): DeskCardRecord[] {
+  if (!savedFreeRects) {
+    return cards;
+  }
+  return cards.map((card) => {
+    const saved = savedFreeRects[card.id];
+    if (!saved) {
+      return card;
+    }
+    const clamped = clampDeskCardSize(saved.width, saved.height);
+    return {
+      ...card,
+      x: Math.round(saved.x),
+      y: Math.round(saved.y),
+      width: clamped.width,
+      height: clamped.height,
+    };
+  });
+}
+
+export function computeStandardDeskLayout(
+  cards: DeskCardRecord[]
+): DeskCardRecord[] {
+  if (cards.length === 0) {
+    return [];
+  }
+
+  const leftCol: DeskCardRecord[] = [];
+  const centerCol: DeskCardRecord[] = [];
+  const rightCol: DeskCardRecord[] = [];
+
+  for (const card of cards) {
+    if (STANDARD_CENTER_TYPES.has(card.type)) {
+      centerCol.push(card);
+    } else if (STANDARD_LEFT_TYPES.has(card.type)) {
+      leftCol.push(card);
+    } else {
+      rightCol.push(card);
+    }
+  }
+
+  // Put Follow current scene card first in center column, then other scenes, then PDF/page
+  centerCol.sort((a, b) => {
+    const rank = (c: DeskCardRecord) => {
+      if (c.type === 'scene' && c.followCurrentScene) return 0;
+      if (c.type === 'scene') return 1;
+      if (c.type === 'pdf') return 2;
+      return 3;
+    };
+    return rank(a) - rank(b) || a.createdAt - b.createdAt;
+  });
+
+  leftCol.sort((a, b) => a.createdAt - b.createdAt);
+  rightCol.sort((a, b) => a.createdAt - b.createdAt);
+
+  const GAP = 24;
+  const TOP_Y = 48;
+  const LEFT_X = 48;
+  const LEFT_W = 320;
+  const CENTER_X = LEFT_X + LEFT_W + GAP; // 392
+  const CENTER_W = 560;
+  const RIGHT_X = CENTER_X + CENTER_W + GAP; // 976
+  const RIGHT_W = 360;
+
+  const rectById = new Map<string, DeskCardRect>();
+
+  const placeColumn = (col: DeskCardRecord[], colX: number, colW: number) => {
+    let cursorY = TOP_Y;
+    for (const card of col) {
+      const targetHeight = STANDARD_CARD_HEIGHTS[card.type] ?? 340;
+      const clamped = clampDeskCardSize(colW, targetHeight);
+      rectById.set(card.id, {
+        x: colX,
+        y: cursorY,
+        width: clamped.width,
+        height: clamped.height,
+      });
+      const occupiedHeight = card.minimized
+        ? DESK_CARD_HEADER_HEIGHT
+        : clamped.height;
+      cursorY += occupiedHeight + GAP;
+    }
+  };
+
+  placeColumn(leftCol, LEFT_X, LEFT_W);
+  placeColumn(centerCol, CENTER_X, CENTER_W);
+  placeColumn(rightCol, RIGHT_X, RIGHT_W);
+
+  return cards.map((card) => {
+    const next = rectById.get(card.id);
+    if (!next) return card;
+    return {
+      ...card,
+      x: next.x,
+      y: next.y,
+      width: next.width,
+      height: next.height,
+    };
+  });
 }

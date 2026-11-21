@@ -11,6 +11,7 @@ import {
   isDeskCardVisibleInViewport,
 } from '../lib/desk';
 import { getEffectiveScenes } from '../lib/improvised';
+import { getSoloVisibleEntityIds, isSceneVisitedInLive } from '../lib/solo';
 import {
   formatZoomPercent,
   PAN_THRESHOLD_PX,
@@ -24,16 +25,26 @@ import { useCampaignStore } from '../store/campaignStore';
 import type { DeskCardRecord, DeskCardType, TableNote } from '../storage/types';
 import { DeskCardShell } from './DeskCardShell';
 import { DeskMapCardBody } from './DeskMapCardBody';
+import { DeskNodeMapCardBody } from './DeskNodeMapCardBody';
+import { DeskNotesCardBody } from './DeskNotesCardBody';
 import { DeskPageCardBody } from './DeskPageCardBody';
 import { DeskPdfCardBody } from './DeskPdfCardBody';
+import { DeskRightSectionCardBody } from './DeskRightSectionCardBody';
 import { DeskSceneCardBody } from './DeskSceneCardBody';
+import { DeskSceneListCardBody } from './DeskSceneListCardBody';
 import { DeskSheetCardBody } from './DeskSheetCardBody';
+import {
+  DeskStructuredPanel,
+  type SendToDeskRequest,
+} from './DeskStructuredPanel';
+import { DeskTrackerCardBody } from './DeskTrackerCardBody';
 import { resolveActiveMap } from './MapArea';
 
 export interface DeskCanvasProps {
   onOpenPdfDrawer?: (printedPage?: number) => void;
   onOpenEntityInspector?: (entityId: string) => void;
   onEditNote?: (note: TableNote) => void;
+  onOpenNoteModal?: () => void;
   onOpenMapLibrary?: () => void;
 }
 
@@ -55,12 +66,14 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
   onOpenPdfDrawer,
   onOpenEntityInspector,
   onEditNote,
+  onOpenNoteModal,
   onOpenMapLibrary,
 }) => {
   const {
     merged,
     live,
     pdfInfo,
+    setDeskLayoutMode,
     setDeskSnapToGrid,
     setDeskLinkOpenMode,
     setDeskViewport,
@@ -80,6 +93,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
   const transformRef = useRef<PanZoomTransform>(desk.viewport);
   const [viewportSize, setViewportSize] = useState(DEFAULT_VIEWPORT);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [structuredOpen, setStructuredOpen] = useState(false);
 
   // Sync local transform when campaign changes or external viewport update happens
   useEffect(() => {
@@ -96,6 +110,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
     lastX: number;
     lastY: number;
     moved: boolean;
+    edgeSwipeCandidate: boolean;
   } | null>(null);
   const pinchAnchorRef = useRef<PinchAnchor | null>(null);
 
@@ -134,7 +149,11 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
     if (!el) return;
     const onNativeWheel = (e: WheelEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target?.closest('[data-testid="desk-add-card-menu"]')) {
+      if (
+        target?.closest('[data-testid="desk-add-card-menu"]') ||
+        target?.closest('[data-testid="desk-structured-panel"]') ||
+        target?.closest('[data-testid="desk-structured-backdrop"]')
+      ) {
         if (!e.ctrlKey && !e.metaKey) {
           return;
         }
@@ -219,7 +238,9 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
     if (
       target?.closest('[data-testid^="desk-card-"]') ||
       target?.closest('[data-testid="desk-toolbar"]') ||
-      target?.closest('[data-testid="desk-add-card-menu"]')
+      target?.closest('[data-testid="desk-add-card-menu"]') ||
+      target?.closest('[data-testid="desk-structured-panel"]') ||
+      target?.closest('[data-testid="desk-structured-backdrop"]')
     ) {
       return;
     }
@@ -247,6 +268,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
         lastX: localX,
         lastY: localY,
         moved: false,
+        edgeSwipeCandidate: !structuredOpen && localX <= 28,
       };
       pinchAnchorRef.current = null;
     } else if (pointersRef.current.size === 2) {
@@ -273,7 +295,20 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
 
     if (pointersRef.current.size === 1 && singleAnchorRef.current) {
       const anchor = singleAnchorRef.current;
-      const totalDist = Math.hypot(localX - anchor.startX, localY - anchor.startY);
+      const dxFromStart = localX - anchor.startX;
+      const dyFromStart = localY - anchor.startY;
+      if (
+        anchor.edgeSwipeCandidate &&
+        dxFromStart >= 48 &&
+        Math.abs(dxFromStart) > Math.abs(dyFromStart) * 1.2
+      ) {
+        anchor.edgeSwipeCandidate = false;
+        singleAnchorRef.current = null;
+        pointersRef.current.delete(e.pointerId);
+        setStructuredOpen(true);
+        return;
+      }
+      const totalDist = Math.hypot(dxFromStart, dyFromStart);
       if (!anchor.moved && totalDist < PAN_THRESHOLD_PX) {
         return;
       }
@@ -328,6 +363,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
         lastX: pt.x,
         lastY: pt.y,
         moved: true,
+        edgeSwipeCandidate: false,
       };
       pinchAnchorRef.current = null;
     }
@@ -354,7 +390,17 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
         y: spawnY,
       });
     } else if (type === 'sheet') {
-      const firstEntity = merged.entities[0];
+      const soloMask = Boolean(live?.ui?.soloMask);
+      const visibleIds = getSoloVisibleEntityIds({
+        scenes: effectiveScenes,
+        entities: merged.entities,
+        improvisedEntities: live?.improvisedEntities ?? [],
+        visited: live?.visited ?? {},
+        summoned: live?.summoned ?? {},
+        currentSceneId: live?.currentSceneId ?? null,
+        soloMask,
+      });
+      const firstEntity = merged.entities.find((e) => visibleIds.has(e.id));
       addDeskCard({
         type: 'sheet',
         title: firstEntity ? firstEntity.name : 'Character Sheet',
@@ -410,9 +456,17 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
   const handleSpawnSceneCard = (sceneId: string, nearCard: DeskCardRecord) => {
     const effectiveScenes = getEffectiveScenes(merged.scenes, live);
     const scene = effectiveScenes.find((s) => s.id === sceneId);
+    const soloMask = Boolean(live?.ui?.soloMask);
+    const maskedTitle =
+      soloMask &&
+      !isSceneVisitedInLive(sceneId, live?.visited ?? {}, live?.currentSceneId);
     addDeskCard({
       type: 'scene',
-      title: scene ? `${scene.code} · ${scene.title}` : 'Scene',
+      title: maskedTitle
+        ? '??? · Unvisited Scene'
+        : scene
+          ? `${scene.code} · ${scene.title}`
+          : 'Scene',
       targetId: sceneId,
       followCurrentScene: false,
       x: nearCard.x + nearCard.width + 24,
@@ -454,6 +508,61 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
       return;
     }
     onOpenPdfDrawer?.(page);
+  };
+
+  const handleSendToDesk = (req: SendToDeskRequest) => {
+    const existing = desk.cards.find((c) => {
+      if (req.type === 'scene' && req.followCurrentScene) {
+        return c.type === 'scene' && Boolean(c.followCurrentScene);
+      }
+      if (
+        (req.type === 'scene' ||
+          req.type === 'sheet' ||
+          req.type === 'tracker' ||
+          req.type === 'map') &&
+        req.targetId
+      ) {
+        return c.type === req.type && c.targetId === req.targetId;
+      }
+      if (
+        req.type === 'scene-list' ||
+        req.type === 'node-map' ||
+        req.type === 'clocks' ||
+        req.type === 'timeline' ||
+        req.type === 'clue-matrix' ||
+        req.type === 'factions' ||
+        req.type === 'random-tables' ||
+        req.type === 'notes' ||
+        req.type === 'pdf'
+      ) {
+        return c.type === req.type;
+      }
+      return false;
+    });
+
+    if (existing) {
+      if (existing.minimized) {
+        toggleDeskCardMinimized(existing.id);
+      }
+      bringDeskCardToFront(existing.id);
+      return;
+    }
+
+    const cur = transformRef.current;
+    const safeScale = cur.scale > 0 ? cur.scale : 1;
+    const offset = (desk.cards.length * 36) % 216;
+    const spawnX = (420 - cur.x) / safeScale + offset;
+    const spawnY = (72 - cur.y) / safeScale + offset;
+
+    addDeskCard({
+      type: req.type,
+      title: req.title,
+      targetId: req.targetId,
+      followCurrentScene: req.followCurrentScene,
+      pageNumber: req.pageNumber,
+      x: spawnX,
+      y: spawnY,
+    });
   };
 
   const renderCardBodySummary = (card: DeskCardRecord) => {
@@ -516,32 +625,53 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
             }}
           />
         );
-      case 'tracker': {
-        const tracker =
-          merged.trackers.find((t) => t.id === card.targetId) ??
-          merged.trackers[0] ??
-          null;
-        const val = tracker
-          ? (live?.trackerValues?.[tracker.id] ?? tracker.start)
-          : 0;
+      case 'tracker':
         return (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '14px', fontWeight: 600 }}>
-              {tracker ? tracker.label : card.title}
-            </span>
-            <span
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: '20px',
-                fontWeight: 700,
-                color: 'var(--accent)',
-              }}
-            >
-              {val}
-            </span>
-          </div>
+          <DeskTrackerCardBody
+            card={card}
+            onSelectTracker={(trackerId, title) =>
+              setDeskCardTarget(card.id, trackerId, title)
+            }
+          />
         );
-      }
+      case 'scene-list':
+        return (
+          <DeskSceneListCardBody
+            card={card}
+            linkOpenMode={linkOpenMode}
+            onSpawnSceneCard={handleSpawnSceneCard}
+          />
+        );
+      case 'node-map':
+        return (
+          <DeskNodeMapCardBody
+            card={card}
+            linkOpenMode={linkOpenMode}
+            onSpawnSceneCard={handleSpawnSceneCard}
+          />
+        );
+      case 'clocks':
+      case 'timeline':
+      case 'clue-matrix':
+      case 'factions':
+      case 'random-tables':
+        return (
+          <DeskRightSectionCardBody
+            card={card}
+            linkOpenMode={linkOpenMode}
+            onSpawnSceneCard={handleSpawnSceneCard}
+            onSpawnSheetCard={handleSpawnSheetCard}
+            onOpenEntityInspector={(entityId) => onOpenEntityInspector?.(entityId)}
+          />
+        );
+      case 'notes':
+        return (
+          <DeskNotesCardBody
+            card={card}
+            onEditNote={onEditNote}
+            onOpenNoteModal={onOpenNoteModal}
+          />
+        );
       case 'map':
         return (
           <DeskMapCardBody
@@ -567,6 +697,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
       ref={containerRef}
       data-testid="desk-canvas"
       data-snap-to-grid={desk.snapToGrid ? 'true' : 'false'}
+      data-layout-mode={desk.layoutMode}
       data-scale={transform.scale.toFixed(4)}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -601,21 +732,53 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
         }}
       >
         {desk.cards.map((card) => {
-          const effectiveScenes =
+          const soloMask = Boolean(live?.ui?.soloMask);
+          const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+          const activeFollowScene =
             card.type === 'scene' && card.followCurrentScene
-              ? getEffectiveScenes(merged.scenes, live)
+              ? effectiveScenes.find((s) => s.id === live?.currentSceneId) ??
+                effectiveScenes[0] ??
+                null
               : null;
-          const activeFollowScene = effectiveScenes
-            ? effectiveScenes.find((s) => s.id === live?.currentSceneId) ??
-              effectiveScenes[0] ??
-              null
-            : null;
-          const displayCard = activeFollowScene
-            ? {
+
+          let displayCard = card;
+          if (activeFollowScene) {
+            displayCard = {
+              ...card,
+              title: `${activeFollowScene.code} · ${activeFollowScene.title}`,
+            };
+          } else if (
+            soloMask &&
+            card.type === 'scene' &&
+            !card.followCurrentScene &&
+            card.targetId &&
+            !isSceneVisitedInLive(
+              card.targetId,
+              live?.visited ?? {},
+              live?.currentSceneId
+            )
+          ) {
+            displayCard = {
+              ...card,
+              title: '??? · Unvisited Scene',
+            };
+          } else if (soloMask && card.type === 'sheet' && card.targetId) {
+            const visibleEntityIds = getSoloVisibleEntityIds({
+              scenes: effectiveScenes,
+              entities: merged.entities,
+              improvisedEntities: live?.improvisedEntities ?? [],
+              visited: live?.visited ?? {},
+              summoned: live?.summoned ?? {},
+              currentSceneId: live?.currentSceneId ?? null,
+              soloMask: true,
+            });
+            if (!visibleEntityIds.has(card.targetId)) {
+              displayCard = {
                 ...card,
-                title: `${activeFollowScene.code} · ${activeFollowScene.title}`,
-              }
-            : card;
+                title: '??? · Hidden Character',
+              };
+            }
+          }
 
           return (
             <DeskCardShell
@@ -624,6 +787,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
               scale={transform.scale}
               snapToGrid={desk.snapToGrid}
               gridSize={gridSize}
+              locked={desk.layoutMode === 'standard'}
               isMissingTarget={isDeskCardTargetMissing(card, merged, live)}
               onBringToFront={(id) => {
                 if (addMenuOpen) setAddMenuOpen(false);
@@ -685,7 +849,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
           zIndex: 20,
         }}
       >
-        {/* Left group: Add Card + Snap to Grid */}
+        {/* Left group: Structured + Add Card + Layout + Snap + Links */}
         <div
           style={{
             display: 'flex',
@@ -695,6 +859,32 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
             position: 'relative',
           }}
         >
+          <button
+            type="button"
+            data-testid="desk-structured-toggle"
+            aria-expanded={structuredOpen}
+            onClick={() => {
+              setAddMenuOpen(false);
+              setStructuredOpen((v) => !v);
+            }}
+            style={{
+              height: '44px',
+              padding: '0 12px',
+              borderRadius: '10px',
+              border: structuredOpen
+                ? '1px solid var(--accent)'
+                : '1px solid var(--line)',
+              background: structuredOpen ? 'var(--accentBg)' : 'var(--panel)',
+              color: structuredOpen ? 'var(--accent)' : 'var(--text)',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+            }}
+          >
+            Structured
+          </button>
+
           <button
             type="button"
             data-testid="desk-add-card-btn"
@@ -714,6 +904,37 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
             }}
           >
             + Add Card
+          </button>
+
+          <button
+            type="button"
+            data-testid="desk-layout-toggle"
+            aria-pressed={desk.layoutMode === 'standard'}
+            onClick={() =>
+              setDeskLayoutMode(
+                desk.layoutMode === 'standard' ? 'free' : 'standard',
+                getViewportSize()
+              )
+            }
+            style={{
+              height: '44px',
+              padding: '0 12px',
+              borderRadius: '10px',
+              border:
+                desk.layoutMode === 'standard'
+                  ? '1px solid var(--gold)'
+                  : '1px solid var(--line)',
+              background:
+                desk.layoutMode === 'standard' ? 'var(--goldBg)' : 'var(--panel)',
+              color:
+                desk.layoutMode === 'standard' ? 'var(--gold)' : 'var(--text)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+            }}
+          >
+            Layout: {desk.layoutMode === 'standard' ? 'Standard' : 'Free'}
           </button>
 
           <button
@@ -911,6 +1132,14 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Slide-out Structured View Panel */}
+      <DeskStructuredPanel
+        open={structuredOpen}
+        onClose={() => setStructuredOpen(false)}
+        onSendToDesk={handleSendToDesk}
+        onOpenEntityInspector={onOpenEntityInspector}
+      />
     </div>
   );
 };

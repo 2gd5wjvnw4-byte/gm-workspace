@@ -511,4 +511,95 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('persists Desk Standard layoutMode, savedFreeRects, and new content card types across backup round-trip', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { useCampaignStore } = await import('../store/campaignStore');
+      await useCampaignStore.getState().createNewCampaign({
+        title: 'Desk 8f Backup Test Campaign',
+        system: 'Mothership',
+        genre: 'sci-fi',
+      });
+      const campId = useCampaignStore.getState().activeCampaign!.id;
+      await importChunk(sampleRawText, campId);
+      await useCampaignStore.getState().openCampaign(campId);
+      const store = useCampaignStore.getState();
+
+      store.setDeskViewMode('desk');
+      const follow = store.addDeskCard({
+        type: 'scene',
+        title: 'Current Scene',
+        followCurrentScene: true,
+        x: 120,
+        y: 96,
+        width: 540,
+        height: 440,
+      });
+      const tracker = store.addDeskCard({
+        type: 'tracker',
+        title: 'Hull Integrity',
+        targetId: 'tr-hull',
+        x: 720,
+        y: 144,
+        width: 288,
+        height: 192,
+      });
+      const notes = store.addDeskCard({
+        type: 'notes',
+        title: 'Notes',
+        x: 1040,
+        y: 120,
+        width: 340,
+        height: 320,
+      });
+      expect(follow && tracker && notes).toBeTruthy();
+
+      // Switch to Standard layout — snapshots Free rects and rearranges cards
+      useCampaignStore.getState().setDeskLayoutMode('standard', { width: 1180, height: 720 });
+      await vi.advanceTimersByTimeAsync(600);
+
+      const payload = await exportBackup(campId);
+      await deleteCampaign(campId);
+      const restored = await importBackup(JSON.stringify(payload), { mode: 'replace' });
+
+      expect(restored.live.desk?.layoutMode).toBe('standard');
+      expect(restored.live.desk?.savedFreeRects?.[follow!.id]).toEqual({
+        x: 120,
+        y: 96,
+        width: 540,
+        height: 440,
+      });
+      expect(restored.live.desk?.savedFreeRects?.[tracker!.id]).toEqual({
+        x: 720,
+        y: 144,
+        width: 288,
+        height: 192,
+      });
+      expect(restored.live.desk?.cards.map((c) => c.type)).toEqual([
+        'scene',
+        'tracker',
+        'notes',
+      ]);
+
+      // Re-open restored campaign and switch back to Free — exact Free positions restored
+      await useCampaignStore.getState().openCampaign(restored.campaign.id);
+      useCampaignStore.getState().setDeskLayoutMode('free');
+      const freeCards = useCampaignStore.getState().live?.desk?.cards ?? [];
+      expect(freeCards.find((c) => c.id === follow!.id)).toMatchObject({
+        x: 120,
+        y: 96,
+        width: 540,
+        height: 440,
+      });
+      expect(freeCards.find((c) => c.id === tracker!.id)).toMatchObject({
+        x: 720,
+        y: 144,
+        width: 288,
+        height: 192,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -13,6 +13,7 @@ export interface DeskCardShellProps {
   scale: number;
   snapToGrid: boolean;
   gridSize?: number;
+  locked?: boolean;
   isMissingTarget: boolean;
   onBringToFront: (cardId: string) => void;
   onMove: (cardId: string, x: number, y: number) => void;
@@ -49,6 +50,7 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
   scale,
   snapToGrid,
   gridSize = DESK_GRID_SIZE,
+  locked = false,
   isMissingTarget,
   onBringToFront,
   onMove,
@@ -85,6 +87,9 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
     }
     e.stopPropagation();
     onBringToFront(card.id);
+    if (locked) {
+      return;
+    }
     dragRef.current = {
       pointerId: e.pointerId,
       startClientX: e.clientX,
@@ -130,6 +135,7 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
     corner: DeskResizeCorner,
     e: React.PointerEvent<HTMLDivElement>
   ) => {
+    if (locked) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.stopPropagation();
     onBringToFront(card.id);
@@ -194,6 +200,7 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
       data-card-type={card.type}
       data-minimized={card.minimized ? 'true' : 'false'}
       data-flagged={isMissingTarget ? 'true' : 'false'}
+      data-layout-locked={locked ? 'true' : 'false'}
       onPointerDown={(e) => {
         e.stopPropagation();
         onBringToFront(card.id);
@@ -237,7 +244,7 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
           background: 'var(--p2)',
           borderBottom: card.minimized ? 'none' : '1px solid var(--line)',
           borderRadius: card.minimized ? '11px' : '11px 11px 0 0',
-          cursor: activeGesture === 'drag' ? 'grabbing' : 'grab',
+          cursor: locked ? 'default' : activeGesture === 'drag' ? 'grabbing' : 'grab',
           touchAction: 'none',
         }}
       >
@@ -425,6 +432,7 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
 
       {/* 4 Corner Resize Handles (44x44px touch targets) */}
       {!card.minimized &&
+        !locked &&
         CORNERS.map((corner) => {
           const isTop = corner === 'nw' || corner === 'ne';
           const isLeft = corner === 'nw' || corner === 'sw';

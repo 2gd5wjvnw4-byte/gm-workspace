@@ -1,5 +1,6 @@
 import React from 'react';
 import { getEffectiveScenes } from '../lib/improvised';
+import { isSceneVisitedInLive } from '../lib/solo';
 import type {
   DeskCardRecord,
   DeskLinkOpenMode,
@@ -40,6 +41,8 @@ export const DeskSceneCardBody: React.FC<DeskSceneCardBodyProps> = ({
 }) => {
   const { merged, live, goToScene } = useCampaignStore();
   const effectiveScenes = getEffectiveScenes(merged.scenes, live);
+  const visited = live?.visited ?? {};
+  const soloMask = Boolean(live?.ui?.soloMask);
   const globalCurrentScene =
     effectiveScenes.find((s) => s.id === live?.currentSceneId) ??
     effectiveScenes[0] ??
@@ -49,6 +52,18 @@ export const DeskSceneCardBody: React.FC<DeskSceneCardBodyProps> = ({
   const resolvedScene = isFollowing
     ? globalCurrentScene
     : effectiveScenes.find((s) => s.id === card.targetId) ?? null;
+
+  const isPinnedMasked =
+    soloMask &&
+    !isFollowing &&
+    Boolean(resolvedScene) &&
+    !isSceneVisitedInLive(resolvedScene?.id, visited, live?.currentSceneId);
+
+  const selectableScenes = soloMask
+    ? effectiveScenes.filter((s) =>
+        isSceneVisitedInLive(s.id, visited, live?.currentSceneId)
+      )
+    : effectiveScenes;
 
   const handleToggleFollow = () => {
     if (isFollowing) {
@@ -151,7 +166,7 @@ export const DeskSceneCardBody: React.FC<DeskSceneCardBodyProps> = ({
           {isFollowing ? 'Following Current' : 'Pinned Scene'}
         </button>
 
-        {!isFollowing && effectiveScenes.length > 0 && (
+        {!isFollowing && (selectableScenes.length > 0 || isPinnedMasked) && (
           <select
             data-testid={`desk-scene-select-${card.id}`}
             aria-label="Pinned scene"
@@ -171,7 +186,10 @@ export const DeskSceneCardBody: React.FC<DeskSceneCardBodyProps> = ({
               cursor: 'pointer',
             }}
           >
-            {effectiveScenes.map((scene) => (
+            {isPinnedMasked && resolvedScene && (
+              <option value={resolvedScene.id}>??? · Unvisited Scene</option>
+            )}
+            {selectableScenes.map((scene) => (
               <option key={scene.id} value={scene.id}>
                 #{scene.code} · {scene.title}
               </option>
@@ -193,7 +211,54 @@ export const DeskSceneCardBody: React.FC<DeskSceneCardBodyProps> = ({
           background: 'var(--bg)',
         }}
       >
-        {resolvedScene ? (
+        {isPinnedMasked && resolvedScene ? (
+          <div
+            data-testid={`desk-scene-masked-${card.id}`}
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              padding: '20px',
+              textAlign: 'center',
+              color: 'var(--muted)',
+              background:
+                'repeating-linear-gradient(135deg, var(--panel) 0 10px, var(--stripe) 10px 20px)',
+            }}
+          >
+            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--violet)' }}>
+              Unvisited Scene (Solo Mask)
+            </div>
+            <div style={{ fontSize: '13px' }}>
+              Visit this scene to reveal its contents.
+            </div>
+            <button
+              type="button"
+              data-testid={`desk-scene-visit-reveal-${card.id}`}
+              onClick={() => {
+                goToScene(resolvedScene.id);
+                onUpdateCard(card.id, {
+                  title: `${resolvedScene.code} · ${resolvedScene.title}`,
+                });
+              }}
+              style={{
+                height: '44px',
+                padding: '0 14px',
+                borderRadius: '8px',
+                border: '1px solid var(--violetLine)',
+                background: 'var(--violetBg)',
+                color: 'var(--violet)',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Visit &amp; Reveal
+            </button>
+          </div>
+        ) : resolvedScene ? (
           <Center
             mapMode="off"
             embeddedInDesk

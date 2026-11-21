@@ -19,6 +19,7 @@ import {
   type ConnectionOverrideState,
   type DeskCardRecord,
   type DeskCardType,
+  type DeskLayoutMode,
   type DeskLinkOpenMode,
   type DeskViewMode,
   type DispositionState,
@@ -57,9 +58,13 @@ import {
 import {
   bringCardToFront,
   clampDeskCardSize,
+  computeStandardDeskLayout,
   DESK_CARD_CATALOG,
   ensureDeskState,
+  fitAllDeskCards,
+  restoreFreeRects,
   snapToDeskGrid,
+  snapshotFreeRects,
 } from '../lib/desk';
 import { useThemeStore, type ThemeId } from './themeStore';
 
@@ -117,6 +122,10 @@ export interface CampaignStoreState {
   ) => void;
   deletePdfRibbon: (moduleId: string, ribbonId: string) => void;
   setDeskViewMode: (viewMode: DeskViewMode) => void;
+  setDeskLayoutMode: (
+    layoutMode: DeskLayoutMode,
+    viewportSize?: { width: number; height: number }
+  ) => void;
   setDeskLinkOpenMode: (linkOpenMode: DeskLinkOpenMode) => void;
   setDeskSnapToGrid: (snapToGrid: boolean) => void;
   setDeskViewport: (viewport: { x: number; y: number; scale: number }) => void;
@@ -1623,6 +1632,60 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
       });
     },
 
+    setDeskLayoutMode: (layoutMode, viewportSize) => {
+      commitLive((prev) => {
+        const desk = ensureDeskState(prev.desk);
+        if (layoutMode === desk.layoutMode) {
+          if (layoutMode === 'standard') {
+            const arranged = computeStandardDeskLayout(desk.cards);
+            const viewport =
+              viewportSize && arranged.length > 0
+                ? fitAllDeskCards(arranged, viewportSize.width, viewportSize.height, 64)
+                : desk.viewport;
+            return {
+              ...prev,
+              desk: {
+                ...desk,
+                cards: arranged,
+                viewport,
+              },
+            };
+          }
+          return prev;
+        }
+
+        if (layoutMode === 'standard') {
+          const savedFreeRects = snapshotFreeRects(desk.cards, desk.savedFreeRects);
+          const arranged = computeStandardDeskLayout(desk.cards);
+          const viewport =
+            viewportSize && arranged.length > 0
+              ? fitAllDeskCards(arranged, viewportSize.width, viewportSize.height, 64)
+              : desk.viewport;
+          return {
+            ...prev,
+            desk: {
+              ...desk,
+              layoutMode: 'standard',
+              savedFreeRects,
+              cards: arranged,
+              viewport,
+            },
+          };
+        }
+
+        // Switching Standard -> Free: restore exact saved Free rects
+        const restored = restoreFreeRects(desk.cards, desk.savedFreeRects);
+        return {
+          ...prev,
+          desk: {
+            ...desk,
+            layoutMode: 'free',
+            cards: restored,
+          },
+        };
+      });
+    },
+
     setDeskLinkOpenMode: (linkOpenMode) => {
       commitLive((prev) => {
         const desk = ensureDeskState(prev.desk);
@@ -1713,11 +1776,16 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
 
       commitLive((prev) => {
         const curDesk = ensureDeskState(prev.desk);
+        const withAdded = bringCardToFront([...curDesk.cards, newCard], newCard.id);
+        const nextCards =
+          curDesk.layoutMode === 'standard'
+            ? computeStandardDeskLayout(withAdded)
+            : withAdded;
         return {
           ...prev,
           desk: {
             ...curDesk,
-            cards: bringCardToFront([...curDesk.cards, newCard], newCard.id),
+            cards: nextCards,
           },
         };
       });
@@ -1728,6 +1796,9 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
     moveDeskCard: (cardId, x, y) => {
       commitLive((prev) => {
         const desk = ensureDeskState(prev.desk);
+        if (desk.layoutMode === 'standard') {
+          return prev;
+        }
         const snappedX = snapToDeskGrid(x, desk.gridSize, desk.snapToGrid);
         const snappedY = snapToDeskGrid(y, desk.gridSize, desk.snapToGrid);
         return {
@@ -1745,6 +1816,9 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
     resizeDeskCard: (cardId, rect) => {
       commitLive((prev) => {
         const desk = ensureDeskState(prev.desk);
+        if (desk.layoutMode === 'standard') {
+          return prev;
+        }
         const clamped = clampDeskCardSize(rect.width, rect.height);
         return {
           ...prev,
@@ -1782,13 +1856,17 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
     toggleDeskCardMinimized: (cardId) => {
       commitLive((prev) => {
         const desk = ensureDeskState(prev.desk);
+        const toggled = desk.cards.map((c) =>
+          c.id === cardId ? { ...c, minimized: !c.minimized } : c
+        );
         return {
           ...prev,
           desk: {
             ...desk,
-            cards: desk.cards.map((c) =>
-              c.id === cardId ? { ...c, minimized: !c.minimized } : c
-            ),
+            cards:
+              desk.layoutMode === 'standard'
+                ? computeStandardDeskLayout(toggled)
+                : toggled,
           },
         };
       });
@@ -1831,11 +1909,18 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
     removeDeskCard: (cardId) => {
       commitLive((prev) => {
         const desk = ensureDeskState(prev.desk);
+        const remaining = desk.cards.filter((c) => c.id !== cardId);
+        const nextSaved = { ...(desk.savedFreeRects ?? {}) };
+        delete nextSaved[cardId];
         return {
           ...prev,
           desk: {
             ...desk,
-            cards: desk.cards.filter((c) => c.id !== cardId),
+            savedFreeRects: nextSaved,
+            cards:
+              desk.layoutMode === 'standard'
+                ? computeStandardDeskLayout(remaining)
+                : remaining,
           },
         };
       });

@@ -357,6 +357,10 @@ export const App: React.FC = () => {
                   setEditingNote(note);
                   setNoteModalOpen(true);
                 }}
+                onOpenNoteModal={() => {
+                  setEditingNote(null);
+                  setNoteModalOpen(true);
+                }}
                 onOpenMapLibrary={() => setMapLibraryOpen(true)}
               />
             ) : (
