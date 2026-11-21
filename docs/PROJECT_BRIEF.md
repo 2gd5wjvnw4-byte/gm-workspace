@@ -12,7 +12,7 @@ It works for **any genre and any system**: fantasy dungeons, sci-fi derelicts, m
 ## What the app is NOT
 
 - Not a virtual tabletop. No player tokens, no drawing tools, no fog-of-war on map art.
-- Not an AI app. No LLM calls, no generators, no PDF text parsing. All module data comes from the JSON.
+- Not a cloud AI app or PDF parser. No cloud LLM calls and no PDF text parsing. Optional on-demand local-AI gateway help (OpenAI-compatible `POST /v1/chat/completions`) is allowed for text generation only; it never mutates module data, sheets, trackers, clocks, or rolls, obeys Solo Mask, and degrades cleanly when offline. All module data still comes from the JSON.
 - Not a server app. No accounts, no cloud sync, no backend. Everything is local on the device.
 
 ## Platform
