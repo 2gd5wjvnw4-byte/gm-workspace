@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@3d-dice/dice-box": "^1.1.4",
     "@fontsource/alegreya-sans": "^5.1.0",
     "@fontsource/cinzel": "^5.1.0",
     "@fontsource/ibm-plex-mono": "^5.1.0",

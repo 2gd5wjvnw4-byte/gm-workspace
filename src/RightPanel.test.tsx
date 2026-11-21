@@ -506,4 +506,44 @@ describe('RightPanel Phase 5 sections', () => {
       within(screen.getByTestId('section-clocks')).getByRole('button', { name: /CLOCKS/i })
     ).toHaveAttribute('aria-expanded', 'true');
   });
+
+  it('supports Quick Roll presets, compound notation, and 3D Dice toggle', () => {
+    render(<RightPanel />);
+
+    // Quick preset d66
+    fireEvent.click(screen.getByTestId('quick-die-d66'));
+    const quickRes = screen.getByTestId('quick-dice-result');
+    expect(quickRes.textContent).toContain('d66');
+    const logAfterD66 = useCampaignStore.getState().live?.rollLog ?? [];
+    expect(logAfterD66[0]?.tableName).toBe('Quick Roll');
+    expect(logAfterD66[0]?.roll).toBeGreaterThanOrEqual(11);
+    expect(logAfterD66[0]?.roll).toBeLessThanOrEqual(66);
+
+    // Custom compound notation 2d6+1d8+2
+    fireEvent.change(screen.getByTestId('quick-dice-input'), {
+      target: { value: '2d6+1d8+2' },
+    });
+    fireEvent.click(screen.getByTestId('quick-dice-submit'));
+    const logAfterCompound = useCampaignStore.getState().live?.rollLog ?? [];
+    expect(logAfterCompound[0]?.text).toContain('2d6+1d8+2');
+    expect(logAfterCompound[0]?.roll).toBeGreaterThanOrEqual(5);
+    expect(logAfterCompound[0]?.roll).toBeLessThanOrEqual(22);
+
+    // Invalid notation shows error
+    fireEvent.change(screen.getByTestId('quick-dice-input'), {
+      target: { value: 'not-dice' },
+    });
+    fireEvent.click(screen.getByTestId('quick-dice-submit'));
+    expect(screen.getByTestId('quick-dice-error').textContent).toContain('Invalid');
+
+    // 3D Dice toggle switches On <-> Off
+    const toggle = screen.getByTestId('dice-3d-toggle');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(toggle.textContent).toContain('On');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.textContent).toContain('Off');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+  });
 });

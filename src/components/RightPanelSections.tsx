@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { parseRollableTable, rollOnTable } from '../lib/dice';
+import {
+  matchRollToEntry,
+  parseDiceExpression,
+  parseRollableTable,
+  rollOnTable,
+  rollParsedDice,
+} from '../lib/dice';
+import { dice3dController } from '../lib/dice3d';
 import { useFlashConfirm } from '../lib/useFlashConfirm';
 import type {
   ModuleClock,
@@ -867,6 +874,8 @@ export interface RandomTablesSectionProps {
   onAddSceneNote: (sceneId: string, text: string) => void;
 }
 
+const QUICK_DICE_PRESETS = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd66', 'd100'] as const;
+
 export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
   tables,
   rollLog,
@@ -884,17 +893,30 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
         roll: number;
         displayRoll?: number;
         settling?: boolean;
+        rolling3d?: boolean;
         text: string;
         entityId: string | null;
         noteAdded?: boolean;
       }
     >
   >({});
+  const [quickNotation, setQuickNotation] = useState('');
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [quickRolling, setQuickRolling] = useState(false);
+  const [latestQuickRoll, setLatestQuickRoll] = useState<{
+    notation: string;
+    total: number;
+    diceValues: number[];
+    used3d: boolean;
+  } | null>(null);
   const [logOpen, setLogOpen] = useState(false);
   const { flashedIds, triggerFlash } = useFlashConfirm();
   const rollTimersRef = React.useRef<
     Record<string, { interval: ReturnType<typeof setInterval>; timeout: ReturnType<typeof setTimeout> }>
   >({});
+  const quickRollSeqRef = React.useRef(0);
+  const tableRollSeqRef = React.useRef<Record<string, number>>({});
+  const mountedRef = React.useRef(true);
 
   const clearTableTimers = React.useCallback((tableId: string) => {
     const active = rollTimersRef.current[tableId];
@@ -906,7 +928,9 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
   }, []);
 
   React.useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       for (const tableId of Object.keys(rollTimersRef.current)) {
         clearTableTimers(tableId);
       }
@@ -928,6 +952,57 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
     [clearTableTimers]
   );
 
+  const runQuickRoll = React.useCallback(
+    (notationInput: string) => {
+      const trimmed = notationInput.trim();
+      const parsed = parseDiceExpression(trimmed);
+      if (!parsed) {
+        setQuickError('Invalid dice notation');
+        return;
+      }
+      setQuickError(null);
+
+      const finishQuickRoll = (total: number, diceValues: number[], used3d: boolean) => {
+        const breakdown = diceValues.length > 1 ? ` [${diceValues.join(', ')}]` : '';
+        onAppendRollLog({
+          tableId: 'quick-roll',
+          tableName: 'Quick Roll',
+          roll: total,
+          text: `${parsed.raw}${breakdown}`,
+          entityId: null,
+        });
+        if (mountedRef.current) {
+          setQuickRolling(false);
+          setLatestQuickRoll({
+            notation: parsed.raw,
+            total,
+            diceValues,
+            used3d,
+          });
+        }
+      };
+
+      if (!dice3dController.canAttempt3d(parsed.raw)) {
+        const total = rollParsedDice(parsed);
+        finishQuickRoll(total, [total], false);
+        return;
+      }
+
+      const seq = ++quickRollSeqRef.current;
+      setQuickRolling(true);
+      void dice3dController.roll(parsed.raw, { label: `Quick Roll (${parsed.raw})` }).then((res) => {
+        if (!res) {
+          if (mountedRef.current && quickRollSeqRef.current === seq) {
+            setQuickRolling(false);
+          }
+          return;
+        }
+        finishQuickRoll(res.total, res.diceValues, res.used3d);
+      });
+    },
+    [onAppendRollLog]
+  );
+
   const visibleLog = rollLog.slice(0, 10);
 
   return (
@@ -937,11 +1012,141 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
       open={open}
       onToggleOpen={onToggleOpen}
     >
+      <div
+        data-testid="quick-dice-roller"
+        style={{
+          background: 'var(--p2)',
+          border: '1px solid var(--line)',
+          borderRadius: '12px',
+          padding: '10px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: 'var(--mono)',
+            fontSize: '11px',
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: 'var(--muted)',
+          }}
+        >
+          Quick Roll
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px' }}>
+          {QUICK_DICE_PRESETS.map((die) => (
+            <button
+              key={die}
+              type="button"
+              data-testid={`quick-die-${die}`}
+              onClick={() => runQuickRoll(die)}
+              style={{
+                height: '44px',
+                borderRadius: '8px',
+                border: '1px solid var(--line)',
+                background: 'var(--p3)',
+                color: 'var(--text)',
+                fontFamily: 'var(--mono)',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              {die}
+            </button>
+          ))}
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            runQuickRoll(quickNotation);
+          }}
+          style={{ display: 'flex', gap: '6px' }}
+        >
+          <input
+            type="text"
+            data-testid="quick-dice-input"
+            aria-label="Custom dice notation"
+            placeholder="2d6+1d8+2"
+            value={quickNotation}
+            onChange={(e) => {
+              setQuickNotation(e.target.value);
+              if (quickError) setQuickError(null);
+            }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              height: '44px',
+              borderRadius: '8px',
+              border: '1px solid var(--line)',
+              background: 'var(--bg)',
+              color: 'var(--text)',
+              padding: '0 10px',
+              fontFamily: 'var(--mono)',
+              fontSize: '13px',
+            }}
+          />
+          <button
+            type="submit"
+            data-testid="quick-dice-submit"
+            style={{
+              height: '44px',
+              padding: '0 14px',
+              borderRadius: '8px',
+              border: '1px solid var(--accent)',
+              background: 'var(--accentBg)',
+              color: 'var(--accent)',
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: 'pointer',
+            }}
+          >
+            Roll
+          </button>
+        </form>
+        {quickError && (
+          <div
+            data-testid="quick-dice-error"
+            role="alert"
+            style={{ fontSize: '12px', color: 'var(--red)' }}
+          >
+            {quickError}
+          </div>
+        )}
+        {(quickRolling || latestQuickRoll) && (
+          <div
+            data-testid="quick-dice-result"
+            className="gm-tabular"
+            style={{
+              background: 'var(--p3)',
+              border: '1px solid var(--line2)',
+              borderRadius: '8px',
+              padding: '8px 10px',
+              fontFamily: 'var(--mono)',
+              fontSize: '12px',
+              color: 'var(--gold)',
+              fontWeight: 700,
+            }}
+          >
+            {quickRolling
+              ? 'Rolling 3D dice…'
+              : `${latestQuickRoll!.notation} → ${latestQuickRoll!.total}${
+                  latestQuickRoll!.diceValues.length > 1
+                    ? ` [${latestQuickRoll!.diceValues.join(', ')}]`
+                    : ''
+                }`}
+          </div>
+        )}
+      </div>
+
       {tables.length === 0 ? (
         <div style={emptyStateStyle}>No random tables loaded.</div>
       ) : (
         tables.map((table) => {
-          const rollable = parseRollableTable(table.dice, table.entries) !== null;
+          const parsedTable = parseRollableTable(table.dice, table.entries);
+          const rollable = parsedTable !== null;
           const latest = latestByTable[table.id];
 
           return (
@@ -971,9 +1176,76 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      if (!parsedTable) return;
+                      clearTableTimers(table.id);
+
+                      if (dice3dController.canAttempt3d(table.dice)) {
+                        const seq = (tableRollSeqRef.current[table.id] ?? 0) + 1;
+                        tableRollSeqRef.current[table.id] = seq;
+                        setLatestByTable((prev) => ({
+                          ...prev,
+                          [table.id]: {
+                            roll: 0,
+                            settling: true,
+                            rolling3d: true,
+                            text: '',
+                            entityId: null,
+                          },
+                        }));
+
+                        void dice3dController
+                          .roll(table.dice, { label: table.name })
+                          .then((res) => {
+                            if (!res) {
+                              if (mountedRef.current && tableRollSeqRef.current[table.id] === seq) {
+                                setLatestByTable((prev) => {
+                                  const next = { ...prev };
+                                  if (next[table.id]?.rolling3d) {
+                                    delete next[table.id];
+                                  }
+                                  return next;
+                                });
+                              }
+                              return;
+                            }
+                            const finalRoll = res.total;
+                            const matched = matchRollToEntry(
+                              finalRoll,
+                              table.entries,
+                              parsedTable.ranges
+                            );
+                            const text = matched.entry
+                              ? matched.entry.text
+                              : `No matching entry for ${finalRoll}`;
+                            const entityId = matched.entry?.entity_id ?? null;
+
+                            onAppendRollLog({
+                              tableId: table.id,
+                              tableName: table.name,
+                              roll: finalRoll,
+                              text,
+                              entityId,
+                            });
+
+                            if (mountedRef.current) {
+                              setLatestByTable((prev) => ({
+                                ...prev,
+                                [table.id]: {
+                                  roll: finalRoll,
+                                  displayRoll: finalRoll,
+                                  settling: false,
+                                  rolling3d: false,
+                                  text,
+                                  entityId,
+                                },
+                              }));
+                            }
+                          });
+                        return;
+                      }
+
                       const res = rollOnTable(table.dice, table.entries);
                       if (!res) return;
-                      clearTableTimers(table.id);
                       const text = res.entry ? res.entry.text : `No matching entry for ${res.roll}`;
                       const entityId = res.entry?.entity_id ?? null;
                       const reduceMotion =
@@ -1049,7 +1321,7 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                   data-testid={`random-table-result-${table.id}`}
                   data-settling={latest.settling ? 'true' : 'false'}
                   onClick={() => {
-                    if (latest.settling) settleNow(table.id);
+                    if (latest.settling && !latest.rolling3d) settleNow(table.id);
                   }}
                   style={{
                     background: 'var(--p3)',
@@ -1059,16 +1331,18 @@ export const RandomTablesSection: React.FC<RandomTablesSectionProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '6px',
-                    cursor: latest.settling ? 'pointer' : 'default',
+                    cursor: latest.settling && !latest.rolling3d ? 'pointer' : 'default',
                   }}
                 >
                   <div
                     className="gm-tabular"
                     style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: 'var(--gold)', fontWeight: 700 }}
                   >
-                    {latest.settling
-                      ? `Rolling ${latest.displayRoll ?? latest.roll}… (tap to skip)`
-                      : `Rolled ${latest.roll}`}
+                    {latest.rolling3d
+                      ? 'Rolling 3D dice…'
+                      : latest.settling
+                        ? `Rolling ${latest.displayRoll ?? latest.roll}… (tap to skip)`
+                        : `Rolled ${latest.roll}`}
                   </div>
                   {!latest.settling && (
                     <>

@@ -11,6 +11,7 @@ import { ReviewSheet } from './components/ReviewSheet';
 import { NoteOverrideModal } from './components/NoteOverrideModal';
 import { AddSceneModal, type AddModalMode } from './components/AddSceneModal';
 import { DeskCanvas } from './components/DeskCanvas';
+import { DiceOverlay } from './components/DiceOverlay';
 import { NodeMapCanvas } from './components/NodeMapCanvas';
 import { isRunningStandalone, StandaloneBanner } from './components/StandaloneBanner';
 import {
@@ -538,6 +539,7 @@ export const App: React.FC = () => {
           />
         </>
       )}
+      <DiceOverlay />
     </div>
   );
 };

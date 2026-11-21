@@ -8,6 +8,11 @@ import {
   getEffectiveTruths,
 } from '../lib/improvised';
 import { deliverBackupFile } from '../lib/backupShare';
+import {
+  is3dDiceEnabled,
+  set3dDiceEnabled,
+  subscribe3dDicePreference,
+} from '../lib/dice3d';
 import { isSoundEnabled, playTactileClick, setSoundEnabled } from '../lib/sound';
 import { useCampaignStore } from '../store/campaignStore';
 import { AddRightItemModal, type AddRightItemMode } from './AddRightItemModal';
@@ -87,10 +92,15 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     mode: 'clock',
   });
   const [soundClicks, setSoundClicks] = useState<boolean>(() => isSoundEnabled());
+  const [dice3dEnabled, setDice3dEnabledState] = useState<boolean>(() => is3dDiceEnabled());
   const [isCompact, setIsCompact] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1200 : false
   );
   const [overlayOpen, setOverlayOpen] = useState(false);
+
+  useEffect(() => {
+    return subscribe3dDicePreference(setDice3dEnabledState);
+  }, []);
 
   const soloMask = Boolean(live?.ui.soloMask);
   const effectiveScenes = useMemo(
@@ -504,6 +514,33 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           >
             <span>Tactile Clicks</span>
             <span>{soundClicks ? 'On' : 'Off'}</span>
+          </button>
+          <button
+            type="button"
+            data-testid="dice-3d-toggle"
+            aria-pressed={dice3dEnabled}
+            onClick={() => {
+              const next = !dice3dEnabled;
+              setDice3dEnabledState(next);
+              set3dDiceEnabled(next);
+            }}
+            style={{
+              height: '44px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 10px',
+              marginTop: '4px',
+              borderRadius: '10px',
+              fontSize: '13px',
+              fontWeight: 600,
+              border: dice3dEnabled ? '1px solid var(--tealLine)' : '1px solid var(--line)',
+              background: dice3dEnabled ? 'var(--tealBg)' : 'var(--p2)',
+              color: dice3dEnabled ? 'var(--teal)' : 'var(--muted)',
+            }}
+          >
+            <span>3D Dice</span>
+            <span>{dice3dEnabled ? 'On' : 'Off'}</span>
           </button>
         </div>
       </CollapsibleSection>
