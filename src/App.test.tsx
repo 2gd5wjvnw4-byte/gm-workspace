@@ -2175,15 +2175,17 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.click(screen.getByTestId('desk-fit-all'));
     expect(screen.getByTestId('desk-zoom-readout')).toHaveTextContent('100%');
 
-    // G7: Add Card menu spawns cards onto Desk
-    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
-    expect(screen.getByTestId('desk-add-card-menu')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('desk-add-card-option-scene'));
-    expect(screen.queryByTestId('desk-add-card-menu')).not.toBeInTheDocument();
+    // G7: Structured panel spawns cards onto Desk (no + Add Card button)
+    expect(screen.queryByTestId('desk-add-card-btn')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('desk-structured-toggle'));
+    expect(screen.getByTestId('desk-structured-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('send-to-desk-follow-scene'));
     expect(screen.queryByTestId('desk-empty-hint')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
-    fireEvent.click(screen.getByTestId('desk-add-card-option-sheet'));
+    const firstEntity = useCampaignStore.getState().merged.entities[0];
+    fireEvent.click(screen.getByTestId('desk-structured-tab-assets'));
+    fireEvent.click(screen.getByTestId(`send-to-desk-asset-entity-${firstEntity.id}`));
+    fireEvent.click(screen.getByTestId('desk-structured-close'));
 
     const cards = useCampaignStore.getState().live?.desk?.cards ?? [];
     expect(cards).toHaveLength(2);
@@ -2275,13 +2277,13 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(vpAfterBurst.x).toBeCloseTo(vpBeforeBurst.x + 100, 1);
     expect(vpAfterBurst.y).toBeCloseTo(vpBeforeBurst.y + 40, 1);
 
-    // G18: Wheeling over the open Add Card menu lets the menu scroll without panning Desk
-    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
-    const addMenu = screen.getByTestId('desk-add-card-menu');
+    // G18: Wheeling over the open Structured panel lets the panel scroll without panning Desk
+    fireEvent.click(screen.getByTestId('desk-structured-toggle'));
+    const structuredPanel = screen.getByTestId('desk-structured-panel');
     const vpBeforeMenuWheel = { ...useCampaignStore.getState().live!.desk!.viewport };
-    fireEvent.wheel(addMenu, { deltaY: 120, clientX: 120, clientY: 150 });
+    fireEvent.wheel(structuredPanel, { deltaY: 120, clientX: 120, clientY: 150 });
     expect(useCampaignStore.getState().live!.desk!.viewport).toEqual(vpBeforeMenuWheel);
-    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
+    fireEvent.click(screen.getByTestId('desk-structured-close'));
 
     // G5: Fit All frames all open cards inside the viewport
     fireEvent.click(screen.getByTestId('desk-fit-all'));
@@ -2428,10 +2430,16 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       fireEvent.click(screen.getByTestId('desk-view-toggle'));
       expect(await screen.findByTestId('desk-canvas')).toBeInTheDocument();
 
-      // Add a Map card when no maps exist -> shows clean empty state
-      fireEvent.click(screen.getByTestId('desk-add-card-btn'));
-      expect(screen.getByTestId('desk-add-card-option-map')).toBeInTheDocument();
-      fireEvent.click(screen.getByTestId('desk-add-card-option-map'));
+      // A Map card when no maps exist -> shows clean empty state
+      act(() => {
+        useCampaignStore.getState().addDeskCard({
+          type: 'map',
+          title: 'Map',
+          targetId: null,
+          x: 48,
+          y: 72,
+        });
+      });
 
       const emptyMapCard = useCampaignStore
         .getState()
@@ -2461,9 +2469,11 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       expect(mapA).not.toBeNull();
       expect(mapB).not.toBeNull();
 
-      // Add Map card from + Add Card -> defaults to most recently added map (mapB) and renders image + switcher
-      fireEvent.click(screen.getByTestId('desk-add-card-btn'));
-      fireEvent.click(screen.getByTestId('desk-add-card-option-map'));
+      // Add Map card from Structured -> Assets -> renders image + switcher
+      fireEvent.click(screen.getByTestId('desk-structured-toggle'));
+      fireEvent.click(screen.getByTestId('desk-structured-tab-assets'));
+      fireEvent.click(screen.getByTestId(`send-to-desk-map-${mapB!.id}`));
+      fireEvent.click(screen.getByTestId('desk-structured-close'));
 
       const mapCard = useCampaignStore
         .getState()
@@ -2516,31 +2526,37 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.click(screen.getByTestId('desk-view-toggle'));
     expect(await screen.findByTestId('desk-canvas')).toBeInTheDocument();
 
-    // Add first Scene card (defaults to Follow Current)
-    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
-    fireEvent.click(screen.getByTestId('desk-add-card-option-scene'));
-    const cardA = useCampaignStore.getState().live!.desk!.cards.find((c) => c.type === 'scene')!;
+    // Add first Scene card (Follow Current) and second Scene card (Pinned) via Structured panel
+    fireEvent.click(screen.getByTestId('desk-structured-toggle'));
+    fireEvent.click(screen.getByTestId('send-to-desk-follow-scene'));
+    fireEvent.click(screen.getByTestId(`send-to-desk-scene-${firstScene.id}`));
+    fireEvent.click(screen.getByTestId('desk-structured-close'));
+
+    const cardA = useCampaignStore
+      .getState()
+      .live!.desk!.cards.find((c) => c.type === 'scene' && c.followCurrentScene)!;
     expect(cardA.followCurrentScene).toBe(true);
     const bodyA = screen.getByTestId(`desk-scene-card-body-${cardA.id}`);
     expect(within(bodyA).getByText(firstScene.title)).toBeInTheDocument();
 
-    // Add second Scene card, pin it to secondScene -> both scenes render simultaneously
-    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
-    fireEvent.click(screen.getByTestId('desk-add-card-option-scene'));
+    // Switch second Scene card to secondScene via Pinned Scene picker menu -> both scenes render simultaneously
     const cardB = useCampaignStore
       .getState()
       .live!.desk!.cards.filter((c) => c.type === 'scene')
       .find((c) => c.id !== cardA.id)!;
 
-    fireEvent.click(screen.getByTestId(`desk-scene-follow-toggle-${cardB.id}`));
-    const selectB = screen.getByTestId(`desk-scene-select-${cardB.id}`);
-    fireEvent.change(selectB, { target: { value: secondScene.id } });
+    fireEvent.click(screen.getByTestId(`desk-scene-picker-btn-${cardB.id}`));
+    fireEvent.click(screen.getByTestId(`desk-scene-picker-option-${cardB.id}-${secondScene.id}`));
 
     expect(
-      within(screen.getByTestId(`desk-scene-card-body-${cardA.id}`)).getByText(firstScene.title)
+      within(screen.getByTestId(`desk-scene-card-body-${cardA.id}`)).getByRole('heading', {
+        name: firstScene.title,
+      })
     ).toBeInTheDocument();
     expect(
-      within(screen.getByTestId(`desk-scene-card-body-${cardB.id}`)).getByText(secondScene.title)
+      within(screen.getByTestId(`desk-scene-card-body-${cardB.id}`)).getByRole('heading', {
+        name: secondScene.title,
+      })
     ).toBeInTheDocument();
 
     // Default link mode is In place -> tapping an open exit on cardB (secondScene) navigates in-place without adding a card
@@ -2555,9 +2571,8 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     expect(useCampaignStore.getState().live!.desk!.cards.length).toBe(cardCountBeforeInPlace);
 
     // Pin cardB back to secondScene, then switch to Links: New card -> tapping exit, NPC, and Book page spawns new cards
-    fireEvent.change(screen.getByTestId(`desk-scene-select-${cardB.id}`), {
-      target: { value: secondScene.id },
-    });
+    fireEvent.click(screen.getByTestId(`desk-scene-picker-btn-${cardB.id}`));
+    fireEvent.click(screen.getByTestId(`desk-scene-picker-option-${cardB.id}-${secondScene.id}`));
     fireEvent.click(linkToggle);
     expect(linkToggle).toHaveTextContent('Links: New card');
     expect(useCampaignStore.getState().live!.desk!.linkOpenMode).toBe('new-card');
@@ -2638,9 +2653,11 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       fireEvent.click(screen.getByTestId('desk-view-toggle'));
       expect(await screen.findByTestId('desk-canvas')).toBeInTheDocument();
 
-      // Add a PDF card
-      fireEvent.click(screen.getByTestId('desk-add-card-btn'));
-      fireEvent.click(screen.getByTestId('desk-add-card-option-pdf'));
+      // Add a PDF card via Structured -> Assets
+      fireEvent.click(screen.getByTestId('desk-structured-toggle'));
+      fireEvent.click(screen.getByTestId('desk-structured-tab-assets'));
+      fireEvent.click(screen.getByTestId('send-to-desk-pdf'));
+      fireEvent.click(screen.getByTestId('desk-structured-close'));
 
       const pdfCard = useCampaignStore.getState().live!.desk!.cards.find((c) => c.type === 'pdf')!;
       expect(pdfCard).toBeDefined();
@@ -2797,9 +2814,11 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     fireEvent.click(screen.getByTestId('desk-view-toggle'));
     expect(await screen.findByTestId('desk-canvas')).toBeInTheDocument();
 
-    // Add Sheet card
-    fireEvent.click(screen.getByTestId('desk-add-card-btn'));
-    fireEvent.click(screen.getByTestId('desk-add-card-option-sheet'));
+    // Add Sheet card via Structured -> Assets
+    fireEvent.click(screen.getByTestId('desk-structured-toggle'));
+    fireEvent.click(screen.getByTestId('desk-structured-tab-assets'));
+    fireEvent.click(screen.getByTestId(`send-to-desk-asset-entity-${entities[0].id}`));
+    fireEvent.click(screen.getByTestId('desk-structured-close'));
 
     const sheetCard = useCampaignStore.getState().live!.desk!.cards.find((c) => c.type === 'sheet')!;
     expect(sheetCard).toBeDefined();
@@ -2844,5 +2863,191 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       true
     );
     expect(restoredDesk?.cards.some((c) => c.type === 'page' && c.pageNumber === 9)).toBe(true);
+  });
+
+  it('Stage 8f-a: removes + Add Card, matches Pinned Scene picker buttons to Structured View, and adds PDF Go to page', async () => {
+    pdfLib.clearSharedPdfDocumentCache();
+    const loadSpy = vi.spyOn(pdfLib, 'loadPdfDocument').mockResolvedValue({
+      numPages: 20,
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as unknown as pdfLib.PdfDocumentProxy);
+    const renderSpy = vi.spyOn(pdfLib, 'renderPdfPageToCanvas').mockImplementation(() => ({
+      promise: Promise.resolve(),
+      cancel: vi.fn(),
+    }));
+
+    try {
+      const parsedSample = JSON.parse(sampleRawText);
+      parsedSample.meta = { ...parsedSample.meta, page_offset: 2 };
+      const offsetSampleText = JSON.stringify(parsedSample);
+
+      await useCampaignStore.getState().createNewCampaign({
+        title: 'Stage 8f-a Desk Polish Test',
+        system: 'Mothership 1e',
+        genre: 'sci-fi horror',
+      });
+      await useCampaignStore.getState().importJsonChunk(offsetSampleText);
+      const pdfFile = new File([new Uint8Array([1, 2, 3, 4])], 'relay.pdf', {
+        type: 'application/pdf',
+      });
+      await useCampaignStore.getState().attachPdf(pdfFile);
+
+      const scenes = useCampaignStore.getState().merged.scenes;
+      expect(scenes.length).toBeGreaterThanOrEqual(2);
+      const firstScene = scenes[0];
+      const secondScene = scenes[1];
+
+      render(<App />);
+      await screen.findByTestId('zone-topbar');
+
+      // Switch to Desk View
+      fireEvent.click(screen.getByTestId('desk-view-toggle'));
+      expect(await screen.findByTestId('desk-canvas')).toBeInTheDocument();
+
+      // G1: No + Add Card button or menu; empty hint points to Structured
+      expect(screen.queryByTestId('desk-add-card-btn')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('desk-add-card-menu')).not.toBeInTheDocument();
+      expect(screen.getByTestId('desk-empty-hint')).toHaveTextContent('Structured');
+      expect(screen.getByTestId('desk-empty-hint')).not.toHaveTextContent('+ Add Card');
+
+      // G2: Add a pinned scene card and a PDF card via Structured panel
+      fireEvent.click(screen.getByTestId('desk-structured-toggle'));
+      fireEvent.click(screen.getByTestId(`send-to-desk-scene-${firstScene.id}`));
+      fireEvent.click(screen.getByTestId('desk-structured-tab-assets'));
+      fireEvent.click(screen.getByTestId('send-to-desk-pdf'));
+      fireEvent.click(screen.getByTestId('desk-structured-close'));
+
+      const sceneCard = useCampaignStore
+        .getState()
+        .live!.desk!.cards.find((c) => c.type === 'scene')!;
+      const pdfCard = useCampaignStore
+        .getState()
+        .live!.desk!.cards.find((c) => c.type === 'pdf')!;
+      expect(sceneCard).toBeDefined();
+      expect(pdfCard).toBeDefined();
+
+      // G3: Pinned Scene picker uses custom button menu with 44px buttons matching Structured View
+      expect(screen.queryByTestId(`desk-scene-select-${sceneCard.id}`)).not.toBeInTheDocument();
+      const pickerBtn = screen.getByTestId(`desk-scene-picker-btn-${sceneCard.id}`);
+      expect(pickerBtn.style.height).toBe('44px');
+      fireEvent.click(pickerBtn);
+
+      const pickerMenu = screen.getByTestId(`desk-scene-picker-menu-${sceneCard.id}`);
+      expect(pickerMenu).toBeInTheDocument();
+      const optFirst = screen.getByTestId(
+        `desk-scene-picker-option-${sceneCard.id}-${firstScene.id}`
+      );
+      const optSecond = screen.getByTestId(
+        `desk-scene-picker-option-${sceneCard.id}-${secondScene.id}`
+      );
+      expect(optFirst.style.minHeight).toBe('44px');
+      expect(optFirst.style.padding).toBe('6px 10px');
+      expect(optFirst.style.borderRadius).toBe('8px');
+      expect(optSecond.style.minHeight).toBe('44px');
+
+      // G3 & G9: Outside taps on Desk toolbar, same card body, and another Desk card all close the Pinned Scene menu
+      const dispatchPointerDown = (el: Element) => {
+        const ev = new Event('pointerdown', { bubbles: true, cancelable: true });
+        fireEvent(el, ev);
+      };
+      // Tap Desk toolbar
+      dispatchPointerDown(screen.getByTestId('desk-snap-toggle'));
+      expect(screen.queryByTestId(`desk-scene-picker-menu-${sceneCard.id}`)).not.toBeInTheDocument();
+      // Re-open and tap same Scene card body below menu
+      fireEvent.click(pickerBtn);
+      expect(screen.getByTestId(`desk-scene-picker-menu-${sceneCard.id}`)).toBeInTheDocument();
+      dispatchPointerDown(screen.getByTestId(`desk-scene-card-body-${sceneCard.id}`));
+      expect(screen.queryByTestId(`desk-scene-picker-menu-${sceneCard.id}`)).not.toBeInTheDocument();
+      // Re-open and tap another Desk card (the PDF card header)
+      fireEvent.click(pickerBtn);
+      expect(screen.getByTestId(`desk-scene-picker-menu-${sceneCard.id}`)).toBeInTheDocument();
+      dispatchPointerDown(screen.getByTestId(`desk-card-header-${pdfCard.id}`));
+      expect(screen.queryByTestId(`desk-scene-picker-menu-${sceneCard.id}`)).not.toBeInTheDocument();
+
+      // Re-open and pick secondScene -> updates card content/title and closes menu
+      fireEvent.click(pickerBtn);
+      fireEvent.click(
+        screen.getByTestId(`desk-scene-picker-option-${sceneCard.id}-${secondScene.id}`)
+      );
+      expect(screen.queryByTestId(`desk-scene-picker-menu-${sceneCard.id}`)).not.toBeInTheDocument();
+      expect(
+        within(screen.getByTestId(`desk-scene-card-body-${sceneCard.id}`)).getByRole('heading', {
+          name: secondScene.title,
+        })
+      ).toBeInTheDocument();
+      expect(screen.getByTestId(`desk-card-title-${sceneCard.id}`)).toHaveTextContent(
+        secondScene.title
+      );
+
+      // G4 (Solo Mask): Enable Solo Mask -> unvisited secondScene is masked and excluded from selectable options
+      fireEvent.click(screen.getByTestId('solo-mask-toggle'));
+      expect(screen.getByTestId(`desk-scene-masked-${sceneCard.id}`)).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId(`desk-scene-picker-btn-${sceneCard.id}`));
+      expect(
+        screen.queryByTestId(`desk-scene-picker-option-${sceneCard.id}-${secondScene.id}`)
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId(`desk-scene-picker-option-${sceneCard.id}-${firstScene.id}`)
+      ).toBeInTheDocument();
+      // Close menu & turn Solo Mask back off
+      fireEvent.click(screen.getByTestId(`desk-scene-picker-btn-${sceneCard.id}`));
+      fireEvent.click(screen.getByTestId('solo-mask-toggle'));
+
+      // G5: Desk PDF card has a 44px Go to button that opens inline printed-page form
+      await waitFor(() => {
+        expect(screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`)).toHaveTextContent(
+          '/ 20'
+        );
+      });
+      const goToBtn = screen.getByTestId(`desk-pdf-goto-btn-${pdfCard.id}`);
+      expect(goToBtn).toHaveTextContent('Go to');
+      expect(goToBtn.style.height).toBe('44px');
+      fireEvent.click(goToBtn);
+
+      expect(screen.getByTestId(`desk-pdf-goto-form-${pdfCard.id}`)).toBeInTheDocument();
+      const goToInput = screen.getByTestId(`desk-pdf-goto-input-${pdfCard.id}`);
+      const goToSubmit = screen.getByTestId(`desk-pdf-goto-submit-${pdfCard.id}`);
+      const goToCancel = screen.getByTestId(`desk-pdf-goto-cancel-${pdfCard.id}`);
+      expect(goToInput).toBeInTheDocument();
+      expect(goToSubmit).toHaveTextContent('Go');
+      expect(goToCancel).toHaveTextContent('Cancel');
+
+      // Cancel closes form without changing page
+      const pageBeforeCancel = screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`).textContent;
+      fireEvent.change(goToInput, { target: { value: '12' } });
+      fireEvent.click(goToCancel);
+      expect(screen.queryByTestId(`desk-pdf-goto-form-${pdfCard.id}`)).not.toBeInTheDocument();
+      expect(screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`).textContent).toBe(
+        pageBeforeCancel
+      );
+
+      // G6: Submitting printed page 10 with page_offset 2 jumps to printed p.10 (PDF p.12) and closes form
+      fireEvent.click(goToBtn);
+      fireEvent.change(screen.getByTestId(`desk-pdf-goto-input-${pdfCard.id}`), {
+        target: { value: '10' },
+      });
+      fireEvent.click(screen.getByTestId(`desk-pdf-goto-submit-${pdfCard.id}`));
+      expect(screen.queryByTestId(`desk-pdf-goto-form-${pdfCard.id}`)).not.toBeInTheDocument();
+      expect(screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`)).toHaveTextContent(
+        'p.10 / 20'
+      );
+      expect(
+        useCampaignStore.getState().live!.desk!.cards.find((c) => c.id === pdfCard.id)?.pageNumber
+      ).toBe(10);
+
+      // G6 (clamp): Submitting printed page 999 clamps to max PDF page 20 -> printed p.18 (20 - offset 2)
+      fireEvent.click(goToBtn);
+      fireEvent.change(screen.getByTestId(`desk-pdf-goto-input-${pdfCard.id}`), {
+        target: { value: '999' },
+      });
+      fireEvent.click(screen.getByTestId(`desk-pdf-goto-submit-${pdfCard.id}`));
+      expect(screen.getByTestId(`desk-pdf-page-readout-${pdfCard.id}`)).toHaveTextContent(
+        'p.18 / 20'
+      );
+    } finally {
+      loadSpy.mockRestore();
+      renderSpy.mockRestore();
+      pdfLib.clearSharedPdfDocumentCache();
+    }
   });
 });

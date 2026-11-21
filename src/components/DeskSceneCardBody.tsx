@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getEffectiveScenes } from '../lib/improvised';
 import { isSceneVisitedInLive } from '../lib/solo';
+import { playTactileClick } from '../lib/sound';
 import type {
   DeskCardRecord,
   DeskLinkOpenMode,
@@ -64,6 +65,38 @@ export const DeskSceneCardBody: React.FC<DeskSceneCardBodyProps> = ({
         isSceneVisitedInLive(s.id, visited, live?.currentSceneId)
       )
     : effectiveScenes;
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerAreaRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (isFollowing && pickerOpen) {
+      setPickerOpen(false);
+    }
+  }, [isFollowing, pickerOpen]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (
+        pickerAreaRef.current &&
+        !pickerAreaRef.current.contains(e.target as Node)
+      ) {
+        setPickerOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [pickerOpen]);
 
   const handleToggleFollow = () => {
     if (isFollowing) {
@@ -131,16 +164,19 @@ export const DeskSceneCardBody: React.FC<DeskSceneCardBodyProps> = ({
         display: 'flex',
         flexDirection: 'column',
         gap: '8px',
+        position: 'relative',
       }}
     >
       {/* Scene Card Control Bar */}
       <div
+        ref={pickerAreaRef}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
           flexShrink: 0,
           flexWrap: 'wrap',
+          position: 'relative',
         }}
       >
         <button
@@ -167,34 +203,237 @@ export const DeskSceneCardBody: React.FC<DeskSceneCardBodyProps> = ({
         </button>
 
         {!isFollowing && (selectableScenes.length > 0 || isPinnedMasked) && (
-          <select
-            data-testid={`desk-scene-select-${card.id}`}
-            aria-label="Pinned scene"
-            value={resolvedScene?.id ?? ''}
-            onChange={(e) => handleSelectPinnedScene(e.target.value)}
-            style={{
-              flex: 1,
-              minWidth: '140px',
-              height: '44px',
-              padding: '0 10px',
-              borderRadius: '8px',
-              border: '1px solid var(--line)',
-              background: 'var(--bg)',
-              color: 'var(--text)',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {isPinnedMasked && resolvedScene && (
-              <option value={resolvedScene.id}>??? · Unvisited Scene</option>
+          <>
+            <button
+              type="button"
+              data-testid={`desk-scene-picker-btn-${card.id}`}
+              aria-label="Pinned scene"
+              aria-expanded={pickerOpen}
+              aria-haspopup="listbox"
+              onClick={() => {
+                playTactileClick();
+                setPickerOpen((v) => !v);
+              }}
+              style={{
+                flex: 1,
+                minWidth: '140px',
+                height: '44px',
+                padding: '0 10px',
+                borderRadius: '8px',
+                border: pickerOpen
+                  ? '1px solid var(--accent)'
+                  : '1px solid var(--line)',
+                background: 'var(--bg)',
+                color: 'var(--text)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  minWidth: 0,
+                }}
+              >
+                {isPinnedMasked && resolvedScene ? (
+                  <>
+                    <span
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        fontSize: '12px',
+                        color: 'var(--violet)',
+                        flexShrink: 0,
+                      }}
+                    >
+                      ???
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      Unvisited Scene
+                    </span>
+                  </>
+                ) : resolvedScene ? (
+                  <>
+                    <span
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        fontSize: '12px',
+                        color: 'var(--accent)',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {resolvedScene.code}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {resolvedScene.title}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ fontSize: '13px', color: 'var(--muted)' }}>
+                    Pick a scene
+                  </span>
+                )}
+              </span>
+              <span
+                aria-hidden="true"
+                style={{
+                  fontSize: '12px',
+                  color: 'var(--muted)',
+                  flexShrink: 0,
+                }}
+              >
+                {pickerOpen ? '▴' : '▾'}
+              </span>
+            </button>
+
+            {pickerOpen && (
+              <div
+                data-testid={`desk-scene-picker-menu-${card.id}`}
+                role="listbox"
+                aria-label="Pinned scene options"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  right: 0,
+                  maxHeight: '260px',
+                  overflowY: 'auto',
+                  padding: '8px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line2)',
+                  background: 'var(--panel)',
+                  boxShadow: '0 10px 28px rgba(0, 0, 0, 0.4)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  zIndex: 10,
+                  touchAction: 'pan-y',
+                }}
+              >
+                {isPinnedMasked && resolvedScene && (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={true}
+                    disabled
+                    style={{
+                      width: '100%',
+                      minHeight: '44px',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--violetLine)',
+                      background: 'var(--violetBg)',
+                      color: 'var(--violet)',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: 'default',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        fontSize: '12px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      ???
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      Unvisited Scene
+                    </span>
+                  </button>
+                )}
+                {selectableScenes.map((scene) => {
+                  const isSelected = resolvedScene?.id === scene.id;
+                  return (
+                    <button
+                      key={scene.id}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      data-testid={`desk-scene-picker-option-${card.id}-${scene.id}`}
+                      onClick={() => {
+                        playTactileClick();
+                        handleSelectPinnedScene(scene.id);
+                        setPickerOpen(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        minHeight: '44px',
+                        padding: '6px 10px',
+                        borderRadius: '8px',
+                        border: isSelected
+                          ? '1px solid var(--accent)'
+                          : '1px solid var(--line)',
+                        background: isSelected ? 'var(--accentBg)' : 'var(--p2)',
+                        color: 'var(--text)',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: 'var(--mono)',
+                          fontSize: '12px',
+                          color: isSelected ? 'var(--accent)' : 'var(--muted)',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {scene.code}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: isSelected ? 700 : 500,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {scene.title}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             )}
-            {selectableScenes.map((scene) => (
-              <option key={scene.id} value={scene.id}>
-                #{scene.code} · {scene.title}
-              </option>
-            ))}
-          </select>
+          </>
         )}
       </div>
 

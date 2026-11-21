@@ -41,6 +41,8 @@ export const DeskPdfCardBody: React.FC<DeskPdfCardBodyProps> = ({
   const [addRibbonOpen, setAddRibbonOpen] = useState(false);
   const [ribbonLabel, setRibbonLabel] = useState('');
   const [ribbonColor, setRibbonColor] = useState<PdfRibbonColor>('red');
+  const [goToOpen, setGoToOpen] = useState(false);
+  const [goToDraft, setGoToDraft] = useState('');
 
   const swipeStartRef = useRef<{
     pointerId: number;
@@ -136,6 +138,21 @@ export const DeskPdfCardBody: React.FC<DeskPdfCardBodyProps> = ({
     });
     setRibbonLabel('');
     setAddRibbonOpen(false);
+  };
+
+  const handleGoToSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = Number.parseInt(goToDraft.trim(), 10);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+    const targetPdf = printedToPdfPage(
+      parsed,
+      pageOffset,
+      numPages > 0 ? numPages : undefined
+    );
+    goToPdfPage(targetPdf);
+    setGoToOpen(false);
   };
 
   if (!hasBlob && !loading) {
@@ -243,7 +260,34 @@ export const DeskPdfCardBody: React.FC<DeskPdfCardBodyProps> = ({
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            data-testid={`desk-pdf-goto-btn-${card.id}`}
+            aria-expanded={goToOpen}
+            disabled={!doc}
+            onClick={() => {
+              setGoToDraft(String(displayPrintedPage));
+              setGoToOpen((v) => !v);
+              setRibbonsOpen(false);
+              setAddRibbonOpen(false);
+            }}
+            style={{
+              height: '44px',
+              padding: '0 10px',
+              borderRadius: '8px',
+              border: goToOpen ? '1px solid var(--accent)' : '1px solid var(--line)',
+              background: goToOpen ? 'var(--accentBg)' : 'var(--p2)',
+              color: !doc ? 'var(--faint)' : goToOpen ? 'var(--accent)' : 'var(--text)',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: !doc ? 'default' : 'pointer',
+              opacity: !doc ? 0.5 : 1,
+            }}
+          >
+            Go to
+          </button>
+
           <button
             type="button"
             data-testid={`desk-pdf-ribbons-btn-${card.id}`}
@@ -251,6 +295,7 @@ export const DeskPdfCardBody: React.FC<DeskPdfCardBodyProps> = ({
             onClick={() => {
               setRibbonsOpen((v) => !v);
               setAddRibbonOpen(false);
+              setGoToOpen(false);
             }}
             style={{
               height: '44px',
@@ -287,6 +332,87 @@ export const DeskPdfCardBody: React.FC<DeskPdfCardBodyProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Inline Go to page form */}
+      {goToOpen && (
+        <form
+          onSubmit={handleGoToSubmit}
+          data-testid={`desk-pdf-goto-form-${card.id}`}
+          style={{
+            padding: '8px 10px',
+            borderRadius: '8px',
+            border: '1px solid var(--line2)',
+            background: 'var(--p2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            flexWrap: 'wrap',
+            flexShrink: 0,
+          }}
+        >
+          <label
+            htmlFor={`desk-pdf-goto-input-${card.id}`}
+            style={{ fontSize: '12px', fontWeight: 600, color: 'var(--muted)' }}
+          >
+            Printed page:
+          </label>
+          <input
+            id={`desk-pdf-goto-input-${card.id}`}
+            data-testid={`desk-pdf-goto-input-${card.id}`}
+            type="number"
+            inputMode="numeric"
+            value={goToDraft}
+            onChange={(e) => setGoToDraft(e.target.value)}
+            placeholder={String(displayPrintedPage)}
+            style={{
+              width: '84px',
+              height: '44px',
+              padding: '0 10px',
+              borderRadius: '8px',
+              border: '1px solid var(--line)',
+              background: 'var(--bg)',
+              color: 'var(--text)',
+              fontFamily: 'var(--mono)',
+              fontSize: '13px',
+            }}
+          />
+          <button
+            type="submit"
+            data-testid={`desk-pdf-goto-submit-${card.id}`}
+            style={{
+              height: '44px',
+              padding: '0 14px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'var(--accent)',
+              color: 'var(--onAccent)',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Go
+          </button>
+          <button
+            type="button"
+            data-testid={`desk-pdf-goto-cancel-${card.id}`}
+            onClick={() => setGoToOpen(false)}
+            style={{
+              height: '44px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--line)',
+              background: 'var(--p3)',
+              color: 'var(--text)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+        </form>
+      )}
 
       {/* Inline Ribbons Menu */}
       {ribbonsOpen && (

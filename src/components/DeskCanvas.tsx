@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   computeDeskPdfRenderWidth,
-  DESK_CARD_CATALOG,
   DESK_GRID_SIZE,
   DESK_MAX_ZOOM,
   DESK_MIN_ZOOM,
@@ -22,7 +21,7 @@ import {
   zoomAtPoint,
 } from '../lib/panzoom';
 import { useCampaignStore } from '../store/campaignStore';
-import type { DeskCardRecord, DeskCardType, TableNote } from '../storage/types';
+import type { DeskCardRecord, TableNote } from '../storage/types';
 import { DeskCardShell } from './DeskCardShell';
 import { DeskMapCardBody } from './DeskMapCardBody';
 import { DeskNodeMapCardBody } from './DeskNodeMapCardBody';
@@ -38,7 +37,6 @@ import {
   type SendToDeskRequest,
 } from './DeskStructuredPanel';
 import { DeskTrackerCardBody } from './DeskTrackerCardBody';
-import { resolveActiveMap } from './MapArea';
 
 export interface DeskCanvasProps {
   onOpenPdfDrawer?: (printedPage?: number) => void;
@@ -72,7 +70,6 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
   const {
     merged,
     live,
-    pdfInfo,
     setDeskLayoutMode,
     setDeskSnapToGrid,
     setDeskLinkOpenMode,
@@ -92,7 +89,6 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
   const [transform, setTransform] = useState<PanZoomTransform>(desk.viewport);
   const transformRef = useRef<PanZoomTransform>(desk.viewport);
   const [viewportSize, setViewportSize] = useState(DEFAULT_VIEWPORT);
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [structuredOpen, setStructuredOpen] = useState(false);
 
   // Sync local transform when campaign changes or external viewport update happens
@@ -150,7 +146,6 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
     const onNativeWheel = (e: WheelEvent) => {
       const target = e.target as HTMLElement | null;
       if (
-        target?.closest('[data-testid="desk-add-card-menu"]') ||
         target?.closest('[data-testid="desk-structured-panel"]') ||
         target?.closest('[data-testid="desk-structured-backdrop"]')
       ) {
@@ -238,15 +233,10 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
     if (
       target?.closest('[data-testid^="desk-card-"]') ||
       target?.closest('[data-testid="desk-toolbar"]') ||
-      target?.closest('[data-testid="desk-add-card-menu"]') ||
       target?.closest('[data-testid="desk-structured-panel"]') ||
       target?.closest('[data-testid="desk-structured-backdrop"]')
     ) {
       return;
-    }
-
-    if (addMenuOpen) {
-      setAddMenuOpen(false);
     }
 
     const rect = containerRef.current?.getBoundingClientRect();
@@ -367,90 +357,6 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
       };
       pinchAnchorRef.current = null;
     }
-  };
-
-  const handleAddCardType = (type: DeskCardType) => {
-    const effectiveScenes = getEffectiveScenes(merged.scenes, live);
-    const currentScene =
-      effectiveScenes.find((s) => s.id === live?.currentSceneId) ??
-      effectiveScenes[0] ??
-      null;
-    const cur = transformRef.current;
-    const safeScale = cur.scale > 0 ? cur.scale : 1;
-    const offset = (desk.cards.length * 36) % 216;
-    const spawnX = (48 - cur.x) / safeScale + offset;
-    const spawnY = (72 - cur.y) / safeScale + offset;
-
-    if (type === 'scene') {
-      addDeskCard({
-        type: 'scene',
-        title: currentScene ? `${currentScene.code} · ${currentScene.title}` : 'Current Scene',
-        followCurrentScene: true,
-        x: spawnX,
-        y: spawnY,
-      });
-    } else if (type === 'sheet') {
-      const soloMask = Boolean(live?.ui?.soloMask);
-      const visibleIds = getSoloVisibleEntityIds({
-        scenes: effectiveScenes,
-        entities: merged.entities,
-        improvisedEntities: live?.improvisedEntities ?? [],
-        visited: live?.visited ?? {},
-        summoned: live?.summoned ?? {},
-        currentSceneId: live?.currentSceneId ?? null,
-        soloMask,
-      });
-      const firstEntity = merged.entities.find((e) => visibleIds.has(e.id));
-      addDeskCard({
-        type: 'sheet',
-        title: firstEntity ? firstEntity.name : 'Character Sheet',
-        targetId: firstEntity?.id ?? null,
-        x: spawnX,
-        y: spawnY,
-      });
-    } else if (type === 'tracker') {
-      const firstTracker = merged.trackers[0];
-      addDeskCard({
-        type: 'tracker',
-        title: firstTracker ? firstTracker.label : 'Tracker',
-        targetId: firstTracker?.id ?? null,
-        x: spawnX,
-        y: spawnY,
-      });
-    } else if (type === 'pdf') {
-      addDeskCard({
-        type: 'pdf',
-        title: pdfInfo ? pdfInfo.fileName : 'Source PDF',
-        pageNumber: currentScene?.page ?? 1,
-        x: spawnX,
-        y: spawnY,
-      });
-    } else if (type === 'page') {
-      addDeskCard({
-        type: 'page',
-        title: `PDF Page ${currentScene?.page ?? 1}`,
-        pageNumber: currentScene?.page ?? 1,
-        x: spawnX,
-        y: spawnY,
-      });
-    } else if (type === 'map') {
-      const activeMap = resolveActiveMap({
-        maps: live?.maps ?? [],
-        sceneMap: live?.sceneMap ?? {},
-        currentSceneId: live?.currentSceneId ?? null,
-        lastMapId: live?.ui?.lastMapId ?? null,
-      });
-      addDeskCard({
-        type: 'map',
-        title: activeMap ? activeMap.name : 'Map',
-        targetId: activeMap?.id ?? null,
-        x: spawnX,
-        y: spawnY,
-      });
-    } else {
-      addDeskCard({ type, x: spawnX, y: spawnY });
-    }
-    setAddMenuOpen(false);
   };
 
   const handleSpawnSceneCard = (sceneId: string, nearCard: DeskCardRecord) => {
@@ -790,7 +696,6 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
               locked={desk.layoutMode === 'standard'}
               isMissingTarget={isDeskCardTargetMissing(card, merged, live)}
               onBringToFront={(id) => {
-                if (addMenuOpen) setAddMenuOpen(false);
                 bringDeskCardToFront(id);
               }}
               onMove={moveDeskCard}
@@ -828,7 +733,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
               textAlign: 'center',
             }}
           >
-            Your Desk is clear. Tap <strong>+ Add Card</strong> to lay out scenes, sheets, PDF pages, and tools.
+            Your Desk is clear. Tap <strong>Structured</strong> to lay out scenes, sheets, PDF pages, and tools.
           </div>
         </div>
       )}
@@ -849,7 +754,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
           zIndex: 20,
         }}
       >
-        {/* Left group: Structured + Add Card + Layout + Snap + Links */}
+        {/* Left group: Structured + Layout + Snap + Links */}
         <div
           style={{
             display: 'flex',
@@ -863,47 +768,23 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
             type="button"
             data-testid="desk-structured-toggle"
             aria-expanded={structuredOpen}
-            onClick={() => {
-              setAddMenuOpen(false);
-              setStructuredOpen((v) => !v);
-            }}
-            style={{
-              height: '44px',
-              padding: '0 12px',
-              borderRadius: '10px',
-              border: structuredOpen
-                ? '1px solid var(--accent)'
-                : '1px solid var(--line)',
-              background: structuredOpen ? 'var(--accentBg)' : 'var(--panel)',
-              color: structuredOpen ? 'var(--accent)' : 'var(--text)',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
-            }}
-          >
-            Structured
-          </button>
-
-          <button
-            type="button"
-            data-testid="desk-add-card-btn"
-            aria-expanded={addMenuOpen}
-            onClick={() => setAddMenuOpen((v) => !v)}
+            onClick={() => setStructuredOpen((v) => !v)}
             style={{
               height: '44px',
               padding: '0 14px',
               borderRadius: '10px',
-              border: '1px solid var(--accent)',
-              background: 'var(--accent)',
-              color: 'var(--onAccent)',
+              border: structuredOpen
+                ? '1px solid var(--accent)'
+                : '1px solid var(--accent)',
+              background: structuredOpen ? 'var(--accentBg)' : 'var(--accent)',
+              color: structuredOpen ? 'var(--accent)' : 'var(--onAccent)',
               fontSize: '13px',
               fontWeight: 700,
               cursor: 'pointer',
               boxShadow: '0 4px 14px rgba(0, 0, 0, 0.28)',
             }}
           >
-            + Add Card
+            Structured
           </button>
 
           <button
@@ -985,66 +866,6 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
           >
             Links: {linkOpenMode === 'new-card' ? 'New card' : 'In place'}
           </button>
-
-          {addMenuOpen && (
-            <div
-              data-testid="desk-add-card-menu"
-              role="menu"
-              style={{
-                position: 'absolute',
-                top: '52px',
-                left: 0,
-                width: '260px',
-                maxHeight: '420px',
-                overflowY: 'auto',
-                background: 'var(--panel)',
-                border: '1px solid var(--line2)',
-                borderRadius: '12px',
-                padding: '6px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px',
-                boxShadow: '0 12px 32px rgba(0, 0, 0, 0.45)',
-                zIndex: 30,
-              }}
-            >
-              {DESK_CARD_CATALOG.map((item) => (
-                <button
-                  key={item.type}
-                  type="button"
-                  role="menuitem"
-                  data-testid={`desk-add-card-option-${item.type}`}
-                  onClick={() => handleAddCardType(item.type)}
-                  style={{
-                    minHeight: '44px',
-                    padding: '0 12px',
-                    borderRadius: '8px',
-                    border: '1px solid transparent',
-                    background: 'var(--p2)',
-                    color: 'var(--text)',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    textAlign: 'left',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span>{item.label}</span>
-                  <span
-                    style={{
-                      fontFamily: 'var(--mono)',
-                      fontSize: '11px',
-                      color: 'var(--muted)',
-                    }}
-                  >
-                    +
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Right group: Zoom -, %, +, Fit All */}
