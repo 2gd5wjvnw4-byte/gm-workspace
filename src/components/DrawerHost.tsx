@@ -1,12 +1,14 @@
 import React from 'react';
 import { EntitySheetContent } from './EntitySheetContent';
 import { PdfDrawerContent } from './PdfDrawerContent';
+import { PlayerSheetView } from './PlayerSheetView';
 
-export type DrawerMode = 'pdf' | 'entity' | null;
+export type DrawerMode = 'pdf' | 'entity' | 'player-sheet' | null;
 
 export interface DrawerHostProps {
   activeDrawer: DrawerMode;
   inspectedEntityId?: string | null;
+  inspectedPlayerSheetId?: string | null;
   requestedPdfPage?: number | null;
   pdfOpenSeq?: number;
   onOpenPdfPage?: (printedPage: number) => void;
@@ -16,6 +18,7 @@ export interface DrawerHostProps {
 export const DrawerHost: React.FC<DrawerHostProps> = ({
   activeDrawer,
   inspectedEntityId = null,
+  inspectedPlayerSheetId = null,
   requestedPdfPage = null,
   pdfOpenSeq = 0,
   onOpenPdfPage,
@@ -23,8 +26,9 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
 }) => {
   const isPdf = activeDrawer === 'pdf';
   const isEntity = activeDrawer === 'entity';
-  const width = isPdf ? '480px' : '420px';
-  const isOpen = isPdf || isEntity;
+  const isPlayerSheet = activeDrawer === 'player-sheet';
+  const width = isPdf || isPlayerSheet ? '480px' : '420px';
+  const isOpen = isPdf || isEntity || isPlayerSheet;
 
   return (
     <>
@@ -76,6 +80,15 @@ export const DrawerHost: React.FC<DrawerHostProps> = ({
             onClose={onClose}
             onOpenPdfPage={onOpenPdfPage}
             testIdPrefix="inspector"
+          />
+        )}
+
+        {isPlayerSheet && (
+          <PlayerSheetView
+            sheetId={inspectedPlayerSheetId}
+            showCloseButton
+            onClose={onClose}
+            testIdPrefix="drawer-player-sheet"
           />
         )}
       </div>

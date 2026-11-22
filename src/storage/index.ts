@@ -140,6 +140,10 @@ export function pdfBlobKey(moduleId: string): string {
   return `pdf:${moduleId}`;
 }
 
+export function playerSheetBlobKey(campaignId: string, sheetId: string): string {
+  return `sheet:${campaignId}:${sheetId}`;
+}
+
 export async function putBlob(
   key: string,
   data: Blob | Uint8Array | string,
@@ -331,11 +335,17 @@ export async function deleteCampaign(campaignId: string): Promise<void> {
 
   await db.transaction('rw', db.campaigns, db.chunks, db.live, db.blobs, async () => {
     const live = pending?.state ?? (await db.live.get(campaignId));
+    const blobKeys: string[] = [];
     if (live?.maps && live.maps.length > 0) {
-      const blobKeys = live.maps.map((m) => m.blobKey).filter(Boolean);
-      if (blobKeys.length > 0) {
-        await db.blobs.bulkDelete(blobKeys);
+      blobKeys.push(...live.maps.map((m) => m.blobKey).filter(Boolean));
+    }
+    if (live?.playerSheets && live.playerSheets.length > 0) {
+      for (const sheet of live.playerSheets) {
+        if (sheet.blobKey) blobKeys.push(sheet.blobKey);
       }
+    }
+    if (blobKeys.length > 0) {
+      await db.blobs.bulkDelete(blobKeys);
     }
     await db.chunks.where('campaignId').equals(campaignId).delete();
     await db.live.delete(campaignId);
@@ -428,6 +438,12 @@ export function parseBackupPayload(backupJsonText: string): BackupPayload {
   if (obj.maps !== undefined && (typeof obj.maps !== 'object' || obj.maps === null || Array.isArray(obj.maps))) {
     throw new Error('Invalid backup file: maps must be an object.');
   }
+  if (
+    obj.sheetBlobs !== undefined &&
+    (typeof obj.sheetBlobs !== 'object' || obj.sheetBlobs === null || Array.isArray(obj.sheetBlobs))
+  ) {
+    throw new Error('Invalid backup file: sheetBlobs must be an object.');
+  }
 
   return {
     format: 'gm-workspace-backup',
@@ -437,6 +453,9 @@ export function parseBackupPayload(backupJsonText: string): BackupPayload {
     chunks: obj.chunks as ChunkRecord[],
     live: obj.live as LiveState,
     maps: (obj.maps as Record<string, string> | undefined) ?? {},
+    ...(obj.sheetBlobs !== undefined
+      ? { sheetBlobs: obj.sheetBlobs as Record<string, string> }
+      : {}),
   };
 }
 
@@ -470,6 +489,15 @@ export async function exportBackup(campaignId: string): Promise<BackupPayload> {
     }
   }
 
+  const sheetBlobs: Record<string, string> = {};
+  for (const sheet of live.playerSheets ?? []) {
+    if (!sheet.blobKey) continue;
+    const blob = await db.blobs.get(sheet.blobKey);
+    if (blob) {
+      sheetBlobs[sheet.blobKey] = await blobDataToBase64(blob.data, blob.mimeType);
+    }
+  }
+
   const now = Date.now();
   const updatedCampaign: CampaignRecord = {
     ...campaign,
@@ -485,6 +513,7 @@ export async function exportBackup(campaignId: string): Promise<BackupPayload> {
     chunks,
     live,
     maps,
+    ...(Object.keys(sheetBlobs).length > 0 ? { sheetBlobs } : {}),
   };
 }
 
@@ -513,7 +542,7 @@ export async function importBackup(
     campaignId: targetCampaignId,
   }));
 
-  // Remap map blobKeys when restoring as a new campaign so deleting one doesn't wipe the other's blobs
+  // Remap map and player-sheet blobKeys when restoring as a new campaign so deleting one doesn't wipe the other's blobs
   const blobKeyMap = new Map<string, string>();
   const restoredMapsMeta = (payload.live.maps ?? []).map((m) => {
     if (mode === 'new') {
@@ -525,20 +554,39 @@ export async function importBackup(
     return m;
   });
 
+  const sheetBlobKeyMap = new Map<string, string>();
+  const restoredPlayerSheets = (payload.live.playerSheets ?? []).map((sheet) => {
+    if (!sheet.blobKey) return sheet;
+    if (mode === 'new') {
+      const nextKey = playerSheetBlobKey(targetCampaignId, sheet.id);
+      sheetBlobKeyMap.set(sheet.blobKey, nextKey);
+      return { ...sheet, blobKey: nextKey };
+    }
+    sheetBlobKeyMap.set(sheet.blobKey, sheet.blobKey);
+    return sheet;
+  });
+
   const restoredLive: LiveState = {
     ...payload.live,
     campaignId: targetCampaignId,
     maps: restoredMapsMeta,
+    playerSheets: restoredPlayerSheets,
   };
 
   await db.transaction('rw', db.campaigns, db.chunks, db.live, db.blobs, async () => {
     if (mode === 'replace') {
       const prevLive = await db.live.get(targetCampaignId);
+      const oldKeys: string[] = [];
       if (prevLive?.maps && prevLive.maps.length > 0) {
-        const oldKeys = prevLive.maps.map((m) => m.blobKey).filter(Boolean);
-        if (oldKeys.length > 0) {
-          await db.blobs.bulkDelete(oldKeys);
+        oldKeys.push(...prevLive.maps.map((m) => m.blobKey).filter(Boolean));
+      }
+      if (prevLive?.playerSheets && prevLive.playerSheets.length > 0) {
+        for (const sheet of prevLive.playerSheets) {
+          if (sheet.blobKey) oldKeys.push(sheet.blobKey);
         }
+      }
+      if (oldKeys.length > 0) {
+        await db.blobs.bulkDelete(oldKeys);
       }
       await db.chunks.where('campaignId').equals(targetCampaignId).delete();
       await db.live.delete(targetCampaignId);
@@ -554,6 +602,18 @@ export async function importBackup(
     const now = Date.now();
     for (const [origKey, encoded] of Object.entries(payload.maps ?? {})) {
       const destKey = blobKeyMap.get(origKey) ?? (mode === 'new' ? `map:${targetCampaignId}:${origKey}` : origKey);
+      const { bytes, mimeType } = base64ToBlobData(encoded);
+      await db.blobs.put({
+        key: destKey,
+        data: bytes,
+        mimeType,
+        updatedAt: now,
+      });
+    }
+    for (const [origKey, encoded] of Object.entries(payload.sheetBlobs ?? {})) {
+      const destKey =
+        sheetBlobKeyMap.get(origKey) ??
+        (mode === 'new' ? `sheet:${targetCampaignId}:${origKey}` : origKey);
       const { bytes, mimeType } = base64ToBlobData(encoded);
       await db.blobs.put({
         key: destKey,

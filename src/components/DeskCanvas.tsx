@@ -47,6 +47,7 @@ export interface DeskCanvasProps {
   onEditNote?: (note: TableNote) => void;
   onOpenNoteModal?: () => void;
   onOpenMapLibrary?: () => void;
+  onOpenAddPlayerSheet?: () => void;
 }
 
 interface ActivePointer {
@@ -69,6 +70,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
   onEditNote,
   onOpenNoteModal,
   onOpenMapLibrary,
+  onOpenAddPlayerSheet,
 }) => {
   const {
     merged,
@@ -734,6 +736,8 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
         return (
           <DeskSheetCardBody
             card={card}
+            isVisible={isCardVisible}
+            renderWidth={pdfRenderWidth}
             onSelectEntity={(entityId, title) => setDeskCardTarget(card.id, entityId, title)}
             onOpenPdfPage={(printedPage) => {
               if (linkOpenMode === 'new-card') {
@@ -886,20 +890,25 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
               title: '??? · Unvisited Scene',
             };
           } else if (soloMask && card.type === 'sheet' && card.targetId) {
-            const visibleEntityIds = getSoloVisibleEntityIds({
-              scenes: effectiveScenes,
-              entities: merged.entities,
-              improvisedEntities: live?.improvisedEntities ?? [],
-              visited: live?.visited ?? {},
-              summoned: live?.summoned ?? {},
-              currentSceneId: live?.currentSceneId ?? null,
-              soloMask: true,
-            });
-            if (!visibleEntityIds.has(card.targetId)) {
-              displayCard = {
-                ...card,
-                title: '??? · Hidden Character',
-              };
+            const isPlayerSheet = (live?.playerSheets ?? []).some(
+              (s) => s.id === card.targetId
+            );
+            if (!isPlayerSheet) {
+              const visibleEntityIds = getSoloVisibleEntityIds({
+                scenes: effectiveScenes,
+                entities: merged.entities,
+                improvisedEntities: live?.improvisedEntities ?? [],
+                visited: live?.visited ?? {},
+                summoned: live?.summoned ?? {},
+                currentSceneId: live?.currentSceneId ?? null,
+                soloMask: true,
+              });
+              if (!visibleEntityIds.has(card.targetId)) {
+                displayCard = {
+                  ...card,
+                  title: '??? · Hidden Character',
+                };
+              }
             }
           }
 
@@ -1279,6 +1288,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
         onClose={() => setStructuredOpen(false)}
         onSendToDesk={handleSendToDesk}
         onOpenEntityInspector={onOpenEntityInspector}
+        onOpenAddPlayerSheet={onOpenAddPlayerSheet}
       />
     </div>
   );

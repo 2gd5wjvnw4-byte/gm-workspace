@@ -68,6 +68,32 @@ export interface MapAssetRecord {
   scale?: MapScale;
 }
 
+export type PlayerSheetKind = 'prebuilt' | 'image' | 'pdf';
+
+export interface PlayerSheetTrack {
+  id: string;
+  label: string;
+  current: number;
+  max: number;
+}
+
+export interface PlayerSheetRecord {
+  id: string;
+  kind: PlayerSheetKind;
+  name: string;
+  role?: string;
+  statLine?: string;
+  tracks?: PlayerSheetTrack[];
+  notes?: string;
+  blobKey?: string;
+  fileName?: string;
+  mimeType?: string;
+  pageCount?: number;
+  currentPage?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ScenePin {
   mapId: string;
   xPct: number;
@@ -202,6 +228,7 @@ export interface LiveState {
   looseNotes: TableNote[];
   nodePositions: Record<string, { x: number; y: number }>;
   maps: MapAssetRecord[];
+  playerSheets?: PlayerSheetRecord[];
   pins: Record<string, ScenePin>;
   sceneMap: Record<string, string>;
   pdfRibbons?: Record<string, PdfRibbon[]>;
@@ -242,6 +269,7 @@ export interface BackupPayload {
   chunks: ChunkRecord[];
   live: LiveState;
   maps: Record<string, string>;
+  sheetBlobs?: Record<string, string>;
 }
 
 export interface ImportedBackupResult extends LoadedCampaign {
@@ -277,6 +305,7 @@ export function createDefaultLiveState(campaignId: string, theme: ThemeId = 'sci
     looseNotes: [],
     nodePositions: {},
     maps: [],
+    playerSheets: [],
     pins: {},
     sceneMap: {},
     pdfRibbons: {},

@@ -12,6 +12,7 @@ import {
   getSoloVisibleEntityIds,
 } from '../lib/solo';
 import { playTactileClick } from '../lib/sound';
+import { playerSheetKindLabel } from '../lib/playerSheets';
 import type { DeskCardType } from '../storage/types';
 import { useCampaignStore } from '../store/campaignStore';
 
@@ -28,6 +29,7 @@ export interface DeskStructuredPanelProps {
   onClose: () => void;
   onSendToDesk: (req: SendToDeskRequest) => void;
   onOpenEntityInspector?: (entityId: string) => void;
+  onOpenAddPlayerSheet?: () => void;
 }
 
 type StructuredTab = 'scenes' | 'tools' | 'assets';
@@ -37,6 +39,7 @@ export const DeskStructuredPanel: React.FC<DeskStructuredPanelProps> = ({
   onClose,
   onSendToDesk,
   onOpenEntityInspector,
+  onOpenAddPlayerSheet,
 }) => {
   const { merged, live, pdfInfo, goToScene } = useCampaignStore();
   const [tab, setTab] = useState<StructuredTab>('scenes');
@@ -140,6 +143,7 @@ export const DeskStructuredPanel: React.FC<DeskStructuredPanelProps> = ({
   const effectiveTruths = getEffectiveTruths(merged.truths, live);
   const effectiveFactions = getEffectiveFactions(merged.factions, live);
   const maps = live?.maps ?? [];
+  const playerSheets = live?.playerSheets ?? [];
 
   const triggerSend = (key: string, req: SendToDeskRequest) => {
     playTactileClick();
@@ -853,6 +857,100 @@ export const DeskStructuredPanel: React.FC<DeskStructuredPanelProps> = ({
                               type: 'map',
                               title: m.name,
                               targetId: m.id,
+                            })
+                          }
+                          style={sendBtnStyle(lastSentKey === sendKey)}
+                        >
+                          {lastSentKey === sendKey ? 'Sent' : '+ Desk'}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Player Character Sheets */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontFamily: 'var(--mono)',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: 'var(--muted)',
+                    }}
+                  >
+                    Player Sheets ({playerSheets.length})
+                  </div>
+                  {onOpenAddPlayerSheet && (
+                    <button
+                      type="button"
+                      data-testid="desk-structured-add-player-sheet"
+                      onClick={() => {
+                        playTactileClick();
+                        onOpenAddPlayerSheet();
+                      }}
+                      style={{
+                        height: '44px',
+                        padding: '0 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--tealLine)',
+                        background: 'var(--tealBg)',
+                        color: 'var(--teal)',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      + Sheet
+                    </button>
+                  )}
+                </div>
+                {playerSheets.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                    No player sheets yet.
+                  </div>
+                ) : (
+                  playerSheets.map((sheet) => {
+                    const sendKey = `asset-player-sheet:${sheet.id}`;
+                    return (
+                      <div
+                        key={sheet.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          background: 'var(--p2)',
+                          border: '1px solid var(--line)',
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600 }}>{sheet.name}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                            PC · {playerSheetKindLabel(sheet.kind)}
+                            {sheet.role ? ` · ${sheet.role}` : ''}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          data-testid={`send-to-desk-player-sheet-${sheet.id}`}
+                          onClick={() =>
+                            triggerSend(sendKey, {
+                              type: 'sheet',
+                              title: sheet.name,
+                              targetId: sheet.id,
                             })
                           }
                           style={sendBtnStyle(lastSentKey === sendKey)}

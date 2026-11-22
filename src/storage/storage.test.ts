@@ -602,4 +602,92 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('round-trips player sheets and sheetBlobs via exportBackup/importBackup and cleans blobs on deleteCampaign', async () => {
+    const created = await importChunk(sampleRawText, 'camp-pc-backup');
+    const imgKey = 'sheet:camp-pc-backup:pc-img';
+    const pdfKey = 'sheet:camp-pc-backup:pc-pdf';
+    await putBlob(imgKey, new Uint8Array([137, 80, 78, 71]), 'image/png', { fileName: 'aria.png' });
+    await putBlob(pdfKey, new Uint8Array([37, 80, 68, 70]), 'application/pdf', { fileName: 'jax.pdf' });
+
+    const updatedLive = {
+      ...created.live,
+      playerSheets: [
+        {
+          id: 'pc-pre',
+          kind: 'prebuilt' as const,
+          name: 'Kira Sol',
+          role: 'Engineer',
+          statLine: 'STR 12 · INT 16',
+          tracks: [{ id: 'hp', label: 'HP', current: 9, max: 12 }],
+          notes: 'Carries welding torch.',
+          createdAt: 1000,
+          updatedAt: 1000,
+        },
+        {
+          id: 'pc-img',
+          kind: 'image' as const,
+          name: 'Aria',
+          blobKey: imgKey,
+          fileName: 'aria.png',
+          mimeType: 'image/png',
+          createdAt: 1001,
+          updatedAt: 1001,
+        },
+        {
+          id: 'pc-pdf',
+          kind: 'pdf' as const,
+          name: 'Jax',
+          blobKey: pdfKey,
+          fileName: 'jax.pdf',
+          mimeType: 'application/pdf',
+          currentPage: 2,
+          createdAt: 1002,
+          updatedAt: 1002,
+        },
+      ],
+    };
+    await db.live.put(updatedLive);
+
+    const payload = await exportBackup('camp-pc-backup');
+    expect(payload.sheetBlobs?.[imgKey]).toMatch(/^data:image\/png;base64,/);
+    expect(payload.sheetBlobs?.[pdfKey]).toMatch(/^data:application\/pdf;base64,/);
+
+    // Import as a NEW campaign: blobKeys must be remapped so deleting original leaves copy intact
+    const importedNew = await importBackup(JSON.stringify(payload), { mode: 'new' });
+    expect(importedNew.live.playerSheets).toHaveLength(3);
+    const newImgSheet = importedNew.live.playerSheets?.find((s) => s.id === 'pc-img');
+    const newPdfSheet = importedNew.live.playerSheets?.find((s) => s.id === 'pc-pdf');
+    expect(newImgSheet?.blobKey).toBe(`sheet:${importedNew.campaign.id}:pc-img`);
+    expect(newPdfSheet?.blobKey).toBe(`sheet:${importedNew.campaign.id}:pc-pdf`);
+
+    // Delete original campaign -> its sheet blobs are removed, new campaign's blobs survive
+    await deleteCampaign('camp-pc-backup');
+    expect(await getBlob(imgKey)).toBeUndefined();
+    expect(await getBlob(pdfKey)).toBeUndefined();
+
+    const restoredImgBlob = await getBlob(newImgSheet!.blobKey!);
+    const restoredPdfBlob = await getBlob(newPdfSheet!.blobKey!);
+    expect(Array.from(restoredImgBlob?.data as Uint8Array)).toEqual([137, 80, 78, 71]);
+    expect(Array.from(restoredPdfBlob?.data as Uint8Array)).toEqual([37, 80, 68, 70]);
+
+    // Replace restore on original id also restores sheet blobs
+    const restoredReplace = await importBackup(JSON.stringify(payload), { mode: 'replace' });
+    expect(restoredReplace.live.playerSheets).toHaveLength(3);
+    expect(restoredReplace.live.playerSheets?.[2].currentPage).toBe(2);
+    expect(Array.from((await getBlob(imgKey))?.data as Uint8Array)).toEqual([137, 80, 78, 71]);
+  });
+
+  it('imports legacy backups without playerSheets or sheetBlobs cleanly', async () => {
+    await importChunk(sampleRawText, 'camp-legacy');
+    const payload = await exportBackup('camp-legacy');
+    const legacyJson = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+    delete legacyJson.sheetBlobs;
+    delete (legacyJson.live as Record<string, unknown>).playerSheets;
+
+    await deleteCampaign('camp-legacy');
+    const restored = await importBackup(JSON.stringify(legacyJson), { mode: 'replace' });
+    expect(restored.campaign.id).toBe('camp-legacy');
+    expect(restored.live.playerSheets).toEqual([]);
+  });
 });

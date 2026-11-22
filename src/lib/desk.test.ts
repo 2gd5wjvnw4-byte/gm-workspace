@@ -325,4 +325,23 @@ describe('desk pure helpers', () => {
     expect(tallCenterX).toBeCloseTo(590, 1);
     expect(tallTopY).toBeCloseTo(DESK_TOOLBAR_CLEARANCE_PX, 1);
   });
+
+  it('recognizes player character sheets as valid sheet card targets', () => {
+    const merged = mergeParsedChunks([]);
+    const live = createDefaultLiveState('camp-pc', 'scifi');
+    live.playerSheets = [
+      {
+        id: 'pc-aria',
+        kind: 'prebuilt',
+        name: 'Aria',
+        createdAt: 1000,
+        updatedAt: 1000,
+      },
+    ];
+    const pcCard = makeCard({ id: 'card-pc', type: 'sheet', targetId: 'pc-aria' });
+    const missingCard = makeCard({ id: 'card-missing', type: 'sheet', targetId: 'pc-gone' });
+
+    expect(isDeskCardTargetMissing(pcCard, merged, live)).toBe(false);
+    expect(isDeskCardTargetMissing(missingCard, merged, live)).toBe(true);
+  });
 });

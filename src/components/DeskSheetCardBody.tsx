@@ -1,23 +1,30 @@
 import React from 'react';
 import { getEffectiveScenes } from '../lib/improvised';
+import { playerSheetKindLabel } from '../lib/playerSheets';
 import { getSoloVisibleEntityIds } from '../lib/solo';
 import type { DeskCardRecord } from '../storage/types';
 import { useCampaignStore } from '../store/campaignStore';
 import { EntitySheetContent } from './EntitySheetContent';
+import { PlayerSheetView } from './PlayerSheetView';
 
 export interface DeskSheetCardBodyProps {
   card: DeskCardRecord;
   onSelectEntity: (entityId: string, title: string) => void;
   onOpenPdfPage?: (printedPage: number) => void;
+  isVisible?: boolean;
+  renderWidth?: number;
 }
 
 export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
   card,
   onSelectEntity,
   onOpenPdfPage,
+  isVisible = true,
+  renderWidth = 360,
 }) => {
   const { merged, live } = useCampaignStore();
   const improvised = live?.improvisedEntities ?? [];
+  const playerSheets = live?.playerSheets ?? [];
   const soloMask = Boolean(live?.ui?.soloMask);
   const effectiveScenes = getEffectiveScenes(merged.scenes, live);
   const soloVisibleIds = getSoloVisibleEntityIds({
@@ -30,13 +37,22 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
     soloMask,
   });
 
+  const playerSheetIds = new Set(playerSheets.map((s) => s.id));
+
   const allOptions = [
+    ...playerSheets.map((s) => ({
+      id: s.id,
+      label: `PC · ${s.name} (${playerSheetKindLabel(s.kind)})`,
+      name: s.name,
+      isPlayerSheet: true,
+    })),
     ...merged.entities
       .filter((e) => soloVisibleIds.has(e.id))
       .map((e) => ({
         id: e.id,
         label: `${e.name} (${e.type})`,
         name: e.name,
+        isPlayerSheet: false,
       })),
     ...improvised
       .filter((e) => soloVisibleIds.has(e.id))
@@ -44,17 +60,25 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
         id: e.id,
         label: `${e.name} (Improvised)`,
         name: e.name,
+        isPlayerSheet: false,
       })),
   ];
 
+  // Player character sheets are never hidden by Solo Mask
+  const isTargetPlayerSheet = Boolean(card.targetId && playerSheetIds.has(card.targetId));
   const isTargetHiddenInSolo =
-    soloMask && Boolean(card.targetId) && !soloVisibleIds.has(card.targetId!);
+    soloMask &&
+    Boolean(card.targetId) &&
+    !isTargetPlayerSheet &&
+    !soloVisibleIds.has(card.targetId!);
 
-  const resolvedEntityId = isTargetHiddenInSolo
+  const resolvedTargetId = isTargetHiddenInSolo
     ? null
     : card.targetId && allOptions.some((o) => o.id === card.targetId)
       ? card.targetId
       : allOptions[0]?.id ?? null;
+
+  const resolvedIsPlayerSheet = Boolean(resolvedTargetId && playerSheetIds.has(resolvedTargetId));
 
   return (
     <div
@@ -79,7 +103,7 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
           <select
             data-testid={`desk-sheet-select-${card.id}`}
             aria-label="Select NPC or character sheet"
-            value={resolvedEntityId ?? ''}
+            value={resolvedTargetId ?? ''}
             onChange={(e) => {
               const found = allOptions.find((o) => o.id === e.target.value);
               if (found) {
@@ -131,7 +155,7 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
         >
           Character hidden in Solo mode until encountered in a visited scene.
         </div>
-      ) : resolvedEntityId ? (
+      ) : resolvedTargetId ? (
         <div
           style={{
             flex: 1,
@@ -144,11 +168,20 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
             overflow: 'hidden',
           }}
         >
-          <EntitySheetContent
-            entityId={resolvedEntityId}
-            onOpenPdfPage={onOpenPdfPage}
-            testIdPrefix={`desk-sheet-${card.id}`}
-          />
+          {resolvedIsPlayerSheet ? (
+            <PlayerSheetView
+              sheetId={resolvedTargetId}
+              isVisible={isVisible}
+              renderWidth={renderWidth}
+              testIdPrefix={`desk-player-sheet-${card.id}`}
+            />
+          ) : (
+            <EntitySheetContent
+              entityId={resolvedTargetId}
+              onOpenPdfPage={onOpenPdfPage}
+              testIdPrefix={`desk-sheet-${card.id}`}
+            />
+          )}
         </div>
       ) : (
         <div
@@ -169,7 +202,7 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
             lineHeight: 1.45,
           }}
         >
-          No NPCs loaded yet. Import a module or add an improvised NPC. Player character sheets arrive in Stage 8c.
+          No character or NPC sheets yet. Add a Player Sheet or import a module.
         </div>
       )}
     </div>

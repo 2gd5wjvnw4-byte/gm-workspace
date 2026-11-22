@@ -11,6 +11,7 @@ import {
   listCampaigns as storageListCampaigns,
   loadCampaign as storageLoadCampaign,
   pdfBlobKey,
+  playerSheetBlobKey,
   putBlob as storagePutBlob,
   saveLive as storageSaveLive,
   type BackupPayload,
@@ -35,10 +36,20 @@ import {
   type NavViewMode,
   type PdfRibbon,
   type PdfRibbonColor,
+  type PlayerSheetRecord,
+  type PlayerSheetTrack,
   type RollLogEntry,
   type ScenePin,
   type TableNote,
 } from '../storage';
+import {
+  addPlayerSheetTrack as addSheetTrackPure,
+  adjustPlayerSheetTrack as adjustSheetTrackPure,
+  createPlayerSheetId,
+  createPrebuiltPlayerSheet,
+  removePlayerSheetTrack as removeSheetTrackPure,
+  updatePlayerSheetTrack as updateSheetTrackPure,
+} from '../lib/playerSheets';
 import {
   mergeRawChunkObjects,
   type FactionAttitude,
@@ -99,6 +110,45 @@ export interface CampaignStoreState {
   }) => Promise<MapAssetRecord | null>;
   updateMapAsset: (mapId: string, patch: { name?: string; scale?: MapScale | undefined }) => void;
   deleteMapAsset: (mapId: string) => Promise<void>;
+  addPrebuiltPlayerSheet: (input: {
+    name: string;
+    role?: string;
+    statLine?: string;
+    tracks?: Array<{ label: string; current?: number; max: number }>;
+    notes?: string;
+  }) => PlayerSheetRecord | null;
+  addFilePlayerSheet: (input: {
+    kind: 'image' | 'pdf';
+    name: string;
+    data: Blob | Uint8Array;
+    mimeType: string;
+    fileName?: string;
+    pageCount?: number;
+  }) => Promise<PlayerSheetRecord | null>;
+  updatePlayerSheet: (
+    sheetId: string,
+    patch: {
+      name?: string;
+      role?: string;
+      statLine?: string;
+      notes?: string;
+      tracks?: PlayerSheetTrack[];
+      currentPage?: number;
+      pageCount?: number;
+    }
+  ) => void;
+  adjustPlayerSheetTrack: (sheetId: string, trackId: string, delta: number) => void;
+  updatePlayerSheetTrack: (
+    sheetId: string,
+    trackId: string,
+    patch: { label?: string; current?: number; max?: number }
+  ) => void;
+  addPlayerSheetTrack: (
+    sheetId: string,
+    input: { label: string; max: number; current?: number }
+  ) => void;
+  removePlayerSheetTrack: (sheetId: string, trackId: string) => void;
+  deletePlayerSheet: (sheetId: string) => Promise<void>;
   setSceneMap: (sceneIds: string[], mapId: string | null) => void;
   setLastMapId: (mapId: string | null) => void;
   setScenePin: (sceneId: string, pin: ScenePin | null) => void;
@@ -1462,6 +1512,149 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           },
         };
       });
+      if (target?.blobKey) {
+        await storageDeleteBlob(target.blobKey);
+      }
+    },
+
+    addPrebuiltPlayerSheet: (input) => {
+      const state = get();
+      if (!state.live || !state.activeCampaign) return null;
+      const record = createPrebuiltPlayerSheet(input);
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: [...(prev.playerSheets ?? []), record],
+      }));
+      return record;
+    },
+
+    addFilePlayerSheet: async (input) => {
+      const state = get();
+      if (!state.live || !state.activeCampaign) return null;
+      const campaignId = state.activeCampaign.id;
+      const now = Date.now();
+      const id = createPlayerSheetId(now);
+      const blobKey = playerSheetBlobKey(campaignId, id);
+      let bytesOrBlob: Blob | Uint8Array = input.data;
+      let fileSize = input.data instanceof Uint8Array ? input.data.byteLength : input.data.size;
+      if (!(input.data instanceof Uint8Array) && typeof input.data.arrayBuffer === 'function') {
+        const buf = await input.data.arrayBuffer();
+        bytesOrBlob = new Uint8Array(buf);
+        fileSize = bytesOrBlob.byteLength;
+      }
+      await storagePutBlob(blobKey, bytesOrBlob, input.mimeType, {
+        fileName: input.fileName,
+        fileSize,
+      });
+      const record: PlayerSheetRecord = {
+        id,
+        kind: input.kind,
+        name: input.name.trim() || 'Character Sheet',
+        blobKey,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        ...(input.kind === 'pdf'
+          ? {
+              currentPage: 1,
+              ...(input.pageCount !== undefined ? { pageCount: input.pageCount } : {}),
+            }
+          : {}),
+        createdAt: now,
+        updatedAt: now,
+      };
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: [...(prev.playerSheets ?? []), record],
+      }));
+      return record;
+    },
+
+    updatePlayerSheet: (sheetId, patch) => {
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            ...(patch.name !== undefined ? { name: patch.name.trim() || sheet.name } : {}),
+            ...(patch.role !== undefined ? { role: patch.role } : {}),
+            ...(patch.statLine !== undefined ? { statLine: patch.statLine } : {}),
+            ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+            ...(patch.tracks !== undefined ? { tracks: patch.tracks } : {}),
+            ...(patch.currentPage !== undefined
+              ? { currentPage: Math.max(1, Math.round(patch.currentPage)) }
+              : {}),
+            ...(patch.pageCount !== undefined
+              ? { pageCount: Math.max(1, Math.round(patch.pageCount)) }
+              : {}),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+
+    adjustPlayerSheetTrack: (sheetId, trackId, delta) => {
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            tracks: adjustSheetTrackPure(sheet.tracks ?? [], trackId, delta),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+
+    updatePlayerSheetTrack: (sheetId, trackId, patch) => {
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            tracks: updateSheetTrackPure(sheet.tracks ?? [], trackId, patch),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+
+    addPlayerSheetTrack: (sheetId, input) => {
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            tracks: addSheetTrackPure(sheet.tracks ?? [], input),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+
+    removePlayerSheetTrack: (sheetId, trackId) => {
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            tracks: removeSheetTrackPure(sheet.tracks ?? [], trackId),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+
+    deletePlayerSheet: async (sheetId) => {
+      const target = (get().live?.playerSheets ?? []).find((s) => s.id === sheetId);
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).filter((s) => s.id !== sheetId),
+      }));
       if (target?.blobKey) {
         await storageDeleteBlob(target.blobKey);
       }

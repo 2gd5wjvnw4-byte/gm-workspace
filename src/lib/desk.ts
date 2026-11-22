@@ -504,7 +504,10 @@ export function isDeskCardTargetMissing(
       const inImprovised = (live?.improvisedEntities ?? []).some(
         (e) => e.id === targetId
       );
-      return !inBase && !inImprovised;
+      const inPlayerSheets = (live?.playerSheets ?? []).some(
+        (s) => s.id === targetId
+      );
+      return !inBase && !inImprovised && !inPlayerSheets;
     }
     case 'tracker':
       return !merged.trackers.some((t) => t.id === targetId);

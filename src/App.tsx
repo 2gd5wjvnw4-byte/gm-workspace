@@ -9,6 +9,7 @@ import { ActSwitcherSheet } from './components/ActSwitcherSheet';
 import { MapLibrarySheet } from './components/MapLibrarySheet';
 import { ReviewSheet } from './components/ReviewSheet';
 import { NoteOverrideModal } from './components/NoteOverrideModal';
+import { AddPlayerSheetModal } from './components/AddPlayerSheetModal';
 import { AddSceneModal, type AddModalMode } from './components/AddSceneModal';
 import { DeskCanvas } from './components/DeskCanvas';
 import { DiceOverlay } from './components/DiceOverlay';
@@ -54,6 +55,8 @@ export const App: React.FC = () => {
   const [requestedPdfPage, setRequestedPdfPage] = useState<number | null>(null);
   const [pdfOpenSeq, setPdfOpenSeq] = useState(0);
   const [inspectedEntityId, setInspectedEntityId] = useState<string | null>(null);
+  const [inspectedPlayerSheetId, setInspectedPlayerSheetId] = useState<string | null>(null);
+  const [addPlayerSheetOpen, setAddPlayerSheetOpen] = useState(false);
   const [actSheetOpen, setActSheetOpen] = useState(false);
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
@@ -367,6 +370,7 @@ export const App: React.FC = () => {
                   setNoteModalOpen(true);
                 }}
                 onOpenMapLibrary={() => setMapLibraryOpen(true)}
+                onOpenAddPlayerSheet={() => setAddPlayerSheetOpen(true)}
               />
             ) : (
               <>
@@ -450,6 +454,11 @@ export const App: React.FC = () => {
                     setInspectedEntityId(entityId);
                     setDrawer('entity');
                   }}
+                  onOpenPlayerSheet={(sheetId) => {
+                    setInspectedPlayerSheetId(sheetId);
+                    setDrawer('player-sheet');
+                  }}
+                  onOpenAddPlayerSheet={() => setAddPlayerSheetOpen(true)}
                 />
               </>
             )}
@@ -457,6 +466,7 @@ export const App: React.FC = () => {
             <DrawerHost
               activeDrawer={drawer}
               inspectedEntityId={inspectedEntityId}
+              inspectedPlayerSheetId={inspectedPlayerSheetId}
               requestedPdfPage={requestedPdfPage}
               pdfOpenSeq={pdfOpenSeq}
               onOpenPdfPage={(page) => openPdfAtPage(page)}
@@ -486,6 +496,17 @@ export const App: React.FC = () => {
             onClose={() => {
               setNoteModalOpen(false);
               setEditingNote(null);
+            }}
+          />
+
+          <AddPlayerSheetModal
+            open={addPlayerSheetOpen}
+            onClose={() => setAddPlayerSheetOpen(false)}
+            onCreated={(sheet) => {
+              if (!deskMode) {
+                setInspectedPlayerSheetId(sheet.id);
+                setDrawer('player-sheet');
+              }
             }}
           />
 

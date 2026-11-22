@@ -14,6 +14,7 @@ import {
   subscribe3dDicePreference,
 } from '../lib/dice3d';
 import { isSoundEnabled, playTactileClick, setSoundEnabled } from '../lib/sound';
+import { playerSheetKindLabel } from '../lib/playerSheets';
 import { useCampaignStore } from '../store/campaignStore';
 import { AddRightItemModal, type AddRightItemMode } from './AddRightItemModal';
 import {
@@ -29,6 +30,8 @@ export interface RightPanelProps {
   focusMode?: boolean;
   onOpenNoteModal?: () => void;
   onOpenEntityInspector?: (entityId: string) => void;
+  onOpenPlayerSheet?: (sheetId: string) => void;
+  onOpenAddPlayerSheet?: () => void;
 }
 
 function formatLastBackup(lastBackupAt?: number | null): string {
@@ -47,6 +50,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   focusMode = false,
   onOpenNoteModal,
   onOpenEntityInspector,
+  onOpenPlayerSheet,
+  onOpenAddPlayerSheet,
 }) => {
   const { theme } = useThemeStore();
   const {
@@ -251,6 +256,111 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         onSummonEntity={summonEntityToScene}
         onAddSceneNote={(sceneId, text) => addTableNote(sceneId, text)}
       />
+
+      {/* 5b. Player Character Sheets */}
+      <CollapsibleSection
+        title={`PLAYER SHEETS (${(live?.playerSheets ?? []).length})`}
+        testId="section-player-sheets"
+        open={isSectionOpen('player-sheets')}
+        onToggleOpen={(open) => setRightSectionOpen('player-sheets', open)}
+      >
+        <button
+          type="button"
+          data-testid="add-player-sheet-btn"
+          onClick={() => {
+            playTactileClick();
+            onOpenAddPlayerSheet?.();
+          }}
+          style={{
+            height: '44px',
+            borderRadius: '10px',
+            border: '1px solid var(--tealLine)',
+            background: 'var(--tealBg)',
+            color: 'var(--teal)',
+            fontWeight: 700,
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}
+        >
+          + Add Player Sheet
+        </button>
+
+        {(live?.playerSheets ?? []).length === 0 ? (
+          <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+            No player sheets yet. Add a PDF, image, or prebuilt sheet.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {(live?.playerSheets ?? []).map((sheet) => (
+              <button
+                key={sheet.id}
+                type="button"
+                data-testid={`player-sheet-row-${sheet.id}`}
+                onClick={() => {
+                  playTactileClick();
+                  onOpenPlayerSheet?.(sheet.id);
+                }}
+                style={{
+                  minHeight: '44px',
+                  padding: '8px 10px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--p2)',
+                  color: 'var(--text)',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    width: '100%',
+                  }}
+                >
+                  <span style={{ fontSize: '14px', fontWeight: 600 }}>{sheet.name}</span>
+                  <span
+                    style={{
+                      fontFamily: 'var(--mono)',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      padding: '2px 6px',
+                      borderRadius: '5px',
+                      background: 'var(--tealBg)',
+                      border: '1px solid var(--tealLine)',
+                      color: 'var(--teal)',
+                    }}
+                  >
+                    {playerSheetKindLabel(sheet.kind)}
+                  </span>
+                </div>
+                {sheet.kind === 'prebuilt' && (sheet.role || (sheet.tracks && sheet.tracks.length > 0)) && (
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: 'var(--muted)',
+                      fontFamily: 'var(--mono)',
+                    }}
+                  >
+                    {[
+                      sheet.role,
+                      ...(sheet.tracks ?? []).slice(0, 2).map((t) => `${t.label} ${t.current}/${t.max}`),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </CollapsibleSection>
 
       {/* 6. Scratchpad */}
       <CollapsibleSection

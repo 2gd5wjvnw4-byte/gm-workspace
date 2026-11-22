@@ -40,7 +40,7 @@ describe('RightPanel Phase 5 sections', () => {
     seedSampleCampaign(false);
   });
 
-  it('renders all 7 sections in order and toggles collapse on header tap', () => {
+  it('renders all 8 sections in order and toggles collapse on header tap', () => {
     render(<RightPanel />);
     const panel = screen.getByTestId('zone-right-panel');
     const sections = panel.querySelectorAll('section[data-testid^="section-"]');
@@ -50,6 +50,7 @@ describe('RightPanel Phase 5 sections', () => {
       'section-clue-matrix',
       'section-factions',
       'section-random-tables',
+      'section-player-sheets',
       'section-scratchpad',
       'section-theme',
     ]);
