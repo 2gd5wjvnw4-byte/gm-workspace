@@ -1,8 +1,8 @@
 {
 	"name": "Default Colors",
-	"systemName": "default",
+	"systemName": "default-v2",
 	"author": "Frank Ali",
-  "version": 0.2,
+  "version": 0.3,
   "meshFile": "default.json",
 	"material": {
 		"type": "color",

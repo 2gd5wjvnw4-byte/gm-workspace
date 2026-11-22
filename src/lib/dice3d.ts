@@ -11,6 +11,7 @@ import {
 const DICE_3D_STORAGE_KEY = 'gm-workspace-3d-dice';
 const DICE_COLOR_STORAGE_KEY = 'gm-workspace-dice-color-style';
 export const DICE_OVERLAY_CONTAINER_ID = 'gm-dice-overlay';
+export const DICE_THEME_NAME = 'default-v2';
 
 export type DiceColorStyleId =
   | 'accent'
@@ -68,7 +69,6 @@ export interface Dice3dControllerOptions {
   assetPath?: string;
   initTimeoutMs?: number;
   rollTimeoutMs?: number;
-  autoClearMs?: number;
   rng?: () => number;
   isReducedMotion?: () => boolean;
   hasWebGl?: () => boolean;
@@ -283,7 +283,6 @@ export function createDice3dController(options: Dice3dControllerOptions = {}): D
   const assetPath = options.assetPath ?? buildDiceBoxAssetPath();
   const initTimeoutMs = options.initTimeoutMs ?? 4000;
   const rollTimeoutMs = options.rollTimeoutMs ?? 6000;
-  const autoClearMs = options.autoClearMs ?? 1800;
   const rng = options.rng ?? Math.random;
   const isReducedMotion = options.isReducedMotion ?? defaultIsReducedMotion;
   const hasWebGl = options.hasWebGl ?? defaultHasWebGl;
@@ -293,7 +292,6 @@ export function createDice3dController(options: Dice3dControllerOptions = {}): D
   let initPromise: Promise<DiceBoxClass | null> | null = null;
   let sessionFailed = false;
   let overlayState: DiceOverlayState = IDLE_OVERLAY;
-  let autoClearTimer: ReturnType<typeof setTimeout> | null = null;
   let latestGroups: DiceBoxRollGroup[] | null = null;
   let activeRollSeq = 0;
   let cancelInFlightRoll: (() => void) | null = null;
@@ -303,13 +301,6 @@ export function createDice3dController(options: Dice3dControllerOptions = {}): D
     overlayState = next;
     for (const listener of overlayListeners) {
       listener(overlayState);
-    }
-  };
-
-  const cancelAutoClear = () => {
-    if (autoClearTimer) {
-      clearTimeout(autoClearTimer);
-      autoClearTimer = null;
     }
   };
 
@@ -324,7 +315,6 @@ export function createDice3dController(options: Dice3dControllerOptions = {}): D
   const clear = () => {
     activeRollSeq += 1;
     cancelPendingRoll();
-    cancelAutoClear();
     if (instance) {
       try {
         instance.clear();
@@ -348,7 +338,7 @@ export function createDice3dController(options: Dice3dControllerOptions = {}): D
       container: `#${container.id || DICE_OVERLAY_CONTAINER_ID}`,
       id: 'gm-dice-canvas',
       assetPath,
-      theme: 'default',
+      theme: DICE_THEME_NAME,
       themeColor: themeColor ?? '#56D4E8',
       offscreen,
       scale: 6,
@@ -446,7 +436,6 @@ export function createDice3dController(options: Dice3dControllerOptions = {}): D
 
     const rollSeq = ++activeRollSeq;
     cancelPendingRoll();
-    cancelAutoClear();
     emitOverlay({
       phase: 'rolling',
       label,
@@ -534,13 +523,6 @@ export function createDice3dController(options: Dice3dControllerOptions = {}): D
         diceValues: computed.diceValues,
         used3d: true,
       });
-
-      cancelAutoClear();
-      autoClearTimer = setTimeout(() => {
-        if (rollSeq === activeRollSeq) {
-          clear();
-        }
-      }, autoClearMs);
 
       return {
         total: computed.total,

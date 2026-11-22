@@ -4,6 +4,7 @@ import {
   buildDiceBoxAssetPath,
   createDice3dController,
   DICE_OVERLAY_CONTAINER_ID,
+  DICE_THEME_NAME,
   getDiceColorStyle,
   is3dDiceEnabled,
   resolveDiceThemeColor,
@@ -93,7 +94,6 @@ describe('dice3d controller', () => {
     const controller = createDice3dController({
       loadDiceBox: loader,
       assetPath: '/gm-workspace/assets/dice-box/',
-      autoClearMs: 1200,
       isReducedMotion: () => false,
       hasWebGl: () => true,
     });
@@ -107,14 +107,20 @@ describe('dice3d controller', () => {
     expect(configs).toHaveLength(1);
     expect(configs[0].container).toBe(`#${DICE_OVERLAY_CONTAINER_ID}`);
     expect(configs[0].assetPath).toBe('/gm-workspace/assets/dice-box/');
+    expect(configs[0].theme).toBe(DICE_THEME_NAME);
+    expect(configs[0].theme).toBe('default-v2');
     expect(configs[0].offscreen).toBe(true);
     expect(rollCalls[0]).toEqual(['2d6', '1d8']);
     expect(res?.used3d).toBe(true);
     expect(res?.total).toBe(17); // 8 + 7 + 2
     expect(controller.getOverlayState().phase).toBe('settled');
 
-    // Auto-clear after settle
-    vi.advanceTimersByTime(1250);
+    // Settled dice stay on screen indefinitely until explicitly cleared
+    vi.advanceTimersByTime(60_000);
+    expect(clearSpy).not.toHaveBeenCalled();
+    expect(controller.getOverlayState().phase).toBe('settled');
+
+    controller.clear();
     expect(clearSpy).toHaveBeenCalledTimes(1);
     expect(controller.getOverlayState().phase).toBe('idle');
   });
