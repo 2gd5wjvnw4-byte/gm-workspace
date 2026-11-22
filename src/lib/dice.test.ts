@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addDieToPool,
   computeTotalFromDiceBoxResults,
+  formatDicePool,
+  getPoolDiceCount,
   parseDiceExpression,
   parseRollableTable,
   parseTableRange,
@@ -170,11 +173,45 @@ describe('toDiceBoxPlan and computeTotalFromDiceBoxResults', () => {
     expect(toDiceBoxPlan(compoundUnsupported).supported3d).toBe(false);
   });
 
-  it('handles d100 0 -> 100 edge case and modifier on standard rolls', () => {
+  it('handles d100 0-face math (80+0=80, 10+0=10, 00+0=100, multi-d100, compound) and modifiers', () => {
     const d100 = parseDiceExpression('1d100')!;
+    // 80 on tens + 0 on ones -> dice-box emits 80
+    expect(computeTotalFromDiceBoxResults(d100, [{ value: 80, rolls: [{ value: 80 }] }])).toEqual({
+      total: 80,
+      diceValues: [80],
+    });
+    // 10 on tens + 0 on ones -> dice-box emits 10
+    expect(computeTotalFromDiceBoxResults(d100, [{ value: 10, rolls: [{ value: 10 }] }])).toEqual({
+      total: 10,
+      diceValues: [10],
+    });
+    // 00 on tens + 0 on ones -> dice-box emits 0, normalized to 100
     expect(computeTotalFromDiceBoxResults(d100, [{ value: 0, rolls: [{ value: 0 }] }])).toEqual({
       total: 100,
-      diceValues: [0],
+      diceValues: [100],
+    });
+
+    // Multi-d100: one die lands on 00+0 (100) and another on 80+0 (80) -> 180
+    const twoD100 = parseDiceExpression('2d100')!;
+    expect(
+      computeTotalFromDiceBoxResults(twoD100, [
+        { value: 80, rolls: [{ value: 0 }, { value: 80 }] },
+      ])
+    ).toEqual({
+      total: 180,
+      diceValues: [100, 80],
+    });
+
+    // Compound 1d100+1d6 where d100 is 00+0 (100) and d6 is 4 -> 104
+    const compoundD100 = parseDiceExpression('1d100+1d6')!;
+    expect(
+      computeTotalFromDiceBoxResults(compoundD100, [
+        { value: 0, rolls: [{ value: 0 }] },
+        { value: 4, rolls: [{ value: 4 }] },
+      ])
+    ).toEqual({
+      total: 104,
+      diceValues: [100, 4],
     });
 
     const mod = parseDiceExpression('2d6+3')!;
@@ -184,6 +221,29 @@ describe('toDiceBoxPlan and computeTotalFromDiceBoxResults', () => {
       total: 11,
       diceValues: [3, 5],
     });
+  });
+
+  it('builds multi-tap dice pools, compound notation, and isolates d66', () => {
+    let pool = addDieToPool({}, 'd6');
+    pool = addDieToPool(pool, 'd6');
+    pool = addDieToPool(pool, 'd6');
+    expect(formatDicePool(pool)).toBe('3d6');
+    expect(getPoolDiceCount(pool)).toBe(3);
+
+    pool = addDieToPool(pool, 'd8');
+    expect(formatDicePool(pool)).toBe('3d6+1d8');
+    expect(getPoolDiceCount(pool)).toBe(4);
+
+    // Tapping d66 switches pool cleanly to d66 alone
+    pool = addDieToPool(pool, 'd66');
+    expect(formatDicePool(pool)).toBe('d66');
+    expect(getPoolDiceCount(pool)).toBe(1);
+
+    // Tapping a standard die clears d66 and starts a new standard pool
+    pool = addDieToPool(pool, 'd20');
+    expect(formatDicePool(pool)).toBe('1d20');
+    expect(getPoolDiceCount(pool)).toBe(1);
+    expect(formatDicePool({})).toBe('');
   });
 });
 

@@ -3050,4 +3050,84 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       pdfLib.clearSharedPdfDocumentCache();
     }
   });
+
+  it('Stage 8g-a: Top Bar Dice button toggles floating tray across Structured and Desk views, builds multi-tap pools, rolls on Roll, and persists dice color styles', async () => {
+    const storageMap = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => storageMap.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        storageMap.set(k, v);
+      },
+      removeItem: (k: string) => {
+        storageMap.delete(k);
+      },
+      clear: () => {
+        storageMap.clear();
+      },
+    });
+    try {
+      await useCampaignStore.getState().createNewCampaign({
+        title: 'Dice Tray Campaign',
+        system: 'Mothership 1e',
+        genre: 'sci-fi horror',
+      });
+      await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+      const { unmount } = render(<App />);
+
+      // Top bar Dice button is visible and 44px tall in Structured View
+      const diceBtn = screen.getByTestId('topbar-dice-btn');
+      expect(diceBtn).toBeInTheDocument();
+      expect(diceBtn.style.height).toBe('44px');
+      expect(screen.queryByTestId('dice-tray-panel')).not.toBeInTheDocument();
+
+      // Open floating tray in Structured View (docked above Exits bar)
+      fireEvent.click(diceBtn);
+      const tray = screen.getByTestId('dice-tray-panel');
+      expect(tray).toBeInTheDocument();
+      expect(tray.style.bottom).toBe('74px');
+
+      // Tapping d6 3 times builds 3d6 without rolling yet
+      fireEvent.click(screen.getByTestId('dice-tray-die-d6'));
+      fireEvent.click(screen.getByTestId('dice-tray-die-d6'));
+      fireEvent.click(screen.getByTestId('dice-tray-die-d6'));
+      expect(screen.getByTestId('dice-tray-count-d6')).toHaveTextContent('3');
+      expect((screen.getByTestId('dice-tray-input') as HTMLInputElement).value).toBe('3d6');
+      expect(useCampaignStore.getState().live?.rollLog).toHaveLength(0);
+
+      // Tapping Roll rolls 3d6 once, appends to rollLog, shows result, and clears pending pool
+      fireEvent.click(screen.getByTestId('dice-tray-roll-btn'));
+      const rollLog = useCampaignStore.getState().live?.rollLog ?? [];
+      expect(rollLog).toHaveLength(1);
+      expect(rollLog[0].tableName).toBe('Quick Roll');
+      expect(rollLog[0].text).toContain('3d6');
+      expect(screen.getByTestId('dice-tray-result').textContent).toContain('3d6 →');
+      expect((screen.getByTestId('dice-tray-input') as HTMLInputElement).value).toBe('');
+
+      // Multi-die pool + Clear button
+      fireEvent.click(screen.getByTestId('dice-tray-die-d6'));
+      fireEvent.click(screen.getByTestId('dice-tray-die-d8'));
+      expect((screen.getByTestId('dice-tray-input') as HTMLInputElement).value).toBe('1d6+1d8');
+      fireEvent.click(screen.getByTestId('dice-tray-clear-btn'));
+      expect((screen.getByTestId('dice-tray-input') as HTMLInputElement).value).toBe('');
+
+      // Switch to Desk View -> Top Bar Dice button stays visible and tray repositions near bottom
+      fireEvent.click(screen.getByTestId('desk-view-toggle'));
+      expect(screen.getByTestId('topbar-dice-btn')).toBeInTheDocument();
+      expect(screen.getByTestId('dice-tray-panel').style.bottom).toBe('16px');
+
+      // Select a dice color style swatch and verify persistence across remount
+      const emeraldBtn = screen.getByTestId('dice-color-emerald');
+      fireEvent.click(emeraldBtn);
+      expect(emeraldBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(storageMap.get('gm-workspace-dice-color-style')).toBe('emerald');
+
+      unmount();
+      render(<App />);
+      fireEvent.click(screen.getByTestId('topbar-dice-btn'));
+      expect(screen.getByTestId('dice-color-emerald')).toHaveAttribute('aria-pressed', 'true');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

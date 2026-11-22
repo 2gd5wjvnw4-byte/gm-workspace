@@ -12,6 +12,7 @@ import { NoteOverrideModal } from './components/NoteOverrideModal';
 import { AddSceneModal, type AddModalMode } from './components/AddSceneModal';
 import { DeskCanvas } from './components/DeskCanvas';
 import { DiceOverlay } from './components/DiceOverlay';
+import { DiceTrayPanel } from './components/DiceTrayPanel';
 import { NodeMapCanvas } from './components/NodeMapCanvas';
 import { isRunningStandalone, StandaloneBanner } from './components/StandaloneBanner';
 import {
@@ -59,6 +60,7 @@ export const App: React.FC = () => {
   const [editingNote, setEditingNote] = useState<TableNote | null>(null);
   const [nodeMapExpanded, setNodeMapExpanded] = useState(false);
   const [mapLibraryOpen, setMapLibraryOpen] = useState(false);
+  const [diceTrayOpen, setDiceTrayOpen] = useState(false);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
   const [addModalState, setAddModalState] = useState<{
     open: boolean;
@@ -332,6 +334,8 @@ export const App: React.FC = () => {
             onToggleDeskMode={() =>
               setDeskViewMode(deskMode ? 'structured' : 'desk')
             }
+            diceTrayOpen={diceTrayOpen}
+            onToggleDiceTray={() => setDiceTrayOpen((o) => !o)}
             onOpenPdf={() => {
               if (drawer === 'pdf') {
                 setDrawer(null);
@@ -536,6 +540,11 @@ export const App: React.FC = () => {
                 nodePosition,
               });
             }}
+          />
+          <DiceTrayPanel
+            open={diceTrayOpen}
+            deskMode={deskMode}
+            onClose={() => setDiceTrayOpen(false)}
           />
         </>
       )}

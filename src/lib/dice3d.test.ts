@@ -4,8 +4,11 @@ import {
   buildDiceBoxAssetPath,
   createDice3dController,
   DICE_OVERLAY_CONTAINER_ID,
+  getDiceColorStyle,
   is3dDiceEnabled,
+  resolveDiceThemeColor,
   set3dDiceEnabled,
+  setDiceColorStyle,
   type DiceBoxCtor,
 } from './dice3d';
 
@@ -344,5 +347,54 @@ describe('dice3d controller', () => {
     // Advance past first roll's old timeout — 3D must remain enabled
     vi.advanceTimersByTime(1000);
     expect(controller.canAttempt3d('1d8')).toBe(true);
+  });
+
+  it('persists dice color style in localStorage and passes resolved themeColor to DiceBox on init and roll', async () => {
+    expect(getDiceColorStyle()).toBe('accent');
+    setDiceColorStyle('crimson');
+    expect(getDiceColorStyle()).toBe('crimson');
+    expect(localStorage.getItem('gm-workspace-dice-color-style')).toBe('crimson');
+    expect(resolveDiceThemeColor()).toBe('#B83232');
+
+    const initColors: Array<string | undefined> = [];
+    const rollColors: Array<string | undefined> = [];
+
+    class ColorTrackingDiceBox {
+      constructor(config: DiceBoxConfig) {
+        initColors.push(config.themeColor);
+      }
+      async init() {
+        return this;
+      }
+      async roll(
+        _notation: string | string[],
+        options?: { theme?: string; themeColor?: string }
+      ): Promise<DiceBoxDieResult[]> {
+        rollColors.push(options?.themeColor);
+        return [];
+      }
+      getRollResults(): DiceBoxRollGroup[] {
+        return [{ id: 0, qty: 1, sides: 6, value: 4, rolls: [{ groupId: 0, rollId: 0, sides: 6, value: 4 }] }];
+      }
+      clear() { return this; }
+      hide() { return this; }
+      show() { return this; }
+      resizeWorld() {}
+    }
+
+    const controller = createDice3dController({
+      loadDiceBox: async () => ColorTrackingDiceBox as unknown as DiceBoxCtor,
+      isReducedMotion: () => false,
+      hasWebGl: () => true,
+    });
+
+    await controller.roll('1d6');
+    expect(initColors).toEqual(['#B83232']);
+    expect(rollColors).toEqual(['#B83232']);
+
+    setDiceColorStyle('gold');
+    await controller.roll('1d6');
+    expect(rollColors).toEqual(['#B83232', '#D49B2A']);
+    controller.clear();
   });
 });

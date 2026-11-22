@@ -59,6 +59,57 @@ export interface ComputedDiceRoll {
 
 export const SUPPORTED_3D_SIDES: ReadonlySet<number> = new Set([4, 6, 8, 10, 12, 20, 100]);
 
+export const QUICK_DICE_TYPES = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd66', 'd100'] as const;
+export type QuickDieType = (typeof QUICK_DICE_TYPES)[number];
+export type DicePool = Partial<Record<QuickDieType, number>>;
+
+const MAX_POOL_DICE = 100;
+
+export function getPoolDiceCount(pool: DicePool): number {
+  let total = 0;
+  for (const die of QUICK_DICE_TYPES) {
+    const count = pool[die] ?? 0;
+    if (count > 0) total += count;
+  }
+  return total;
+}
+
+/**
+ * Increments a die in the pending roll pool.
+ * `d66` is a two-digit table roll that cannot mix with additive dice, so tapping
+ * `d66` sets the pool to `{ d66: 1 }`, and tapping any other die clears `d66`.
+ */
+export function addDieToPool(pool: DicePool, die: QuickDieType): DicePool {
+  if (die === 'd66') {
+    return { d66: 1 };
+  }
+  const next: DicePool = { ...pool };
+  delete next.d66;
+  if (getPoolDiceCount(next) >= MAX_POOL_DICE) {
+    return next;
+  }
+  next[die] = (next[die] ?? 0) + 1;
+  return next;
+}
+
+/**
+ * Formats a pending dice pool into canonical notation (e.g. `3d6`, `2d6+1d8`, `d66`).
+ */
+export function formatDicePool(pool: DicePool): string {
+  if ((pool.d66 ?? 0) > 0) {
+    return 'd66';
+  }
+  const parts: string[] = [];
+  for (const die of QUICK_DICE_TYPES) {
+    if (die === 'd66') continue;
+    const count = pool[die] ?? 0;
+    if (count > 0) {
+      parts.push(`${count}${die}`);
+    }
+  }
+  return parts.join('+');
+}
+
 /**
  * Parses a dice notation string:
  * - d66 / 1d66
@@ -252,16 +303,27 @@ export function computeTotalFromDiceBoxResults(
     if (!group || !Number.isFinite(group.value)) {
       return null;
     }
-    const diceValues = group.rolls
+    const rawValues = group.rolls
       ? group.rolls.map((r: { value: number }) => r.value).filter((v: number) => Number.isFinite(v))
-      : [group.value];
-    let rawGroupTotal = group.value;
-    // Normalize d100 00+0 = 0 edge case if a runtime ever emits 0 instead of 100
-    if (parsed.sides === 100 && parsed.count === 1 && rawGroupTotal === 0) {
-      rawGroupTotal = 100;
+      : null;
+
+    if (parsed.sides === 100) {
+      // With d10 ones-face mapped to 0..9 and d100 tens-face 0..90:
+      // 80 + 0 = 80, 10 + 0 = 10, and 00 + 0 = 0 which represents 100.
+      const normalizedValues: number[] =
+        rawValues && rawValues.length > 0
+          ? rawValues.map((v: number) => (v === 0 ? 100 : v))
+          : [group.value === 0 ? 100 : group.value];
+      const rawGroupTotal = normalizedValues.reduce((sum: number, v: number) => sum + v, 0);
+      return {
+        total: rawGroupTotal + parsed.modifier,
+        diceValues: normalizedValues,
+      };
     }
+
+    const diceValues = rawValues ?? [group.value];
     return {
-      total: rawGroupTotal + parsed.modifier,
+      total: group.value + parsed.modifier,
       diceValues,
     };
   }
@@ -278,19 +340,27 @@ export function computeTotalFromDiceBoxResults(
     if (!group || !Number.isFinite(group.value)) {
       return null;
     }
-    let groupVal = group.value;
-    if (term.sides === 100 && term.count === 1 && groupVal === 0) {
-      groupVal = 100;
-    }
-    total += term.sign * groupVal;
-    if (Array.isArray(group.rolls)) {
-      for (const r of group.rolls) {
-        if (Number.isFinite(r.value)) {
-          diceValues.push(r.value);
-        }
-      }
+    const rawValues: number[] | null = Array.isArray(group.rolls)
+      ? group.rolls
+          .map((r: { value: number }) => r.value)
+          .filter((v: number) => Number.isFinite(v))
+      : null;
+
+    if (term.sides === 100) {
+      const normalizedValues: number[] =
+        rawValues && rawValues.length > 0
+          ? rawValues.map((v: number) => (v === 0 ? 100 : v))
+          : [group.value === 0 ? 100 : group.value];
+      const groupVal = normalizedValues.reduce((sum: number, v: number) => sum + v, 0);
+      total += term.sign * groupVal;
+      diceValues.push(...normalizedValues);
     } else {
-      diceValues.push(groupVal);
+      total += term.sign * group.value;
+      if (rawValues) {
+        diceValues.push(...rawValues);
+      } else {
+        diceValues.push(group.value);
+      }
     }
   }
 

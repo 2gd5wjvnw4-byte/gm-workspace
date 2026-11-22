@@ -21,6 +21,8 @@ export interface TopBarProps {
   onToggleFocusMode?: () => void;
   deskMode?: boolean;
   onToggleDeskMode?: () => void;
+  diceTrayOpen?: boolean;
+  onToggleDiceTray?: () => void;
   onOpenPdf: () => void;
   onOpenEntityInspector?: (entityId: string) => void;
   onOpenMapLibrary?: () => void;
@@ -67,6 +69,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleFocusMode,
   deskMode = false,
   onToggleDeskMode,
+  diceTrayOpen = false,
+  onToggleDiceTray,
   onOpenPdf,
   onOpenEntityInspector,
   onOpenMapLibrary,
@@ -954,6 +958,50 @@ export const TopBar: React.FC<TopBarProps> = ({
             <rect x="3" y="13" width="8" height="8" rx="1.5" />
           </svg>
           <span>Desk</span>
+        </button>
+      )}
+
+      {/* 6d. Dice tray toggle */}
+      {onToggleDiceTray && (
+        <button
+          type="button"
+          data-testid="topbar-dice-btn"
+          onClick={onToggleDiceTray}
+          aria-pressed={diceTrayOpen}
+          aria-label={diceTrayOpen ? 'Close Dice Tray' : 'Open Dice Tray'}
+          style={{
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '0 7px',
+            borderRadius: '10px',
+            fontSize: '12px',
+            fontWeight: 600,
+            border: diceTrayOpen ? '1px solid var(--accent)' : '1px solid var(--line)',
+            background: diceTrayOpen ? 'var(--accentBg)' : 'var(--p2)',
+            color: diceTrayOpen ? 'var(--accent)' : 'var(--text)',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+            <circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="15.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="8.5" cy="15.5" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="15.5" cy="15.5" r="1.2" fill="currentColor" stroke="none" />
+          </svg>
+          <span>Dice</span>
         </button>
       )}
 

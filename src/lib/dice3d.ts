@@ -9,7 +9,38 @@ import {
 } from './dice';
 
 const DICE_3D_STORAGE_KEY = 'gm-workspace-3d-dice';
+const DICE_COLOR_STORAGE_KEY = 'gm-workspace-dice-color-style';
 export const DICE_OVERLAY_CONTAINER_ID = 'gm-dice-overlay';
+
+export type DiceColorStyleId =
+  | 'accent'
+  | 'obsidian'
+  | 'ivory'
+  | 'crimson'
+  | 'emerald'
+  | 'cobalt'
+  | 'gold';
+
+export interface DiceColorStylePreset {
+  id: DiceColorStyleId;
+  label: string;
+  /** Fixed hex color for DiceBox, or null to read active app theme's --accent */
+  color: string | null;
+  /** CSS background used to render the swatch button */
+  swatch: string;
+}
+
+export const DICE_COLOR_STYLES: readonly DiceColorStylePreset[] = [
+  { id: 'accent', label: 'Theme', color: null, swatch: 'var(--accent)' },
+  { id: 'obsidian', label: 'Obsidian', color: '#232730', swatch: '#232730' },
+  { id: 'ivory', label: 'Ivory', color: '#E8DEC8', swatch: '#E8DEC8' },
+  { id: 'crimson', label: 'Crimson', color: '#B83232', swatch: '#B83232' },
+  { id: 'emerald', label: 'Emerald', color: '#2E8B57', swatch: '#2E8B57' },
+  { id: 'cobalt', label: 'Cobalt', color: '#2E66B8', swatch: '#2E66B8' },
+  { id: 'gold', label: 'Gold', color: '#D49B2A', swatch: '#D49B2A' },
+] as const;
+
+const VALID_DICE_COLOR_IDS = new Set<string>(DICE_COLOR_STYLES.map((s) => s.id));
 
 export type DiceOverlayPhase = 'idle' | 'rolling' | 'settled';
 
@@ -104,6 +135,66 @@ export function subscribe3dDicePreference(listener: (enabled: boolean) => void):
   return () => {
     prefListeners.delete(listener);
   };
+}
+
+let memoryDiceColorStyle: DiceColorStyleId = 'accent';
+const colorStyleListeners = new Set<(styleId: DiceColorStyleId) => void>();
+
+/**
+ * Returns the persisted dice color style preset (defaults to 'accent').
+ */
+export function getDiceColorStyle(): DiceColorStyleId {
+  const storage = getSafeStorage();
+  if (storage) {
+    const raw = storage.getItem(DICE_COLOR_STORAGE_KEY);
+    if (raw && VALID_DICE_COLOR_IDS.has(raw)) {
+      return raw as DiceColorStyleId;
+    }
+    return 'accent';
+  }
+  return memoryDiceColorStyle;
+}
+
+/**
+ * Persists the dice color style preset and notifies subscribed UI controls.
+ */
+export function setDiceColorStyle(styleId: DiceColorStyleId): void {
+  if (!VALID_DICE_COLOR_IDS.has(styleId)) return;
+  memoryDiceColorStyle = styleId;
+  const storage = getSafeStorage();
+  if (storage) {
+    storage.setItem(DICE_COLOR_STORAGE_KEY, styleId);
+  }
+  for (const listener of colorStyleListeners) {
+    listener(styleId);
+  }
+}
+
+export function subscribeDiceColorStyle(listener: (styleId: DiceColorStyleId) => void): () => void {
+  colorStyleListeners.add(listener);
+  return () => {
+    colorStyleListeners.delete(listener);
+  };
+}
+
+/**
+ * Resolves a DiceColorStyleId to a concrete hex color string for @3d-dice/dice-box.
+ */
+export function resolveDiceThemeColor(styleId: DiceColorStyleId = getDiceColorStyle()): string {
+  const preset = DICE_COLOR_STYLES.find((s) => s.id === styleId);
+  if (preset && preset.color) {
+    return preset.color;
+  }
+  if (typeof document !== 'undefined' && typeof getComputedStyle === 'function') {
+    const target =
+      (document.querySelector('[data-testid="app-root"]') as HTMLElement | null) ??
+      document.documentElement;
+    const accent = getComputedStyle(target).getPropertyValue('--accent').trim();
+    if (/^#[0-9a-fA-F]{3,8}$/.test(accent)) {
+      return accent;
+    }
+  }
+  return '#56D4E8';
 }
 
 export function buildDiceBoxAssetPath(baseUrl: string = import.meta.env.BASE_URL): string {
@@ -365,7 +456,9 @@ export function createDice3dController(options: Dice3dControllerOptions = {}): D
       used3d: true,
     });
 
-    const box = await ensureInitialized(opts?.themeColor);
+    const resolvedThemeColor = opts?.themeColor ?? resolveDiceThemeColor();
+
+    const box = await ensureInitialized(resolvedThemeColor);
     if (rollSeq !== activeRollSeq) {
       return null;
     }
@@ -396,7 +489,7 @@ export function createDice3dController(options: Dice3dControllerOptions = {}): D
         }, rollTimeoutMs);
 
         box
-          .roll(rollArgs, opts?.themeColor ? { themeColor: opts.themeColor } : undefined)
+          .roll(rollArgs, { themeColor: resolvedThemeColor })
           .then(
             () => {
               if (rollTimer) {
