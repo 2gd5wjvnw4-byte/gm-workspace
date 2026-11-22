@@ -1,6 +1,7 @@
 import type { MergedCampaignData } from './import/types';
 import { getEffectiveScenes } from './improvised';
 import {
+  clampScale,
   fitBounds,
   type PanZoomBounds,
   type PanZoomTransform,
@@ -21,6 +22,17 @@ export const DESK_MIN_CARD_HEIGHT = 168;
 export const DESK_MAX_CARD_WIDTH = 1608;
 export const DESK_MAX_CARD_HEIGHT = 1392;
 export const DESK_CARD_HEADER_HEIGHT = 44;
+export const DESK_DOUBLE_TAP_MS = 350;
+export const DESK_DOUBLE_TAP_DISTANCE_PX = 28;
+export const DESK_FOCUS_MAX_SCALE = 1.5;
+export const DESK_FOCUS_MIN_READABLE_SCALE = 0.85;
+export const DESK_TOOLBAR_CLEARANCE_PX = 72;
+
+export interface DeskTapRecord {
+  time: number;
+  x: number;
+  y: number;
+}
 
 export type DeskResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
 
@@ -350,6 +362,122 @@ export function fitAllDeskCards(
     DESK_MAX_ZOOM,
     1
   );
+}
+
+export function isDeskDoubleTap(
+  previous: DeskTapRecord | null,
+  current: DeskTapRecord,
+  maxDelayMs = DESK_DOUBLE_TAP_MS,
+  maxDistancePx = DESK_DOUBLE_TAP_DISTANCE_PX
+): boolean {
+  if (!previous) return false;
+  const dt = current.time - previous.time;
+  if (dt < 0 || dt > maxDelayMs) return false;
+  return Math.hypot(current.x - previous.x, current.y - previous.y) <= maxDistancePx;
+}
+
+export function computeExpandedCardHeight(
+  baseHeight: number,
+  overflowPx: number
+): number {
+  const safeBase = Number.isFinite(baseHeight)
+    ? Math.max(DESK_MIN_CARD_HEIGHT, Math.round(baseHeight))
+    : DESK_MIN_CARD_HEIGHT;
+  if (!Number.isFinite(overflowPx) || overflowPx <= 2) {
+    return safeBase;
+  }
+  const desired = Math.round(safeBase + overflowPx + 8);
+  return Math.min(DESK_MAX_CARD_HEIGHT, Math.max(safeBase, desired));
+}
+
+export function computeStandardExpandedOffsets(
+  cards: DeskCardRecord[],
+  expandedCardHeights: Record<string, number>
+): Record<string, number> {
+  const offsets: Record<string, number> = {};
+  const expandedList = cards
+    .filter((c) => !c.minimized)
+    .map((c) => ({
+      card: c,
+      delta: Math.max(0, (expandedCardHeights[c.id] ?? c.height) - c.height),
+    }))
+    .filter((entry) => entry.delta > 0);
+
+  if (expandedList.length === 0) {
+    return offsets;
+  }
+
+  for (const card of cards) {
+    let shiftY = 0;
+    for (const entry of expandedList) {
+      if (entry.card.id !== card.id && entry.card.x === card.x && entry.card.y < card.y) {
+        shiftY += entry.delta;
+      }
+    }
+    if (shiftY > 0) {
+      offsets[card.id] = shiftY;
+    }
+  }
+  return offsets;
+}
+
+export function focusDeskCardTransform(
+  card: Pick<DeskCardRecord, 'x' | 'y' | 'width' | 'height'>,
+  viewportWidth: number,
+  viewportHeight: number,
+  options?: {
+    padding?: number;
+    topClearance?: number;
+    maxScale?: number;
+    minReadableScale?: number;
+  }
+): PanZoomTransform {
+  const padding = options?.padding ?? 32;
+  const topClearance = options?.topClearance ?? DESK_TOOLBAR_CLEARANCE_PX;
+  const maxScale = options?.maxScale ?? DESK_FOCUS_MAX_SCALE;
+  const minReadableScale =
+    options?.minReadableScale ?? DESK_FOCUS_MIN_READABLE_SCALE;
+
+  const safeVpW = Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : 1180;
+  const safeVpH = Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 720;
+  const cardW = Math.max(DESK_MIN_CARD_WIDTH, card.width);
+  const cardH = Math.max(DESK_CARD_HEADER_HEIGHT, card.height);
+
+  const availW = Math.max(1, safeVpW - padding * 2);
+  const availH = Math.max(1, safeVpH - topClearance - padding);
+
+  const scaleByW = availW / cardW;
+  const scaleByH = availH / cardH;
+  const fitBoth = Math.min(scaleByW, scaleByH);
+
+  const centerX = card.x + cardW / 2;
+
+  if (fitBoth >= minReadableScale) {
+    const scale = clampScale(
+      Math.min(maxScale, fitBoth),
+      DESK_MIN_ZOOM,
+      DESK_MAX_ZOOM
+    );
+    const centerY = card.y + cardH / 2;
+    const usableCenterY = topClearance + availH / 2;
+    return {
+      x: safeVpW / 2 - centerX * scale,
+      y: usableCenterY - centerY * scale,
+      scale,
+    };
+  }
+
+  // Tall card: keep text readable and align top neatly under the floating toolbar
+  const scale = clampScale(
+    Math.min(Math.min(maxScale, 1.15), scaleByW),
+    DESK_MIN_ZOOM,
+    DESK_MAX_ZOOM
+  );
+  return {
+    x: safeVpW / 2 - centerX * scale,
+    y: topClearance - card.y * scale,
+    scale,
+  };
 }
 
 export function isDeskCardTargetMissing(

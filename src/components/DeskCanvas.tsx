@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   computeDeskPdfRenderWidth,
+  computeExpandedCardHeight,
+  computeStandardExpandedOffsets,
   DESK_GRID_SIZE,
   DESK_MAX_ZOOM,
   DESK_MIN_ZOOM,
   ensureDeskState,
   fitAllDeskCards,
+  focusDeskCardTransform,
   isDeskCardTargetMissing,
   isDeskCardVisibleInViewport,
 } from '../lib/desk';
@@ -22,7 +25,7 @@ import {
 } from '../lib/panzoom';
 import { useCampaignStore } from '../store/campaignStore';
 import type { DeskCardRecord, TableNote } from '../storage/types';
-import { DeskCardShell } from './DeskCardShell';
+import { DeskCardShell, measureCardBodyOverflowPx } from './DeskCardShell';
 import { DeskMapCardBody } from './DeskMapCardBody';
 import { DeskNodeMapCardBody } from './DeskNodeMapCardBody';
 import { DeskNotesCardBody } from './DeskNotesCardBody';
@@ -90,12 +93,69 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
   const transformRef = useRef<PanZoomTransform>(desk.viewport);
   const [viewportSize, setViewportSize] = useState(DEFAULT_VIEWPORT);
   const [structuredOpen, setStructuredOpen] = useState(false);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const [expandedCardHeights, setExpandedCardHeights] = useState<
+    Record<string, number>
+  >({});
+  const [animateViewport, setAnimateViewport] = useState(false);
+  const viewportAnimTimerRef = useRef<number | null>(null);
+
+  const stopViewportAnimation = useCallback(() => {
+    if (viewportAnimTimerRef.current !== null) {
+      window.clearTimeout(viewportAnimTimerRef.current);
+      viewportAnimTimerRef.current = null;
+    }
+    setAnimateViewport(false);
+  }, []);
 
   // Sync local transform when campaign changes or external viewport update happens
   useEffect(() => {
     transformRef.current = desk.viewport;
     setTransform(desk.viewport);
   }, [desk.viewport.x, desk.viewport.y, desk.viewport.scale, live?.campaignId]);
+
+  useEffect(() => {
+    setExpandedCardHeights({});
+    setViewMenuOpen(false);
+    stopViewportAnimation();
+  }, [live?.campaignId, stopViewportAnimation]);
+
+  useEffect(() => {
+    setExpandedCardHeights({});
+  }, [desk.layoutMode]);
+
+  useEffect(() => {
+    return () => {
+      if (viewportAnimTimerRef.current !== null) {
+        window.clearTimeout(viewportAnimTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    const onOutsidePointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest('[data-testid="desk-view-menu"]') ||
+        target?.closest('[data-testid="desk-view-menu-toggle"]')
+      ) {
+        return;
+      }
+      setViewMenuOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setViewMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', onOutsidePointerDown, true);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onOutsidePointerDown, true);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [viewMenuOpen]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const pointersRef = useRef<Map<number, ActivePointer>>(new Map());
@@ -139,6 +199,27 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
     [setDeskViewport]
   );
 
+  const animateAndSaveTransform = useCallback(
+    (next: PanZoomTransform) => {
+      const reducedMotion =
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!reducedMotion) {
+        if (viewportAnimTimerRef.current !== null) {
+          window.clearTimeout(viewportAnimTimerRef.current);
+        }
+        setAnimateViewport(true);
+        viewportAnimTimerRef.current = window.setTimeout(() => {
+          viewportAnimTimerRef.current = null;
+          setAnimateViewport(false);
+        }, 250);
+      }
+      applyAndSaveTransform(next);
+    },
+    [applyAndSaveTransform]
+  );
+
   // Attach native non-passive wheel listener so ctrl/cmd+wheel zooms without Chrome passive warnings
   useEffect(() => {
     const el = containerRef.current;
@@ -167,6 +248,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
         }
       }
       e.preventDefault();
+      stopViewportAnimation();
       const rect = el.getBoundingClientRect();
       const focalX = e.clientX - rect.left;
       const focalY = e.clientY - rect.top;
@@ -191,7 +273,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
     };
     el.addEventListener('wheel', onNativeWheel, { passive: false });
     return () => el.removeEventListener('wheel', onNativeWheel);
-  }, [applyAndSaveTransform]);
+  }, [applyAndSaveTransform, stopViewportAnimation]);
 
   const handleZoomIn = () => {
     const vp = getViewportSize();
@@ -227,6 +309,135 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
     applyAndSaveTransform(next);
   };
 
+  const clearExpandedCard = useCallback((cardId: string) => {
+    setExpandedCardHeights((prev) => {
+      if (!(cardId in prev)) return prev;
+      const next = { ...prev };
+      delete next[cardId];
+      return next;
+    });
+  }, []);
+
+  const handleResizeCard = useCallback(
+    (
+      cardId: string,
+      rect: { x: number; y: number; width: number; height: number }
+    ) => {
+      clearExpandedCard(cardId);
+      resizeDeskCard(cardId, rect);
+    },
+    [clearExpandedCard, resizeDeskCard]
+  );
+
+  const handleToggleMinimizeCard = useCallback(
+    (cardId: string) => {
+      clearExpandedCard(cardId);
+      toggleDeskCardMinimized(cardId);
+    },
+    [clearExpandedCard, toggleDeskCardMinimized]
+  );
+
+  const handleRemoveCard = useCallback(
+    (cardId: string) => {
+      clearExpandedCard(cardId);
+      removeDeskCard(cardId);
+    },
+    [clearExpandedCard, removeDeskCard]
+  );
+
+  const standardExpandedOffsets =
+    desk.layoutMode === 'standard'
+      ? computeStandardExpandedOffsets(desk.cards, expandedCardHeights)
+      : {};
+
+  const handleDoubleTapCard = useCallback(
+    (cardId: string, measuredOverflowPx: number) => {
+      const card = desk.cards.find((c) => c.id === cardId);
+      if (!card) return;
+      bringDeskCardToFront(cardId);
+      const vp = getViewportSize();
+      const cardOffsetY = standardExpandedOffsets[cardId] ?? 0;
+
+      if (card.minimized) {
+        toggleDeskCardMinimized(cardId);
+        requestAnimationFrame(() => {
+          const latestCards = ensureDeskState(
+            useCampaignStore.getState().live?.desk
+          ).cards;
+          const latestCard = latestCards.find((c) => c.id === cardId) ?? card;
+          const bodyEl = containerRef.current?.querySelector(
+            `[data-testid="desk-card-body-${cardId}"]`
+          ) as HTMLElement | null;
+          const overflowPx = measureCardBodyOverflowPx(bodyEl, latestCard.height);
+          const expandedH = computeExpandedCardHeight(latestCard.height, overflowPx);
+          if (expandedH > latestCard.height) {
+            setExpandedCardHeights((prev) => ({ ...prev, [cardId]: expandedH }));
+          }
+          const nextVp = getViewportSize();
+          animateAndSaveTransform(
+            focusDeskCardTransform(
+              {
+                x: latestCard.x,
+                y: latestCard.y + cardOffsetY,
+                width: latestCard.width,
+                height: expandedH,
+              },
+              nextVp.width,
+              nextVp.height
+            )
+          );
+        });
+        return;
+      }
+
+      const isCurrentlyExpanded = expandedCardHeights[cardId] != null;
+      if (isCurrentlyExpanded) {
+        clearExpandedCard(cardId);
+        const next = focusDeskCardTransform(
+          {
+            x: card.x,
+            y: card.y + cardOffsetY,
+            width: card.width,
+            height: card.height,
+          },
+          vp.width,
+          vp.height
+        );
+        animateAndSaveTransform(next);
+        return;
+      }
+
+      const targetHeight = computeExpandedCardHeight(
+        card.height,
+        measuredOverflowPx
+      );
+      if (targetHeight > card.height) {
+        setExpandedCardHeights((prev) => ({ ...prev, [cardId]: targetHeight }));
+      }
+      const next = focusDeskCardTransform(
+        {
+          x: card.x,
+          y: card.y + cardOffsetY,
+          width: card.width,
+          height: targetHeight,
+        },
+        vp.width,
+        vp.height
+      );
+      animateAndSaveTransform(next);
+    },
+    [
+      animateAndSaveTransform,
+      bringDeskCardToFront,
+      clearExpandedCard,
+      desk.cards,
+      expandedCardHeights,
+      getViewportSize,
+      standardExpandedOffsets,
+      toggleDeskCardMinimized,
+    ]
+  );
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const target = e.target as HTMLElement | null;
@@ -240,6 +451,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
     }
 
     const rect = containerRef.current?.getBoundingClientRect();
+    stopViewportAnimation();
     const localX = e.clientX - (rect?.left ?? 0);
     const localY = e.clientY - (rect?.top ?? 0);
 
@@ -279,6 +491,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!pointersRef.current.has(e.pointerId)) return;
     const rect = containerRef.current?.getBoundingClientRect();
+    stopViewportAnimation();
     const localX = e.clientX - (rect?.left ?? 0);
     const localY = e.clientY - (rect?.top ?? 0);
     pointersRef.current.set(e.pointerId, { x: localX, y: localY });
@@ -627,6 +840,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
       {/* Transformed World Layer */}
       <div
         data-testid="desk-world"
+        data-animating={animateViewport ? 'true' : 'false'}
         style={{
           position: 'absolute',
           left: 0,
@@ -635,6 +849,9 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
           height: 0,
           transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
           transformOrigin: '0 0',
+          transition: animateViewport
+            ? 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'
+            : 'none',
         }}
       >
         {desk.cards.map((card) => {
@@ -686,6 +903,14 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
             }
           }
 
+          const offsetY = standardExpandedOffsets[card.id] ?? 0;
+          if (offsetY > 0) {
+            displayCard = {
+              ...displayCard,
+              y: displayCard.y + offsetY,
+            };
+          }
+
           return (
             <DeskCardShell
               key={card.id}
@@ -694,14 +919,16 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
               snapToGrid={desk.snapToGrid}
               gridSize={gridSize}
               locked={desk.layoutMode === 'standard'}
+              expandedHeight={expandedCardHeights[card.id] ?? null}
               isMissingTarget={isDeskCardTargetMissing(card, merged, live)}
               onBringToFront={(id) => {
                 bringDeskCardToFront(id);
               }}
               onMove={moveDeskCard}
-              onResize={resizeDeskCard}
-              onToggleMinimize={toggleDeskCardMinimized}
-              onClose={removeDeskCard}
+              onResize={handleResizeCard}
+              onToggleMinimize={handleToggleMinimizeCard}
+              onClose={handleRemoveCard}
+              onDoubleTap={handleDoubleTapCard}
             >
               {renderCardBodySummary(card)}
             </DeskCardShell>
@@ -754,8 +981,9 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
           zIndex: 20,
         }}
       >
-        {/* Left group: Structured + Layout + Snap + Links */}
+        {/* Left group: Structured only */}
         <div
+          data-testid="desk-toolbar-left"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -773,9 +1001,7 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
               height: '44px',
               padding: '0 14px',
               borderRadius: '10px',
-              border: structuredOpen
-                ? '1px solid var(--accent)'
-                : '1px solid var(--accent)',
+              border: '1px solid var(--accent)',
               background: structuredOpen ? 'var(--accentBg)' : 'var(--accent)',
               color: structuredOpen ? 'var(--accent)' : 'var(--onAccent)',
               fontSize: '13px',
@@ -786,91 +1012,13 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
           >
             Structured
           </button>
-
-          <button
-            type="button"
-            data-testid="desk-layout-toggle"
-            aria-pressed={desk.layoutMode === 'standard'}
-            onClick={() =>
-              setDeskLayoutMode(
-                desk.layoutMode === 'standard' ? 'free' : 'standard',
-                getViewportSize()
-              )
-            }
-            style={{
-              height: '44px',
-              padding: '0 12px',
-              borderRadius: '10px',
-              border:
-                desk.layoutMode === 'standard'
-                  ? '1px solid var(--gold)'
-                  : '1px solid var(--line)',
-              background:
-                desk.layoutMode === 'standard' ? 'var(--goldBg)' : 'var(--panel)',
-              color:
-                desk.layoutMode === 'standard' ? 'var(--gold)' : 'var(--text)',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
-            }}
-          >
-            Layout: {desk.layoutMode === 'standard' ? 'Standard' : 'Free'}
-          </button>
-
-          <button
-            type="button"
-            data-testid="desk-snap-toggle"
-            aria-pressed={desk.snapToGrid}
-            onClick={() => setDeskSnapToGrid(!desk.snapToGrid)}
-            style={{
-              height: '44px',
-              padding: '0 12px',
-              borderRadius: '10px',
-              border: desk.snapToGrid
-                ? '1px solid var(--accent)'
-                : '1px solid var(--line)',
-              background: desk.snapToGrid ? 'var(--accentBg)' : 'var(--panel)',
-              color: desk.snapToGrid ? 'var(--accent)' : 'var(--text)',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
-            }}
-          >
-            Snap {desk.snapToGrid ? 'On' : 'Off'}
-          </button>
-
-          <button
-            type="button"
-            data-testid="desk-link-mode-toggle"
-            aria-pressed={linkOpenMode === 'new-card'}
-            onClick={() =>
-              setDeskLinkOpenMode(linkOpenMode === 'new-card' ? 'in-place' : 'new-card')
-            }
-            style={{
-              height: '44px',
-              padding: '0 12px',
-              borderRadius: '10px',
-              border:
-                linkOpenMode === 'new-card'
-                  ? '1px solid var(--tealLine)'
-                  : '1px solid var(--line)',
-              background: linkOpenMode === 'new-card' ? 'var(--tealBg)' : 'var(--panel)',
-              color: linkOpenMode === 'new-card' ? 'var(--teal)' : 'var(--text)',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
-            }}
-          >
-            Links: {linkOpenMode === 'new-card' ? 'New card' : 'In place'}
-          </button>
         </div>
 
-        {/* Right group: Zoom -, %, +, Fit All */}
+        {/* Right group: Zoom -, %, +, Fit All, View Menu */}
         <div
+          data-testid="desk-toolbar-right"
           style={{
+            position: 'relative',
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
@@ -951,6 +1099,177 @@ export const DeskCanvas: React.FC<DeskCanvasProps> = ({
           >
             Fit all
           </button>
+          <button
+            type="button"
+            data-testid="desk-view-menu-toggle"
+            aria-label="Desk view options"
+            aria-expanded={viewMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setViewMenuOpen((v) => !v)}
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '8px',
+              border: viewMenuOpen
+                ? '1px solid var(--accent)'
+                : '1px solid transparent',
+              background: viewMenuOpen ? 'var(--accentBg)' : 'var(--p3)',
+              color: viewMenuOpen ? 'var(--accent)' : 'var(--text)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M3 5.5H17M3 10H17M3 14.5H17"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+
+          {viewMenuOpen && (
+            <div
+              data-testid="desk-view-menu"
+              role="menu"
+              aria-label="Desk view options"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                minWidth: '220px',
+                padding: '8px',
+                borderRadius: '12px',
+                background: 'var(--panel)',
+                border: '1px solid var(--line2)',
+                boxShadow: '0 12px 28px rgba(0, 0, 0, 0.38)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                zIndex: 30,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'var(--mono)',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: 'var(--muted)',
+                  padding: '2px 6px',
+                }}
+              >
+                View Options
+              </div>
+
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={desk.layoutMode === 'standard'}
+                data-testid="desk-layout-toggle"
+                aria-pressed={desk.layoutMode === 'standard'}
+                onClick={() =>
+                  setDeskLayoutMode(
+                    desk.layoutMode === 'standard' ? 'free' : 'standard',
+                    getViewportSize()
+                  )
+                }
+                style={{
+                  height: '44px',
+                  width: '100%',
+                  padding: '0 12px',
+                  borderRadius: '8px',
+                  border:
+                    desk.layoutMode === 'standard'
+                      ? '1px solid var(--gold)'
+                      : '1px solid var(--line)',
+                  background:
+                    desk.layoutMode === 'standard'
+                      ? 'var(--goldBg)'
+                      : 'var(--p2)',
+                  color:
+                    desk.layoutMode === 'standard'
+                      ? 'var(--gold)'
+                      : 'var(--text)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+              >
+                Layout: {desk.layoutMode === 'standard' ? 'Standard' : 'Free'}
+              </button>
+
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={desk.snapToGrid}
+                data-testid="desk-snap-toggle"
+                aria-pressed={desk.snapToGrid}
+                onClick={() => setDeskSnapToGrid(!desk.snapToGrid)}
+                style={{
+                  height: '44px',
+                  width: '100%',
+                  padding: '0 12px',
+                  borderRadius: '8px',
+                  border: desk.snapToGrid
+                    ? '1px solid var(--accent)'
+                    : '1px solid var(--line)',
+                  background: desk.snapToGrid ? 'var(--accentBg)' : 'var(--p2)',
+                  color: desk.snapToGrid ? 'var(--accent)' : 'var(--text)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+              >
+                Snap {desk.snapToGrid ? 'On' : 'Off'}
+              </button>
+
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={linkOpenMode === 'new-card'}
+                data-testid="desk-link-mode-toggle"
+                aria-pressed={linkOpenMode === 'new-card'}
+                onClick={() =>
+                  setDeskLinkOpenMode(
+                    linkOpenMode === 'new-card' ? 'in-place' : 'new-card'
+                  )
+                }
+                style={{
+                  height: '44px',
+                  width: '100%',
+                  padding: '0 12px',
+                  borderRadius: '8px',
+                  border:
+                    linkOpenMode === 'new-card'
+                      ? '1px solid var(--tealLine)'
+                      : '1px solid var(--line)',
+                  background:
+                    linkOpenMode === 'new-card' ? 'var(--tealBg)' : 'var(--p2)',
+                  color:
+                    linkOpenMode === 'new-card' ? 'var(--teal)' : 'var(--text)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+              >
+                Links: {linkOpenMode === 'new-card' ? 'New card' : 'In place'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

@@ -2224,11 +2224,13 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       viewportBeforeCardDrag
     );
 
-    // G6: Toggling Snap to Grid snaps card drag and corner resize to 24px multiples
+    // G6: Toggling Snap to Grid (inside Desk view menu) snaps card drag and corner resize to 24px multiples
+    fireEvent.click(screen.getByTestId('desk-view-menu-toggle'));
     const snapToggle = screen.getByTestId('desk-snap-toggle');
     expect(snapToggle).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(snapToggle);
     expect(snapToggle).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByTestId('desk-view-menu-toggle'));
 
     firePtr(headerEl, 'pointerdown', { pointerId: 4, clientX: 200, clientY: 100 });
     firePtr(headerEl, 'pointermove', { pointerId: 4, clientX: 213, clientY: 119 });
@@ -2560,8 +2562,10 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     ).toBeInTheDocument();
 
     // Default link mode is In place -> tapping an open exit on cardB (secondScene) navigates in-place without adding a card
+    fireEvent.click(screen.getByTestId('desk-view-menu-toggle'));
     const linkToggle = screen.getByTestId('desk-link-mode-toggle');
     expect(linkToggle).toHaveTextContent('Links: In place');
+    fireEvent.click(screen.getByTestId('desk-view-menu-toggle'));
     const cardCountBeforeInPlace = useCampaignStore.getState().live!.desk!.cards.length;
     const openExitInB = within(screen.getByTestId(`desk-scene-card-body-${cardB.id}`))
       .getAllByRole('button')
@@ -2573,8 +2577,11 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     // Pin cardB back to secondScene, then switch to Links: New card -> tapping exit, NPC, and Book page spawns new cards
     fireEvent.click(screen.getByTestId(`desk-scene-picker-btn-${cardB.id}`));
     fireEvent.click(screen.getByTestId(`desk-scene-picker-option-${cardB.id}-${secondScene.id}`));
-    fireEvent.click(linkToggle);
-    expect(linkToggle).toHaveTextContent('Links: New card');
+    fireEvent.click(screen.getByTestId('desk-view-menu-toggle'));
+    const linkToggleAgain = screen.getByTestId('desk-link-mode-toggle');
+    fireEvent.click(linkToggleAgain);
+    expect(linkToggleAgain).toHaveTextContent('Links: New card');
+    fireEvent.click(screen.getByTestId('desk-view-menu-toggle'));
     expect(useCampaignStore.getState().live!.desk!.linkOpenMode).toBe('new-card');
 
     const exitInB = within(screen.getByTestId(`desk-scene-card-body-${cardB.id}`))
@@ -2951,7 +2958,7 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
         fireEvent(el, ev);
       };
       // Tap Desk toolbar
-      dispatchPointerDown(screen.getByTestId('desk-snap-toggle'));
+      dispatchPointerDown(screen.getByTestId('desk-view-menu-toggle'));
       expect(screen.queryByTestId(`desk-scene-picker-menu-${sceneCard.id}`)).not.toBeInTheDocument();
       // Re-open and tap same Scene card body below menu
       fireEvent.click(pickerBtn);
@@ -3129,5 +3136,196 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('Stage 8f-b: Desk view menu groups Layout, Snap, and Links next to Zoom/Fit all and closes on outside tap or Escape', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Desk View Menu Campaign',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+
+    render(<App />);
+    fireEvent.click(screen.getByTestId('desk-view-toggle'));
+
+    // Left toolbar shows only Structured
+    const leftGroup = screen.getByTestId('desk-toolbar-left');
+    expect(within(leftGroup).getAllByRole('button')).toHaveLength(1);
+    expect(within(leftGroup).getByTestId('desk-structured-toggle')).toBeInTheDocument();
+    expect(screen.queryByTestId('desk-layout-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('desk-snap-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('desk-link-mode-toggle')).not.toBeInTheDocument();
+
+    // Right toolbar keeps Zoom -, %, +, Fit all always visible alongside 44x44 view menu button
+    const rightGroup = screen.getByTestId('desk-toolbar-right');
+    expect(within(rightGroup).getByTestId('desk-zoom-out')).toBeInTheDocument();
+    expect(within(rightGroup).getByTestId('desk-zoom-readout')).toBeInTheDocument();
+    expect(within(rightGroup).getByTestId('desk-zoom-in')).toBeInTheDocument();
+    expect(within(rightGroup).getByTestId('desk-fit-all')).toBeInTheDocument();
+    const viewMenuBtn = within(rightGroup).getByTestId('desk-view-menu-toggle');
+    expect(viewMenuBtn.style.width).toBe('44px');
+    expect(viewMenuBtn.style.height).toBe('44px');
+    expect(viewMenuBtn).toHaveAttribute('aria-expanded', 'false');
+
+    // Open view menu -> all 3 toggles appear and work
+    fireEvent.click(viewMenuBtn);
+    expect(viewMenuBtn).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByTestId('desk-view-menu');
+    const layoutBtn = within(menu).getByTestId('desk-layout-toggle');
+    const snapBtn = within(menu).getByTestId('desk-snap-toggle');
+    const linksBtn = within(menu).getByTestId('desk-link-mode-toggle');
+    expect(layoutBtn.style.height).toBe('44px');
+    expect(snapBtn.style.height).toBe('44px');
+    expect(linksBtn.style.height).toBe('44px');
+
+    fireEvent.click(layoutBtn);
+    expect(useCampaignStore.getState().live!.desk!.layoutMode).toBe('standard');
+    expect(layoutBtn).toHaveTextContent('Layout: Standard');
+    fireEvent.click(layoutBtn);
+    expect(useCampaignStore.getState().live!.desk!.layoutMode).toBe('free');
+
+    fireEvent.click(snapBtn);
+    expect(useCampaignStore.getState().live!.desk!.snapToGrid).toBe(true);
+    expect(snapBtn).toHaveTextContent('Snap On');
+
+    fireEvent.click(linksBtn);
+    expect(useCampaignStore.getState().live!.desk!.linkOpenMode).toBe('new-card');
+    expect(linksBtn).toHaveTextContent('Links: New card');
+
+    // Outside tap closes the menu
+    fireEvent(
+      screen.getByTestId('desk-canvas'),
+      new Event('pointerdown', { bubbles: true, cancelable: true })
+    );
+    expect(screen.queryByTestId('desk-view-menu')).not.toBeInTheDocument();
+
+    // Re-open and close with Escape
+    fireEvent.click(viewMenuBtn);
+    expect(screen.getByTestId('desk-view-menu')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('desk-view-menu')).not.toBeInTheDocument();
+  });
+
+  it('Stage 8f-b: double-tap on Desk card zooms, centers, expands full length, restores on second double-tap, and ignores interactive buttons', async () => {
+    await useCampaignStore.getState().createNewCampaign({
+      title: 'Desk Double-Tap Campaign',
+      system: 'Mothership 1e',
+      genre: 'sci-fi horror',
+    });
+    await useCampaignStore.getState().importJsonChunk(sampleRawText);
+    const store = useCampaignStore.getState();
+    const cardA = store.addDeskCard({
+      type: 'scene',
+      title: 'Scene A',
+      followCurrentScene: true,
+      x: 800,
+      y: 500,
+      width: 480,
+      height: 320,
+    })!;
+    const cardB = store.addDeskCard({
+      type: 'notes',
+      title: 'Notes B',
+      x: 100,
+      y: 100,
+      width: 340,
+      height: 300,
+    })!;
+    // cardB is initially on top (z=2 > cardA z=1)
+    expect(
+      useCampaignStore.getState().live!.desk!.cards.find((c) => c.id === cardA.id)!.z
+    ).toBeLessThan(
+      useCampaignStore.getState().live!.desk!.cards.find((c) => c.id === cardB.id)!.z
+    );
+    const savedFreeBefore = {
+      ...(useCampaignStore.getState().live!.desk!.savedFreeRects ?? {}),
+    };
+
+    render(<App />);
+    fireEvent.click(screen.getByTestId('desk-view-toggle'));
+
+    const cardAEl = screen.getByTestId(`desk-card-${cardA.id}`);
+    const cardABody = screen.getByTestId(`desk-card-body-${cardA.id}`);
+    // Simulate real DeskSceneCardBody geometry: outer body has no overflow (276 === 276),
+    // while nested zone-scene-stage scroller overflows by 600px (800 vs 200)
+    Object.defineProperty(cardABody, 'clientHeight', {
+      configurable: true,
+      value: 276,
+    });
+    Object.defineProperty(cardABody, 'scrollHeight', {
+      configurable: true,
+      value: 276,
+    });
+    const nestedStage = cardABody.querySelector('[data-testid="zone-scene-stage"]') as HTMLElement;
+    expect(nestedStage).toBeTruthy();
+    Object.defineProperty(nestedStage, 'clientHeight', {
+      configurable: true,
+      value: 200,
+    });
+    Object.defineProperty(nestedStage, 'scrollHeight', {
+      configurable: true,
+      value: 800,
+    });
+
+    // Double-tapping an interactive button inside cardA (minimize) must NOT expand or zoom cardA
+    const vpBeforeBtn = { ...useCampaignStore.getState().live!.desk!.viewport };
+    const minBtn = screen.getByTestId(`desk-card-minimize-${cardA.id}`);
+    fireEvent.doubleClick(minBtn);
+    expect(cardAEl).toHaveAttribute('data-expanded', 'false');
+    expect(useCampaignStore.getState().live!.desk!.viewport).toEqual(vpBeforeBtn);
+
+    // Double-tap cardA header -> raises cardA to front, smoothly zooms & centers viewport, expands card height to full nested content
+    const headerA = screen.getByTestId(`desk-card-header-${cardA.id}`);
+    fireEvent.doubleClick(headerA);
+
+    expect(cardAEl).toHaveAttribute('data-expanded', 'true');
+    // 320 base + 600 nested overflow + 8 buffer = 928px
+    expect(cardAEl.style.height).toBe('928px');
+    // G12: Smooth transition enabled on desk-world during programmatic focus jump
+    const deskWorld = screen.getByTestId('desk-world');
+    expect(deskWorld).toHaveAttribute('data-animating', 'true');
+    expect(deskWorld.style.transition).toContain('220ms');
+    expect(
+      useCampaignStore.getState().live!.desk!.cards.find((c) => c.id === cardA.id)!.z
+    ).toBeGreaterThan(
+      useCampaignStore.getState().live!.desk!.cards.find((c) => c.id === cardB.id)!.z
+    );
+    const vpAfterExpand = useCampaignStore.getState().live!.desk!.viewport;
+    expect(vpAfterExpand).not.toEqual(vpBeforeBtn);
+    expect(vpAfterExpand.scale).toBeGreaterThanOrEqual(0.85);
+
+    // G13: Switching to Standard clears expanded heights cleanly; switching back to Free restores savedFreeRects
+    fireEvent.click(screen.getByTestId('desk-view-menu-toggle'));
+    fireEvent.click(screen.getByTestId('desk-layout-toggle'));
+    expect(cardAEl).toHaveAttribute('data-expanded', 'false');
+    // Expand again in Standard mode, then switch back to Free -> must clear expanded state and restore 320px
+    fireEvent.doubleClick(headerA);
+    expect(cardAEl).toHaveAttribute('data-expanded', 'true');
+    fireEvent.click(screen.getByTestId('desk-layout-toggle'));
+    expect(cardAEl).toHaveAttribute('data-expanded', 'false');
+    expect(cardAEl.style.height).toBe('320px');
+    expect(useCampaignStore.getState().live!.desk!.savedFreeRects ?? {}).toMatchObject(
+      savedFreeBefore
+    );
+
+    // Re-expand and double-tap cardA header again -> restores original height (320px)
+    fireEvent.doubleClick(headerA);
+    expect(cardAEl).toHaveAttribute('data-expanded', 'true');
+    fireEvent.doubleClick(headerA);
+    expect(cardAEl).toHaveAttribute('data-expanded', 'false');
+    expect(cardAEl.style.height).toBe('320px');
+
+    // Minimized card double-tap un-minimizes it and focuses viewport
+    fireEvent.click(screen.getByTestId(`desk-card-minimize-${cardB.id}`));
+    expect(screen.getByTestId(`desk-card-${cardB.id}`)).toHaveAttribute(
+      'data-minimized',
+      'true'
+    );
+    fireEvent.doubleClick(screen.getByTestId(`desk-card-header-${cardB.id}`));
+    expect(screen.getByTestId(`desk-card-${cardB.id}`)).toHaveAttribute(
+      'data-minimized',
+      'false'
+    );
   });
 });

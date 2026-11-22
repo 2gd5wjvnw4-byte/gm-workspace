@@ -4,15 +4,21 @@ import {
   clampDeskCardSize,
   computeDeskCardsBounds,
   computeDeskPdfRenderWidth,
+  computeExpandedCardHeight,
   computeStandardDeskLayout,
+  computeStandardExpandedOffsets,
   DESK_CARD_CATALOG,
   DESK_CARD_HEADER_HEIGHT,
+  DESK_MAX_CARD_HEIGHT,
   DESK_MIN_CARD_HEIGHT,
   DESK_MIN_CARD_WIDTH,
+  DESK_TOOLBAR_CLEARANCE_PX,
   ensureDeskState,
   fitAllDeskCards,
+  focusDeskCardTransform,
   isDeskCardTargetMissing,
   isDeskCardVisibleInViewport,
+  isDeskDoubleTap,
   resizeDeskCardFromCorner,
   restoreFreeRects,
   snapshotFreeRects,
@@ -264,5 +270,59 @@ describe('desk pure helpers', () => {
     expect(ensured.layoutMode).toBe('standard');
     expect(ensured.savedFreeRects?.c1).toEqual({ x: 111, y: 222, width: 533, height: 444 });
     expect(ensureDeskState(undefined).savedFreeRects).toEqual({});
+  });
+
+  it('detects double-tap within timing and distance thresholds and rejects slow or far taps', () => {
+    const first = { time: 1000, x: 200, y: 150 };
+    expect(isDeskDoubleTap(null, first)).toBe(false);
+    expect(isDeskDoubleTap(first, { time: 1200, x: 210, y: 158 })).toBe(true);
+    // Too slow (> 350ms)
+    expect(isDeskDoubleTap(first, { time: 1450, x: 202, y: 152 })).toBe(false);
+    // Too far (> 28px)
+    expect(isDeskDoubleTap(first, { time: 1150, x: 240, y: 150 })).toBe(false);
+  });
+
+  it('computes expanded card height from overflow, skipping non-overflowing cards and clamping to max', () => {
+    expect(computeExpandedCardHeight(320, 0)).toBe(320);
+    expect(computeExpandedCardHeight(320, 2)).toBe(320);
+    // 400px overflow + 8px buffer = 728px
+    expect(computeExpandedCardHeight(320, 400)).toBe(728);
+    // Very tall content clamps to DESK_MAX_CARD_HEIGHT
+    expect(computeExpandedCardHeight(320, 5000)).toBe(DESK_MAX_CARD_HEIGHT);
+  });
+
+  it('shifts lower cards in the same Standard column when an upper card expands', () => {
+    const cards: DeskCardRecord[] = [
+      makeCard({ id: 'top-r', x: 976, y: 48, width: 360, height: 400 }),
+      makeCard({ id: 'bot-r', x: 976, y: 472, width: 360, height: 340 }),
+      makeCard({ id: 'mid-c', x: 392, y: 48, width: 560, height: 520 }),
+    ];
+    const offsets = computeStandardExpandedOffsets(cards, { 'top-r': 520 });
+    expect(offsets['bot-r']).toBe(120);
+    expect(offsets['top-r']).toBeUndefined();
+    expect(offsets['mid-c']).toBeUndefined();
+  });
+
+  it('focuses and centers normal cards and keeps tall expanded cards readable under toolbar', () => {
+    // Normal card: 340x320 at (600, 400) in 1180x720 viewport
+    const smallCard = { x: 600, y: 400, width: 340, height: 320 };
+    const smallFocus = focusDeskCardTransform(smallCard, 1180, 720);
+    expect(smallFocus.scale).toBeCloseTo(1.5, 2);
+    // Card center should land at horizontal center (590) and usable vertical center (72 + (720-72-32)/2 = 380)
+    const screenCenterX = (smallCard.x + smallCard.width / 2) * smallFocus.scale + smallFocus.x;
+    const screenCenterY = (smallCard.y + smallCard.height / 2) * smallFocus.scale + smallFocus.y;
+    expect(screenCenterX).toBeCloseTo(590, 1);
+    expect(screenCenterY).toBeCloseTo(380, 1);
+
+    // Tall expanded card: 520x1100 at (200, 150) in 1180x720 viewport
+    const tallCard = { x: 200, y: 150, width: 520, height: 1100 };
+    const tallFocus = focusDeskCardTransform(tallCard, 1180, 720);
+    // Readable scale (1.15), not shrunk to tiny 0.56
+    expect(tallFocus.scale).toBeCloseTo(1.15, 2);
+    // Horizontally centered and top aligned at toolbar clearance (72px)
+    const tallCenterX = (tallCard.x + tallCard.width / 2) * tallFocus.scale + tallFocus.x;
+    const tallTopY = tallCard.y * tallFocus.scale + tallFocus.y;
+    expect(tallCenterX).toBeCloseTo(590, 1);
+    expect(tallTopY).toBeCloseTo(DESK_TOOLBAR_CLEARANCE_PX, 1);
   });
 });

@@ -2,11 +2,51 @@ import React, { useRef, useState } from 'react';
 import {
   DESK_CARD_HEADER_HEIGHT,
   DESK_GRID_SIZE,
+  isDeskDoubleTap,
   resizeDeskCardFromCorner,
   snapToDeskGrid,
   type DeskResizeCorner,
+  type DeskTapRecord,
 } from '../lib/desk';
+import { PAN_THRESHOLD_PX } from '../lib/panzoom';
 import type { DeskCardRecord } from '../storage/types';
+
+const INTERACTIVE_TAP_SELECTOR =
+  'button, input, select, textarea, a, label, [role="button"], [role="switch"], [role="checkbox"], [contenteditable="true"], [data-testid^="desk-card-resize-"], [data-testid="node-map-canvas"]';
+
+export function measureCardBodyOverflowPx(
+  bodyEl: HTMLElement | null,
+  cardHeight: number
+): number {
+  if (!bodyEl) return 0;
+  const fallbackBodyHeight = Math.max(0, cardHeight - DESK_CARD_HEADER_HEIGHT);
+  let maxOverflow =
+    bodyEl.clientHeight > 0
+      ? Math.max(0, bodyEl.scrollHeight - bodyEl.clientHeight)
+      : Math.max(0, bodyEl.scrollHeight - fallbackBodyHeight);
+
+  const descendants = bodyEl.querySelectorAll<HTMLElement>('*');
+  for (let i = 0; i < descendants.length; i += 1) {
+    const el = descendants[i];
+    if (el.scrollHeight <= 0) continue;
+    const styleOverflowY = el.style.overflowY || el.style.overflow;
+    let isScrollable =
+      styleOverflowY === 'auto' || styleOverflowY === 'scroll';
+    if (!isScrollable && typeof window !== 'undefined' && window.getComputedStyle) {
+      const computedY = window.getComputedStyle(el).overflowY;
+      isScrollable = computedY === 'auto' || computedY === 'scroll';
+    }
+    if (!isScrollable) continue;
+    const descOverflow =
+      el.clientHeight > 0
+        ? Math.max(0, el.scrollHeight - el.clientHeight)
+        : Math.max(0, el.scrollHeight - fallbackBodyHeight);
+    if (descOverflow > maxOverflow) {
+      maxOverflow = descOverflow;
+    }
+  }
+  return maxOverflow;
+}
 
 export interface DeskCardShellProps {
   card: DeskCardRecord;
@@ -14,6 +54,7 @@ export interface DeskCardShellProps {
   snapToGrid: boolean;
   gridSize?: number;
   locked?: boolean;
+  expandedHeight?: number | null;
   isMissingTarget: boolean;
   onBringToFront: (cardId: string) => void;
   onMove: (cardId: string, x: number, y: number) => void;
@@ -23,6 +64,7 @@ export interface DeskCardShellProps {
   ) => void;
   onToggleMinimize: (cardId: string) => void;
   onClose: (cardId: string) => void;
+  onDoubleTap?: (cardId: string, measuredContentHeight: number) => void;
   children?: React.ReactNode;
 }
 
@@ -51,15 +93,82 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
   snapToGrid,
   gridSize = DESK_GRID_SIZE,
   locked = false,
+  expandedHeight = null,
   isMissingTarget,
   onBringToFront,
   onMove,
   onResize,
   onToggleMinimize,
   onClose,
+  onDoubleTap,
   children,
 }) => {
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const tapDownRef = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const lastTapRef = useRef<DeskTapRecord | null>(null);
+  const lastPointerDoubleTapTimeRef = useRef<number>(0);
+
+  const measureBodyOverflow = (): number => {
+    return measureCardBodyOverflowPx(bodyRef.current, card.height);
+  };
+
+  const triggerDoubleTap = (fromPointer: boolean) => {
+    lastTapRef.current = null;
+    if (fromPointer) {
+      lastPointerDoubleTapTimeRef.current = Date.now();
+    }
+    onDoubleTap?.(card.id, measureBodyOverflow());
+  };
+
+  const recordTapDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest(INTERACTIVE_TAP_SELECTOR)) {
+      tapDownRef.current = null;
+      return;
+    }
+    tapDownRef.current = {
+      pointerId: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+    };
+  };
+
+  const recordTapUp = (e: React.PointerEvent<HTMLElement>) => {
+    const down = tapDownRef.current;
+    tapDownRef.current = null;
+    if (!down || down.pointerId !== e.pointerId) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    if (moved > PAN_THRESHOLD_PX) {
+      lastTapRef.current = null;
+      return;
+    }
+    const nowTap: DeskTapRecord = {
+      time: Date.now(),
+      x: e.clientX,
+      y: e.clientY,
+    };
+    if (isDeskDoubleTap(lastTapRef.current, nowTap)) {
+      triggerDoubleTap(true);
+    } else {
+      lastTapRef.current = nowTap;
+    }
+  };
+
+  const handleCardDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest(INTERACTIVE_TAP_SELECTOR)) return;
+    e.stopPropagation();
+    if (Date.now() - lastPointerDoubleTapTimeRef.current < 120) {
+      return;
+    }
+    triggerDoubleTap(false);
+  };
 
   const dragRef = useRef<{
     pointerId: number;
@@ -87,6 +196,7 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
     }
     e.stopPropagation();
     onBringToFront(card.id);
+    recordTapDown(e);
     if (locked) {
       return;
     }
@@ -117,9 +227,14 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
   };
 
   const handleHeaderPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (e.type === 'pointerup') {
+      recordTapUp(e);
+    } else {
+      tapDownRef.current = null;
+    }
     const active = dragRef.current;
     if (!active || active.pointerId !== e.pointerId) return;
-    e.stopPropagation();
     dragRef.current = null;
     setActiveGesture(null);
     try {
@@ -191,7 +306,12 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
     }
   };
 
-  const effectiveHeight = card.minimized ? DESK_CARD_HEADER_HEIGHT : card.height;
+  const isExpanded = !card.minimized && expandedHeight != null && expandedHeight > card.height;
+  const effectiveHeight = card.minimized
+    ? DESK_CARD_HEADER_HEIGHT
+    : isExpanded
+      ? expandedHeight
+      : card.height;
 
   return (
     <div
@@ -199,12 +319,21 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
       data-card-id={card.id}
       data-card-type={card.type}
       data-minimized={card.minimized ? 'true' : 'false'}
+      data-expanded={isExpanded ? 'true' : 'false'}
       data-flagged={isMissingTarget ? 'true' : 'false'}
       data-layout-locked={locked ? 'true' : 'false'}
       onPointerDown={(e) => {
         e.stopPropagation();
         onBringToFront(card.id);
+        recordTapDown(e);
       }}
+      onPointerUp={(e) => {
+        recordTapUp(e);
+      }}
+      onPointerCancel={() => {
+        tapDownRef.current = null;
+      }}
+      onDoubleClick={handleCardDoubleClick}
       style={{
         position: 'absolute',
         left: `${card.x}px`,
@@ -376,6 +505,7 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
       {/* Card Body */}
       {!card.minimized && (
         <div
+          ref={bodyRef}
           data-testid={`desk-card-body-${card.id}`}
           style={{
             flex: 1,
@@ -387,6 +517,7 @@ export const DeskCardShell: React.FC<DeskCardShellProps> = ({
             flexDirection: 'column',
             gap: '10px',
             userSelect: 'text',
+            touchAction: 'manipulation',
           }}
         >
           {isMissingTarget ? (
