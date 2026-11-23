@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as pdfLib from '../lib/pdf';
+import * as soundLib from '../lib/sound';
 import { createCampaign, db, deleteCampaign, getBlob, putBlob } from '../storage';
 import { useCampaignStore } from '../store/campaignStore';
 import { AddPlayerSheetModal } from './AddPlayerSheetModal';
@@ -223,5 +224,153 @@ describe('Player character sheets (Stage 8c)', () => {
 
     expect(screen.queryByTestId('desk-sheet-masked-card-pc-1')).toBeNull();
     expect(screen.getByTestId('desk-player-sheet-card-pc-1-name').textContent).toBe('Nova Chen');
+  });
+
+  it('uses a styled 44px popover picker instead of native select, switches sheet, and closes on outside tap or Escape', () => {
+    const clickSpy = vi.spyOn(soundLib, 'playTactileClick').mockImplementation(() => {});
+    const sheet1 = useCampaignStore.getState().addPrebuiltPlayerSheet({
+      name: 'Aria Voss',
+      role: 'Pilot',
+      tracks: [{ label: 'HP', max: 10 }],
+    })!;
+    const sheet2 = useCampaignStore.getState().addPrebuiltPlayerSheet({
+      name: 'Kael Vance',
+      role: 'Engineer',
+      tracks: [{ label: 'HP', max: 12 }],
+    })!;
+
+    const onSelectEntity = vi.fn();
+    const { container } = render(
+      <div>
+        <button
+          type="button"
+          data-testid="outside-stop-prop-btn"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          Outside
+        </button>
+        <DeskSheetCardBody
+          card={{
+            id: 'card-picker-1',
+            type: 'sheet',
+            title: sheet1.name,
+            targetId: sheet1.id,
+            x: 0,
+            y: 0,
+            width: 360,
+            height: 420,
+            z: 1,
+            minimized: false,
+            createdAt: 1000,
+          }}
+          onSelectEntity={onSelectEntity}
+        />
+      </div>
+    );
+
+    // No native <select>
+    expect(container.querySelector('select')).toBeNull();
+
+    const trigger = screen.getByTestId('desk-sheet-picker-btn-card-picker-1');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(trigger.style.height).toBe('44px');
+    expect(trigger.textContent).toContain('Aria Voss');
+
+    // Open menu
+    fireEvent.click(trigger);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
+    const menu = screen.getByTestId('desk-sheet-picker-menu-card-picker-1');
+    expect(menu.getAttribute('role')).toBe('listbox');
+    expect(menu.style.maxHeight).toBe('260px');
+    expect(menu.style.overflowY).toBe('auto');
+    expect(menu.style.touchAction).toBe('pan-y');
+
+    const opt1 = screen.getByTestId(`desk-sheet-picker-option-card-picker-1-${sheet1.id}`);
+    const opt2 = screen.getByTestId(`desk-sheet-picker-option-card-picker-1-${sheet2.id}`);
+    expect(opt1.getAttribute('role')).toBe('option');
+    expect(opt1.getAttribute('aria-selected')).toBe('true');
+    expect(opt1.style.minHeight).toBe('44px');
+    expect(opt1.style.background).toBe('var(--accentBg)');
+    expect(opt2.getAttribute('aria-selected')).toBe('false');
+    expect(opt2.style.minHeight).toBe('44px');
+    expect(opt2.style.background).toBe('var(--p2)');
+
+    // Outside tap closes in capture phase even when target stops propagation
+    fireEvent.pointerDown(screen.getByTestId('outside-stop-prop-btn'));
+    expect(screen.queryByTestId('desk-sheet-picker-menu-card-picker-1')).toBeNull();
+
+    // Reopen and close with Escape
+    fireEvent.click(trigger);
+    expect(screen.getByTestId('desk-sheet-picker-menu-card-picker-1')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('desk-sheet-picker-menu-card-picker-1')).toBeNull();
+
+    // Reopen and select sheet2
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByTestId(`desk-sheet-picker-option-card-picker-1-${sheet2.id}`));
+    expect(onSelectEntity).toHaveBeenCalledWith(sheet2.id, 'Kael Vance');
+    expect(screen.queryByTestId('desk-sheet-picker-menu-card-picker-1')).toBeNull();
+    expect(clickSpy).toHaveBeenCalledTimes(4);
+  });
+
+  it('masks pinned hidden NPC in picker under Solo Mask while keeping PC sheets selectable', async () => {
+    const sheet = useCampaignStore.getState().addPrebuiltPlayerSheet({
+      name: 'Nova Chen',
+      role: 'Medic',
+      tracks: [{ label: 'HP', max: 8 }],
+    })!;
+
+    // Import a minimal chunk with an unvisited scene and an NPC in it
+    const chunkJson = JSON.stringify({
+      meta: { module_id: 'solo-picker-mod', chunk_id: 'act-1', title: 'Solo Mod', act: 1 },
+      scenes: [
+        { id: 'sc-start', code: 'A1', title: 'Dock', group: 'Bay', entity_ids: [] },
+        { id: 'sc-secret', code: 'A2', title: 'Vault', group: 'Bay', entity_ids: ['npc-hidden'] },
+      ],
+      entities: [
+        { id: 'npc-hidden', name: 'Director Vale', type: 'npc', summary: 'Secret villain' },
+      ],
+    });
+    await useCampaignStore.getState().importJsonChunk(chunkJson);
+    useCampaignStore.getState().setSoloMask(true);
+
+    const onSelectEntity = vi.fn();
+    render(
+      <DeskSheetCardBody
+        card={{
+          id: 'card-solo-1',
+          type: 'sheet',
+          title: 'Director Vale',
+          targetId: 'npc-hidden',
+          x: 0,
+          y: 0,
+          width: 360,
+          height: 420,
+          z: 1,
+          minimized: false,
+          createdAt: 1000,
+        }}
+        onSelectEntity={onSelectEntity}
+      />
+    );
+
+    const trigger = screen.getByTestId('desk-sheet-picker-btn-card-solo-1');
+    expect(trigger.textContent).toContain('???');
+    expect(trigger.textContent).toContain('Hidden Character');
+    expect(trigger.textContent).not.toContain('Director Vale');
+    expect(screen.getByTestId('desk-sheet-masked-card-solo-1')).toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    const maskedRow = screen.getByTestId('desk-sheet-picker-masked-option-card-solo-1');
+    expect(maskedRow).toBeDisabled();
+    expect(maskedRow.textContent).toContain('???');
+    expect(screen.queryByTestId('desk-sheet-picker-option-card-solo-1-npc-hidden')).toBeNull();
+
+    const pcOption = screen.getByTestId(`desk-sheet-picker-option-card-solo-1-${sheet.id}`);
+    fireEvent.click(pcOption);
+    expect(onSelectEntity).toHaveBeenCalledWith(sheet.id, 'Nova Chen');
   });
 });

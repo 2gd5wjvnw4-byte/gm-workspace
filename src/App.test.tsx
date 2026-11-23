@@ -2833,9 +2833,14 @@ describe('GM Workspace App Shell, Themes, Campaigns, and Import UI', () => {
       entities[0].name
     );
 
-    // Switch entity in Sheet card
-    const sheetSelect = screen.getByTestId(`desk-sheet-select-${sheetCard.id}`);
-    fireEvent.change(sheetSelect, { target: { value: entities[1].id } });
+    // Switch entity in Sheet card using the styled picker popover
+    const sheetPickerBtn = screen.getByTestId(`desk-sheet-picker-btn-${sheetCard.id}`);
+    fireEvent.click(sheetPickerBtn);
+    expect(screen.getByTestId(`desk-sheet-picker-menu-${sheetCard.id}`)).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByTestId(`desk-sheet-picker-option-${sheetCard.id}-${entities[1].id}`)
+    );
+    expect(screen.queryByTestId(`desk-sheet-picker-menu-${sheetCard.id}`)).toBeNull();
     expect(screen.getByTestId(`desk-sheet-${sheetCard.id}-entity-name`)).toHaveTextContent(
       entities[1].name
     );

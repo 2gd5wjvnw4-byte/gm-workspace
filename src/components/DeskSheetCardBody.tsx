@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getEffectiveScenes } from '../lib/improvised';
 import { playerSheetKindLabel } from '../lib/playerSheets';
 import { getSoloVisibleEntityIds } from '../lib/solo';
+import { playTactileClick } from '../lib/sound';
 import type { DeskCardRecord } from '../storage/types';
 import { useCampaignStore } from '../store/campaignStore';
 import { EntitySheetContent } from './EntitySheetContent';
@@ -42,7 +43,7 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
   const allOptions = [
     ...playerSheets.map((s) => ({
       id: s.id,
-      label: `PC · ${s.name} (${playerSheetKindLabel(s.kind)})`,
+      badge: `PC · ${playerSheetKindLabel(s.kind)}`,
       name: s.name,
       isPlayerSheet: true,
     })),
@@ -50,7 +51,7 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
       .filter((e) => soloVisibleIds.has(e.id))
       .map((e) => ({
         id: e.id,
-        label: `${e.name} (${e.type})`,
+        badge: e.type.toUpperCase(),
         name: e.name,
         isPlayerSheet: false,
       })),
@@ -58,7 +59,7 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
       .filter((e) => soloVisibleIds.has(e.id))
       .map((e) => ({
         id: e.id,
-        label: `${e.name} (Improvised)`,
+        badge: 'IMPROVISED',
         name: e.name,
         isPlayerSheet: false,
       })),
@@ -78,7 +79,36 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
       ? card.targetId
       : allOptions[0]?.id ?? null;
 
+  const resolvedOption = resolvedTargetId
+    ? allOptions.find((o) => o.id === resolvedTargetId) ?? null
+    : null;
   const resolvedIsPlayerSheet = Boolean(resolvedTargetId && playerSheetIds.has(resolvedTargetId));
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerAreaRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (
+        pickerAreaRef.current &&
+        !pickerAreaRef.current.contains(e.target as Node)
+      ) {
+        setPickerOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [pickerOpen]);
 
   return (
     <div
@@ -89,26 +119,29 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
         display: 'flex',
         flexDirection: 'column',
         gap: '8px',
+        position: 'relative',
       }}
     >
-      {allOptions.length > 0 && (
+      {(allOptions.length > 0 || isTargetHiddenInSolo) && (
         <div
+          ref={pickerAreaRef}
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
             flexShrink: 0,
+            position: 'relative',
           }}
         >
-          <select
-            data-testid={`desk-sheet-select-${card.id}`}
+          <button
+            type="button"
+            data-testid={`desk-sheet-picker-btn-${card.id}`}
             aria-label="Select NPC or character sheet"
-            value={resolvedTargetId ?? ''}
-            onChange={(e) => {
-              const found = allOptions.find((o) => o.id === e.target.value);
-              if (found) {
-                onSelectEntity(found.id, found.name);
-              }
+            aria-expanded={pickerOpen}
+            aria-haspopup="listbox"
+            onClick={() => {
+              playTactileClick();
+              setPickerOpen((v) => !v);
             }}
             style={{
               flex: 1,
@@ -116,20 +149,220 @@ export const DeskSheetCardBody: React.FC<DeskSheetCardBodyProps> = ({
               height: '44px',
               padding: '0 10px',
               borderRadius: '8px',
-              border: '1px solid var(--line)',
+              border: pickerOpen
+                ? '1px solid var(--accent)'
+                : '1px solid var(--line)',
               background: 'var(--bg)',
               color: 'var(--text)',
-              fontSize: '13px',
-              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
               cursor: 'pointer',
+              textAlign: 'left',
             }}
           >
-            {allOptions.map((opt) => (
-              <option key={opt.id} value={opt.id}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                minWidth: 0,
+              }}
+            >
+              {isTargetHiddenInSolo ? (
+                <>
+                  <span
+                    style={{
+                      fontFamily: 'var(--mono)',
+                      fontSize: '12px',
+                      color: 'var(--violet)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ???
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    Hidden Character
+                  </span>
+                </>
+              ) : resolvedOption ? (
+                <>
+                  <span
+                    style={{
+                      fontFamily: 'var(--mono)',
+                      fontSize: '12px',
+                      color: 'var(--accent)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {resolvedOption.badge}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {resolvedOption.name}
+                  </span>
+                </>
+              ) : (
+                <span style={{ fontSize: '13px', color: 'var(--muted)' }}>
+                  Pick a sheet
+                </span>
+              )}
+            </span>
+            <span
+              aria-hidden="true"
+              style={{
+                fontSize: '12px',
+                color: 'var(--muted)',
+                flexShrink: 0,
+              }}
+            >
+              {pickerOpen ? '▴' : '▾'}
+            </span>
+          </button>
+
+          {pickerOpen && (
+            <div
+              data-testid={`desk-sheet-picker-menu-${card.id}`}
+              role="listbox"
+              aria-label="Character sheet options"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                left: 0,
+                right: 0,
+                maxHeight: '260px',
+                overflowY: 'auto',
+                padding: '8px',
+                borderRadius: '10px',
+                border: '1px solid var(--line2)',
+                background: 'var(--panel)',
+                boxShadow: '0 10px 28px rgba(0, 0, 0, 0.4)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                zIndex: 10,
+                touchAction: 'pan-y',
+              }}
+            >
+              {isTargetHiddenInSolo && (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={true}
+                  disabled
+                  data-testid={`desk-sheet-picker-masked-option-${card.id}`}
+                  style={{
+                    width: '100%',
+                    minHeight: '44px',
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--violetLine)',
+                    background: 'var(--violetBg)',
+                    color: 'var(--violet)',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'default',
+                    flexShrink: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: 'var(--mono)',
+                      fontSize: '12px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ???
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    Hidden Character
+                  </span>
+                </button>
+              )}
+              {allOptions.map((opt) => {
+                const isSelected = resolvedTargetId === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    data-testid={`desk-sheet-picker-option-${card.id}-${opt.id}`}
+                    onClick={() => {
+                      playTactileClick();
+                      onSelectEntity(opt.id, opt.name);
+                      setPickerOpen(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      minHeight: '44px',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      border: isSelected
+                        ? '1px solid var(--accent)'
+                        : '1px solid var(--line)',
+                      background: isSelected ? 'var(--accentBg)' : 'var(--p2)',
+                      color: 'var(--text)',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        fontSize: '12px',
+                        color: isSelected ? 'var(--accent)' : 'var(--muted)',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {opt.badge}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: isSelected ? 700 : 500,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {opt.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
