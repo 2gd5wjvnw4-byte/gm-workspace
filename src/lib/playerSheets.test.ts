@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   addPlayerSheetTrack,
+  addSheetOverlay,
   adjustPlayerSheetTrack,
+  adjustSheetOverlayCounter,
+  clampOverlayPct,
   createPrebuiltPlayerSheet,
+  createSheetOverlay,
+  getSheetOverlaysForPage,
   removePlayerSheetTrack,
+  removeSheetOverlay,
   stripFileExtension,
+  toggleSheetOverlayDot,
   updatePlayerSheetTrack,
+  updateSheetOverlay,
   validateSheetUploadFile,
 } from './playerSheets';
 
@@ -97,5 +105,80 @@ describe('playerSheets helpers', () => {
     expect(stripFileExtension('Aria_Sheet.pdf')).toBe('Aria_Sheet');
     expect(stripFileExtension('portrait.v2.webp')).toBe('portrait.v2');
     expect(stripFileExtension('NoExt')).toBe('NoExt');
+  });
+
+  it('creates, clamps, updates, steps, toggles, filters, and removes pinned sheet overlays', () => {
+    expect(clampOverlayPct(-12)).toBe(0);
+    expect(clampOverlayPct(145.678)).toBe(100);
+    expect(clampOverlayPct(33.336)).toBe(33.34);
+    expect(clampOverlayPct(Number.NaN)).toBe(50);
+
+    const textPin = createSheetOverlay({
+      id: 'ov-text',
+      kind: 'text',
+      xPct: 20,
+      yPct: 35,
+      page: 1,
+      label: ' Name ',
+      text: 'Aria',
+      color: 'gold',
+    });
+    expect(textPin).toEqual({
+      id: 'ov-text',
+      kind: 'text',
+      xPct: 20,
+      yPct: 35,
+      page: 1,
+      label: 'Name',
+      text: 'Aria',
+      color: 'gold',
+    });
+
+    let list = addSheetOverlay(undefined, textPin);
+    list = addSheetOverlay(list, {
+      id: 'ov-dot',
+      kind: 'dot',
+      xPct: 50,
+      yPct: 60,
+      page: 1,
+      active: false,
+    });
+    list = addSheetOverlay(list, {
+      id: 'ov-cnt',
+      kind: 'counter',
+      xPct: 80,
+      yPct: 15,
+      page: 2,
+      value: 3,
+      color: 'red',
+    });
+
+    expect(list).toHaveLength(3);
+    expect(getSheetOverlaysForPage(list, 1, 'pdf').map((o) => o.id)).toEqual(['ov-text', 'ov-dot']);
+    expect(getSheetOverlaysForPage(list, 2, 'pdf').map((o) => o.id)).toEqual(['ov-cnt']);
+    expect(getSheetOverlaysForPage(list, 2, 'image')).toHaveLength(3);
+
+    list = toggleSheetOverlayDot(list, 'ov-dot');
+    expect(list.find((o) => o.id === 'ov-dot')?.active).toBe(true);
+
+    list = adjustSheetOverlayCounter(list, 'ov-cnt', 2);
+    list = adjustSheetOverlayCounter(list, 'ov-cnt', -1);
+    expect(list.find((o) => o.id === 'ov-cnt')?.value).toBe(4);
+
+    list = updateSheetOverlay(list, 'ov-text', {
+      xPct: 120,
+      yPct: -5,
+      label: 'Spell Slots',
+      text: 'Aria Voss',
+    });
+    expect(list.find((o) => o.id === 'ov-text')).toMatchObject({
+      xPct: 100,
+      yPct: 0,
+      label: 'Spell Slots',
+      text: 'Aria Voss',
+    });
+
+    list = removeSheetOverlay(list, 'ov-dot');
+    expect(list.map((o) => o.id)).toEqual(['ov-text', 'ov-cnt']);
   });
 });

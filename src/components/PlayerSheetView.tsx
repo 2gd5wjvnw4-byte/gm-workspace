@@ -9,9 +9,14 @@ import {
 import { playerSheetKindLabel } from '../lib/playerSheets';
 import { playTactileClick } from '../lib/sound';
 import { getBlob } from '../storage';
-import type { PlayerSheetRecord } from '../storage/types';
+import type { PlayerSheetRecord, SheetOverlayKind } from '../storage/types';
 import { useCampaignStore } from '../store/campaignStore';
 import { useBlobObjectUrl } from './MapLibrarySheet';
+import {
+  SheetOverlayInspector,
+  SheetOverlayLayer,
+  SheetOverlayToolbar,
+} from './SheetOverlayLayer';
 
 export interface PlayerSheetViewProps {
   sheetId: string | null;
@@ -36,8 +41,21 @@ const PdfSheetRenderer: React.FC<{
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rendered, setRendered] = useState(false);
+  const [editPins, setEditPins] = useState(false);
+  const [placementTool, setPlacementTool] = useState<SheetOverlayKind | null>(null);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
 
   const currentPage = Math.max(1, sheet.currentPage ?? 1);
+
+  useEffect(() => {
+    setEditPins(false);
+    setPlacementTool(null);
+    setSelectedOverlayId(null);
+  }, [sheet.id]);
+
+  useEffect(() => {
+    setSelectedOverlayId(null);
+  }, [currentPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,6 +142,10 @@ const PdfSheetRenderer: React.FC<{
 
   const canPrev = currentPage > 1;
   const canNext = numPages > 0 && currentPage < numPages;
+  const selectedOverlay =
+    (sheet.overlays ?? []).find(
+      (o) => o.id === selectedOverlayId && (o.page ?? 1) === currentPage
+    ) ?? null;
 
   return (
     <div
@@ -142,66 +164,107 @@ const PdfSheetRenderer: React.FC<{
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '8px',
+          flexWrap: 'wrap',
           flexShrink: 0,
         }}
       >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            data-testid={`${testIdPrefix}-pdf-prev`}
+            disabled={!canPrev}
+            onClick={() => {
+              playTactileClick();
+              onChangePage(Math.max(1, currentPage - 1));
+            }}
+            style={{
+              minWidth: '64px',
+              height: '44px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--line)',
+              background: 'var(--p3)',
+              color: canPrev ? 'var(--text)' : 'var(--faint)',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: canPrev ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Prev
+          </button>
+          <span
+            data-testid={`${testIdPrefix}-pdf-page-readout`}
+            style={{
+              fontFamily: 'var(--mono)',
+              fontSize: '12px',
+              color: 'var(--muted)',
+            }}
+          >
+            {numPages > 0 ? `Page ${currentPage} / ${numPages}` : `Page ${currentPage}`}
+          </span>
+          <button
+            type="button"
+            data-testid={`${testIdPrefix}-pdf-next`}
+            disabled={!canNext}
+            onClick={() => {
+              playTactileClick();
+              onChangePage(numPages > 0 ? Math.min(numPages, currentPage + 1) : currentPage + 1);
+            }}
+            style={{
+              minWidth: '64px',
+              height: '44px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--line)',
+              background: 'var(--p3)',
+              color: canNext ? 'var(--text)' : 'var(--faint)',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: canNext ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Next
+          </button>
+        </div>
+
         <button
           type="button"
-          data-testid={`${testIdPrefix}-pdf-prev`}
-          disabled={!canPrev}
+          data-testid={`${testIdPrefix}-overlay-edit-toggle`}
+          aria-pressed={editPins}
           onClick={() => {
             playTactileClick();
-            onChangePage(Math.max(1, currentPage - 1));
+            setEditPins((prev) => {
+              const next = !prev;
+              if (!next) {
+                setPlacementTool(null);
+                setSelectedOverlayId(null);
+              }
+              return next;
+            });
           }}
           style={{
-            minWidth: '64px',
             height: '44px',
             padding: '0 12px',
             borderRadius: '8px',
-            border: '1px solid var(--line)',
-            background: 'var(--p3)',
-            color: canPrev ? 'var(--text)' : 'var(--faint)',
+            border: editPins ? '1px solid var(--accent)' : '1px solid var(--line)',
+            background: editPins ? 'var(--accentBg)' : 'var(--p3)',
+            color: editPins ? 'var(--accent)' : 'var(--text)',
             fontSize: '13px',
             fontWeight: 700,
-            cursor: canPrev ? 'pointer' : 'not-allowed',
+            cursor: 'pointer',
           }}
         >
-          Prev
-        </button>
-        <span
-          data-testid={`${testIdPrefix}-pdf-page-readout`}
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: '12px',
-            color: 'var(--muted)',
-          }}
-        >
-          {numPages > 0 ? `Page ${currentPage} / ${numPages}` : `Page ${currentPage}`}
-        </span>
-        <button
-          type="button"
-          data-testid={`${testIdPrefix}-pdf-next`}
-          disabled={!canNext}
-          onClick={() => {
-            playTactileClick();
-            onChangePage(numPages > 0 ? Math.min(numPages, currentPage + 1) : currentPage + 1);
-          }}
-          style={{
-            minWidth: '64px',
-            height: '44px',
-            padding: '0 12px',
-            borderRadius: '8px',
-            border: '1px solid var(--line)',
-            background: 'var(--p3)',
-            color: canNext ? 'var(--text)' : 'var(--faint)',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: canNext ? 'pointer' : 'not-allowed',
-          }}
-        >
-          Next
+          {editPins ? 'Lock pins' : 'Edit pins'}
         </button>
       </div>
+
+      {editPins && (
+        <SheetOverlayToolbar
+          placementTool={placementTool}
+          onSelectTool={setPlacementTool}
+          testIdPrefix={testIdPrefix}
+        />
+      )}
 
       {loading && (
         <div
@@ -249,23 +312,56 @@ const PdfSheetRenderer: React.FC<{
           }}
         >
           {isVisible ? (
-            <canvas
-              ref={canvasRef}
-              data-testid={`${testIdPrefix}-pdf-canvas`}
+            <div
+              data-testid={`${testIdPrefix}-pdf-surface`}
               style={{
-                display: 'block',
+                position: 'relative',
                 width: '100%',
                 maxWidth: '100%',
-                height: 'auto',
-                borderRadius: '4px',
               }}
-            />
+            >
+              <canvas
+                ref={canvasRef}
+                data-testid={`${testIdPrefix}-pdf-canvas`}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  maxWidth: '100%',
+                  height: 'auto',
+                  borderRadius: '4px',
+                }}
+              />
+              <SheetOverlayLayer
+                sheetId={sheet.id}
+                sheetKind="pdf"
+                currentPage={currentPage}
+                overlays={sheet.overlays}
+                editMode={editPins}
+                placementTool={placementTool}
+                selectedOverlayId={selectedOverlayId}
+                onPlaced={(created) => {
+                  setPlacementTool(null);
+                  setSelectedOverlayId(created.id);
+                }}
+                onSelectOverlay={setSelectedOverlayId}
+                testIdPrefix={testIdPrefix}
+              />
+            </div>
           ) : (
             <div style={{ padding: '16px', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: '12px' }}>
               Page {currentPage} (off-screen)
             </div>
           )}
         </div>
+      )}
+
+      {editPins && (
+        <SheetOverlayInspector
+          sheetId={sheet.id}
+          selectedOverlay={selectedOverlay}
+          onClearSelection={() => setSelectedOverlayId(null)}
+          testIdPrefix={testIdPrefix}
+        />
       )}
     </div>
   );
@@ -277,6 +373,18 @@ const ImageSheetRenderer: React.FC<{
 }> = ({ sheet, testIdPrefix }) => {
   const url = useBlobObjectUrl(sheet.blobKey);
   const [zoomPct, setZoomPct] = useState(100);
+  const [editPins, setEditPins] = useState(false);
+  const [placementTool, setPlacementTool] = useState<SheetOverlayKind | null>(null);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEditPins(false);
+    setPlacementTool(null);
+    setSelectedOverlayId(null);
+  }, [sheet.id]);
+
+  const selectedOverlay =
+    (sheet.overlays ?? []).find((o) => o.id === selectedOverlayId) ?? null;
 
   return (
     <div
@@ -295,6 +403,7 @@ const ImageSheetRenderer: React.FC<{
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '8px',
+          flexWrap: 'wrap',
           flexShrink: 0,
         }}
       >
@@ -306,11 +415,42 @@ const ImageSheetRenderer: React.FC<{
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            minWidth: '80px',
+            flex: 1,
           }}
         >
           {sheet.fileName || 'Image sheet'}
         </span>
-        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            data-testid={`${testIdPrefix}-overlay-edit-toggle`}
+            aria-pressed={editPins}
+            onClick={() => {
+              playTactileClick();
+              setEditPins((prev) => {
+                const next = !prev;
+                if (!next) {
+                  setPlacementTool(null);
+                  setSelectedOverlayId(null);
+                }
+                return next;
+              });
+            }}
+            style={{
+              height: '44px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              border: editPins ? '1px solid var(--accent)' : '1px solid var(--line)',
+              background: editPins ? 'var(--accentBg)' : 'var(--p3)',
+              color: editPins ? 'var(--accent)' : 'var(--text)',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {editPins ? 'Lock pins' : 'Edit pins'}
+          </button>
           <button
             type="button"
             aria-label="Zoom out image sheet"
@@ -370,6 +510,14 @@ const ImageSheetRenderer: React.FC<{
         </div>
       </div>
 
+      {editPins && (
+        <SheetOverlayToolbar
+          placementTool={placementTool}
+          onSelectTool={setPlacementTool}
+          testIdPrefix={testIdPrefix}
+        />
+      )}
+
       <div
         style={{
           flex: 1,
@@ -385,18 +533,43 @@ const ImageSheetRenderer: React.FC<{
         }}
       >
         {url ? (
-          <img
-            src={url}
-            alt={sheet.name}
-            data-testid={`${testIdPrefix}-image-el`}
+          <div
+            data-testid={`${testIdPrefix}-image-surface`}
+            data-zoom-pct={String(zoomPct)}
             style={{
-              display: 'block',
+              position: 'relative',
               width: `${zoomPct}%`,
               maxWidth: zoomPct === 100 ? '100%' : 'none',
-              height: 'auto',
-              borderRadius: '6px',
+              flexShrink: 0,
             }}
-          />
+          >
+            <img
+              src={url}
+              alt={sheet.name}
+              data-testid={`${testIdPrefix}-image-el`}
+              style={{
+                display: 'block',
+                width: '100%',
+                height: 'auto',
+                borderRadius: '6px',
+              }}
+            />
+            <SheetOverlayLayer
+              sheetId={sheet.id}
+              sheetKind="image"
+              currentPage={1}
+              overlays={sheet.overlays}
+              editMode={editPins}
+              placementTool={placementTool}
+              selectedOverlayId={selectedOverlayId}
+              onPlaced={(created) => {
+                setPlacementTool(null);
+                setSelectedOverlayId(created.id);
+              }}
+              onSelectOverlay={setSelectedOverlayId}
+              testIdPrefix={testIdPrefix}
+            />
+          </div>
         ) : (
           <div
             data-testid={`${testIdPrefix}-image-loading`}
@@ -410,6 +583,15 @@ const ImageSheetRenderer: React.FC<{
           </div>
         )}
       </div>
+
+      {editPins && (
+        <SheetOverlayInspector
+          sheetId={sheet.id}
+          selectedOverlay={selectedOverlay}
+          onClearSelection={() => setSelectedOverlayId(null)}
+          testIdPrefix={testIdPrefix}
+        />
+      )}
     </div>
   );
 };
@@ -516,7 +698,8 @@ export const PlayerSheetView: React.FC<PlayerSheetViewProps> = ({
         flexDirection: 'column',
         padding: '14px',
         gap: '12px',
-        overflow: 'hidden',
+        overflowY: 'auto',
+        overflowX: 'hidden',
       }}
     >
       {/* Header */}

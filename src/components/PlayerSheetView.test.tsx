@@ -373,4 +373,223 @@ describe('Player character sheets (Stage 8c)', () => {
     fireEvent.click(pcOption);
     expect(onSelectEntity).toHaveBeenCalledWith(sheet.id, 'Nova Chen');
   });
+
+  it('places, drags, locks, interacts with, zooms, and deletes pinned overlays on an image sheet', async () => {
+    const createObjectUrlSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:mock-image-sheet');
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    const sheet = (await useCampaignStore.getState().addFilePlayerSheet({
+      kind: 'image',
+      name: 'Lyra Image Sheet',
+      fileName: 'lyra.png',
+      mimeType: 'image/png',
+      data: new Uint8Array([137, 80, 78, 71]),
+    }))!;
+
+    render(<PlayerSheetView sheetId={sheet.id} testIdPrefix="img-ovl" />);
+
+    const layer = await screen.findByTestId('img-ovl-overlay-layer');
+    vi.spyOn(layer, 'getBoundingClientRect').mockReturnValue({
+      left: 100,
+      top: 200,
+      width: 400,
+      height: 500,
+      right: 500,
+      bottom: 700,
+      x: 100,
+      y: 200,
+      toJSON: () => ({}),
+    });
+
+    // Enter Edit mode
+    const editToggle = screen.getByTestId('img-ovl-overlay-edit-toggle');
+    expect(editToggle.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(editToggle);
+    expect(editToggle.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('img-ovl-overlay-toolbar')).toBeInTheDocument();
+
+    // Place a text overlay at (25%, 20%) -> clientX=200, clientY=300
+    fireEvent.click(screen.getByTestId('img-ovl-overlay-tool-text'));
+    fireEvent.click(layer, { clientX: 200, clientY: 300 });
+
+    // Place a dot overlay at (50%, 50%) -> clientX=300, clientY=450
+    fireEvent.click(screen.getByTestId('img-ovl-overlay-tool-dot'));
+    fireEvent.click(layer, { clientX: 300, clientY: 450 });
+
+    // Place a counter overlay at (75%, 80%) -> clientX=400, clientY=600
+    fireEvent.click(screen.getByTestId('img-ovl-overlay-tool-counter'));
+    fireEvent.click(layer, { clientX: 400, clientY: 600 });
+
+    const overlays = useCampaignStore.getState().live?.playerSheets?.[0]?.overlays ?? [];
+    expect(overlays).toHaveLength(3);
+    const [textPin, dotPin, counterPin] = overlays;
+    expect(textPin).toMatchObject({ kind: 'text', xPct: 25, yPct: 20 });
+    expect(dotPin).toMatchObject({ kind: 'dot', xPct: 50, yPct: 50, active: true });
+    expect(counterPin).toMatchObject({ kind: 'counter', xPct: 75, yPct: 80, value: 0 });
+
+    // Edit selected pin label (including multi-word with space) & color (counterPin is selected)
+    fireEvent.change(screen.getByTestId('img-ovl-overlay-label-input'), {
+      target: { value: 'Spell ' },
+    });
+    fireEvent.change(screen.getByTestId('img-ovl-overlay-label-input'), {
+      target: { value: 'Spell Slots' },
+    });
+    fireEvent.click(screen.getByTestId('img-ovl-overlay-color-red'));
+    expect(useCampaignStore.getState().live?.playerSheets?.[0]?.overlays?.[2]).toMatchObject({
+      label: 'Spell Slots',
+      color: 'red',
+    });
+
+    // Drag counterPin from (400, 600) to (340, 500) -> (60%, 60%)
+    const counterEl = screen.getByTestId(`img-ovl-overlay-${counterPin.id}`);
+    fireEvent(
+      counterEl,
+      new MouseEvent('pointerdown', { bubbles: true, clientX: 400, clientY: 600 })
+    );
+    fireEvent(
+      counterEl,
+      new MouseEvent('pointermove', { bubbles: true, clientX: 340, clientY: 500 })
+    );
+    fireEvent(
+      counterEl,
+      new MouseEvent('pointerup', { bubbles: true, clientX: 340, clientY: 500 })
+    );
+    expect(useCampaignStore.getState().live?.playerSheets?.[0]?.overlays?.[2]).toMatchObject({
+      xPct: 60,
+      yPct: 60,
+    });
+
+    // Lock pins
+    fireEvent.click(editToggle);
+    expect(editToggle.getAttribute('aria-pressed')).toBe('false');
+    expect(screen.queryByTestId('img-ovl-overlay-toolbar')).toBeNull();
+    expect(screen.queryByTestId(`img-ovl-overlay-del-${counterPin.id}`)).toBeNull();
+
+    // Dragging while locked must NOT move the pin
+    fireEvent(
+      counterEl,
+      new MouseEvent('pointerdown', { bubbles: true, clientX: 340, clientY: 500 })
+    );
+    fireEvent(
+      counterEl,
+      new MouseEvent('pointermove', { bubbles: true, clientX: 150, clientY: 250 })
+    );
+    fireEvent(
+      counterEl,
+      new MouseEvent('pointerup', { bubbles: true, clientX: 150, clientY: 250 })
+    );
+    expect(useCampaignStore.getState().live?.playerSheets?.[0]?.overlays?.[2]).toMatchObject({
+      xPct: 60,
+      yPct: 60,
+    });
+
+    // Play interactions in Locked mode: edit text, toggle dot, step counter
+    const textInput = screen.getByTestId(`img-ovl-overlay-text-input-${textPin.id}`);
+    fireEvent.change(textInput, { target: { value: 'Lyra Vance' } });
+    expect(useCampaignStore.getState().live?.playerSheets?.[0]?.overlays?.[0]?.text).toBe(
+      'Lyra Vance'
+    );
+
+    const dotBtn = screen.getByTestId(`img-ovl-overlay-dot-${dotPin.id}`);
+    expect(dotBtn.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(dotBtn);
+    expect(dotBtn.getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(screen.getByTestId(`img-ovl-overlay-inc-${counterPin.id}`));
+    fireEvent.click(screen.getByTestId(`img-ovl-overlay-inc-${counterPin.id}`));
+    fireEvent.click(screen.getByTestId(`img-ovl-overlay-dec-${counterPin.id}`));
+    expect(screen.getByTestId(`img-ovl-overlay-val-${counterPin.id}`).textContent).toBe('1');
+
+    // Zoom image sheet -> wrapper scales to 125% and still contains the overlay layer at exact %
+    fireEvent.click(screen.getByLabelText('Zoom in image sheet'));
+    const surface = screen.getByTestId('img-ovl-image-surface');
+    expect(surface.style.width).toBe('125%');
+    expect(surface.contains(layer)).toBe(true);
+    expect(counterEl.style.left).toBe('60%');
+    expect(counterEl.style.top).toBe('60%');
+
+    // Re-enter Edit mode and delete dotPin
+    fireEvent.click(editToggle);
+    fireEvent.pointerDown(screen.getByTestId(`img-ovl-overlay-${dotPin.id}`), {
+      pointerId: 3,
+      clientX: 300,
+      clientY: 450,
+    });
+    fireEvent.pointerUp(screen.getByTestId(`img-ovl-overlay-${dotPin.id}`), {
+      pointerId: 3,
+      clientX: 300,
+      clientY: 450,
+    });
+    fireEvent.click(screen.getByTestId(`img-ovl-overlay-del-${dotPin.id}`));
+    expect(useCampaignStore.getState().live?.playerSheets?.[0]?.overlays).toHaveLength(2);
+
+    createObjectUrlSpy.mockRestore();
+    revokeSpy.mockRestore();
+  });
+
+  it('filters PDF sheet overlays by currentPage and stamps new overlays with currentPage', async () => {
+    vi.spyOn(pdfLib, 'loadPdfDocument').mockResolvedValue({
+      numPages: 2,
+      getPage: vi.fn(),
+    } as unknown as pdfLib.PdfDocumentProxy);
+    vi.spyOn(pdfLib, 'renderPdfPageToCanvas').mockImplementation(() => ({
+      promise: Promise.resolve(),
+      cancel: vi.fn(),
+    }));
+
+    const sheet = (await useCampaignStore.getState().addFilePlayerSheet({
+      kind: 'pdf',
+      name: 'Jax PDF Sheet',
+      fileName: 'jax.pdf',
+      mimeType: 'application/pdf',
+      data: new Uint8Array([37, 80, 68, 70]),
+      pageCount: 2,
+    }))!;
+
+    render(<PlayerSheetView sheetId={sheet.id} testIdPrefix="pdf-ovl" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pdf-ovl-pdf-page-readout').textContent).toBe('Page 1 / 2');
+    });
+
+    const layer = screen.getByTestId('pdf-ovl-overlay-layer');
+    vi.spyOn(layer, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 400,
+      right: 200,
+      bottom: 400,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    // Place a counter on page 1
+    fireEvent.click(screen.getByTestId('pdf-ovl-overlay-edit-toggle'));
+    fireEvent.click(screen.getByTestId('pdf-ovl-overlay-tool-counter'));
+    fireEvent.click(layer, { clientX: 60, clientY: 100 });
+
+    const page1Overlay = useCampaignStore.getState().live?.playerSheets?.[0]?.overlays?.[0];
+    expect(page1Overlay).toMatchObject({ kind: 'counter', page: 1, xPct: 30, yPct: 25 });
+    expect(screen.getByTestId(`pdf-ovl-overlay-${page1Overlay!.id}`)).toBeInTheDocument();
+
+    // Switch to page 2 -> page 1 overlay hides
+    fireEvent.click(screen.getByTestId('pdf-ovl-pdf-next'));
+    await waitFor(() => {
+      expect(screen.getByTestId('pdf-ovl-pdf-page-readout').textContent).toBe('Page 2 / 2');
+    });
+    expect(screen.queryByTestId(`pdf-ovl-overlay-${page1Overlay!.id}`)).toBeNull();
+
+    // Place a dot on page 2 -> stamped with page: 2
+    fireEvent.click(screen.getByTestId('pdf-ovl-overlay-tool-dot'));
+    fireEvent.click(layer, { clientX: 140, clientY: 300 });
+
+    const overlaysAfter = useCampaignStore.getState().live?.playerSheets?.[0]?.overlays ?? [];
+    expect(overlaysAfter).toHaveLength(2);
+    expect(overlaysAfter[1]).toMatchObject({ kind: 'dot', page: 2, xPct: 70, yPct: 75 });
+    expect(screen.getByTestId(`pdf-ovl-overlay-${overlaysAfter[1].id}`)).toBeInTheDocument();
+  });
 });

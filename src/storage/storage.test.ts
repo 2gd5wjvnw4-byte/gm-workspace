@@ -690,4 +690,62 @@ describe('storage module (Dexie + fake-indexeddb)', () => {
     expect(restored.campaign.id).toBe('camp-legacy');
     expect(restored.live.playerSheets).toEqual([]);
   });
+
+  it('round-trips pinned sheet overlays across exportBackup and importBackup in replace and new modes', async () => {
+    const created = await importChunk(sampleRawText, 'camp-pc-overlays');
+    const imgKey = 'sheet:camp-pc-overlays:pc-img';
+    const pdfKey = 'sheet:camp-pc-overlays:pc-pdf';
+    await putBlob(imgKey, new Uint8Array([137, 80, 78, 71]), 'image/png', { fileName: 'hero.png' });
+    await putBlob(pdfKey, new Uint8Array([37, 80, 68, 70]), 'application/pdf', { fileName: 'hero.pdf' });
+
+    const imgOverlays = [
+      { id: 'ov-1', kind: 'text' as const, xPct: 25.5, yPct: 40, label: 'Name', text: 'Vex', color: 'gold' as const },
+      { id: 'ov-2', kind: 'dot' as const, xPct: 55, yPct: 62.5, active: true, color: 'red' as const },
+      { id: 'ov-3', kind: 'counter' as const, xPct: 75, yPct: 20, label: 'HP', value: 14, color: 'teal' as const },
+    ];
+    const pdfOverlays = [
+      { id: 'ov-p1', kind: 'counter' as const, xPct: 30, yPct: 30, page: 1, value: 5, color: 'accent' as const },
+      { id: 'ov-p2', kind: 'text' as const, xPct: 60, yPct: 70, page: 2, text: 'Page 2 note', color: 'violet' as const },
+    ];
+
+    await db.live.put({
+      ...created.live,
+      playerSheets: [
+        {
+          id: 'pc-img',
+          kind: 'image' as const,
+          name: 'Hero Img',
+          blobKey: imgKey,
+          fileName: 'hero.png',
+          mimeType: 'image/png',
+          overlays: imgOverlays,
+          createdAt: 1000,
+          updatedAt: 1000,
+        },
+        {
+          id: 'pc-pdf',
+          kind: 'pdf' as const,
+          name: 'Hero PDF',
+          blobKey: pdfKey,
+          fileName: 'hero.pdf',
+          mimeType: 'application/pdf',
+          currentPage: 2,
+          overlays: pdfOverlays,
+          createdAt: 1001,
+          updatedAt: 1001,
+        },
+      ],
+    });
+
+    const payload = await exportBackup('camp-pc-overlays');
+
+    const importedNew = await importBackup(JSON.stringify(payload), { mode: 'new' });
+    expect(importedNew.live.playerSheets?.find((s) => s.id === 'pc-img')?.overlays).toEqual(imgOverlays);
+    expect(importedNew.live.playerSheets?.find((s) => s.id === 'pc-pdf')?.overlays).toEqual(pdfOverlays);
+
+    await deleteCampaign('camp-pc-overlays');
+    const restoredReplace = await importBackup(JSON.stringify(payload), { mode: 'replace' });
+    expect(restoredReplace.live.playerSheets?.find((s) => s.id === 'pc-img')?.overlays).toEqual(imgOverlays);
+    expect(restoredReplace.live.playerSheets?.find((s) => s.id === 'pc-pdf')?.overlays).toEqual(pdfOverlays);
+  });
 });

@@ -40,15 +40,23 @@ import {
   type PlayerSheetTrack,
   type RollLogEntry,
   type ScenePin,
+  type SheetOverlayRecord,
   type TableNote,
 } from '../storage';
 import {
   addPlayerSheetTrack as addSheetTrackPure,
+  addSheetOverlay as addSheetOverlayPure,
   adjustPlayerSheetTrack as adjustSheetTrackPure,
+  adjustSheetOverlayCounter as adjustSheetOverlayCounterPure,
   createPlayerSheetId,
   createPrebuiltPlayerSheet,
+  createSheetOverlay,
   removePlayerSheetTrack as removeSheetTrackPure,
+  removeSheetOverlay as removeSheetOverlayPure,
+  toggleSheetOverlayDot as toggleSheetOverlayDotPure,
   updatePlayerSheetTrack as updateSheetTrackPure,
+  updateSheetOverlay as updateSheetOverlayPure,
+  type CreateSheetOverlayInput,
 } from '../lib/playerSheets';
 import {
   mergeRawChunkObjects,
@@ -148,6 +156,23 @@ export interface CampaignStoreState {
     input: { label: string; max: number; current?: number }
   ) => void;
   removePlayerSheetTrack: (sheetId: string, trackId: string) => void;
+  addPlayerSheetOverlay: (
+    sheetId: string,
+    input: CreateSheetOverlayInput
+  ) => SheetOverlayRecord | null;
+  updatePlayerSheetOverlay: (
+    sheetId: string,
+    overlayId: string,
+    patch: Partial<
+      Pick<
+        SheetOverlayRecord,
+        'xPct' | 'yPct' | 'page' | 'label' | 'text' | 'active' | 'value' | 'color'
+      >
+    >
+  ) => void;
+  adjustPlayerSheetOverlayCounter: (sheetId: string, overlayId: string, delta: number) => void;
+  togglePlayerSheetOverlayDot: (sheetId: string, overlayId: string) => void;
+  removePlayerSheetOverlay: (sheetId: string, overlayId: string) => void;
   deletePlayerSheet: (sheetId: string) => Promise<void>;
   setSceneMap: (sceneIds: string[], mapId: string | null) => void;
   setLastMapId: (mapId: string | null) => void;
@@ -1643,6 +1668,80 @@ export const useCampaignStore = create<CampaignStoreState>((set, get) => {
           return {
             ...sheet,
             tracks: removeSheetTrackPure(sheet.tracks ?? [], trackId),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+
+    addPlayerSheetOverlay: (sheetId, input) => {
+      const target = (get().live?.playerSheets ?? []).find((s) => s.id === sheetId);
+      if (!target) return null;
+      const created = createSheetOverlay(input);
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            overlays: addSheetOverlayPure(sheet.overlays, created),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+      return created;
+    },
+
+    updatePlayerSheetOverlay: (sheetId, overlayId, patch) => {
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            overlays: updateSheetOverlayPure(sheet.overlays, overlayId, patch),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+
+    adjustPlayerSheetOverlayCounter: (sheetId, overlayId, delta) => {
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            overlays: adjustSheetOverlayCounterPure(sheet.overlays, overlayId, delta),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+
+    togglePlayerSheetOverlayDot: (sheetId, overlayId) => {
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            overlays: toggleSheetOverlayDotPure(sheet.overlays, overlayId),
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+
+    removePlayerSheetOverlay: (sheetId, overlayId) => {
+      commitLive((prev) => ({
+        ...prev,
+        playerSheets: (prev.playerSheets ?? []).map((sheet) => {
+          if (sheet.id !== sheetId) return sheet;
+          return {
+            ...sheet,
+            overlays: removeSheetOverlayPure(sheet.overlays, overlayId),
             updatedAt: Date.now(),
           };
         }),

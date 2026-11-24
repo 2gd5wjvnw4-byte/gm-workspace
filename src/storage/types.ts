@@ -70,6 +70,23 @@ export interface MapAssetRecord {
 
 export type PlayerSheetKind = 'prebuilt' | 'image' | 'pdf';
 
+export type SheetOverlayKind = 'text' | 'dot' | 'counter';
+
+export type SheetOverlayColor = 'accent' | 'gold' | 'red' | 'teal' | 'violet';
+
+export interface SheetOverlayRecord {
+  id: string;
+  kind: SheetOverlayKind;
+  xPct: number;
+  yPct: number;
+  page?: number;
+  label?: string;
+  text?: string;
+  active?: boolean;
+  value?: number;
+  color?: SheetOverlayColor;
+}
+
 export interface PlayerSheetTrack {
   id: string;
   label: string;
@@ -85,6 +102,7 @@ export interface PlayerSheetRecord {
   statLine?: string;
   tracks?: PlayerSheetTrack[];
   notes?: string;
+  overlays?: SheetOverlayRecord[];
   blobKey?: string;
   fileName?: string;
   mimeType?: string;

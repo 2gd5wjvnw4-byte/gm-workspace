@@ -1,4 +1,11 @@
-import type { PlayerSheetKind, PlayerSheetRecord, PlayerSheetTrack } from '../storage/types';
+import type {
+  PlayerSheetKind,
+  PlayerSheetRecord,
+  PlayerSheetTrack,
+  SheetOverlayColor,
+  SheetOverlayKind,
+  SheetOverlayRecord,
+} from '../storage/types';
 
 export const ALLOWED_IMAGE_SHEET_MIMES = new Set([
   'image/png',
@@ -215,4 +222,157 @@ export function playerSheetKindLabel(kind: PlayerSheetKind): string {
     case 'prebuilt':
       return 'Prebuilt';
   }
+}
+
+export const SHEET_OVERLAY_COLORS: readonly SheetOverlayColor[] = [
+  'accent',
+  'gold',
+  'red',
+  'teal',
+  'violet',
+] as const;
+
+export function clampOverlayPct(pct: number): number {
+  if (!Number.isFinite(pct)) return 50;
+  const clamped = Math.max(0, Math.min(100, pct));
+  return Math.round(clamped * 100) / 100;
+}
+
+export function createSheetOverlayId(now = Date.now()): string {
+  return `ovl-${now}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+export interface CreateSheetOverlayInput {
+  id?: string;
+  kind: SheetOverlayKind;
+  xPct: number;
+  yPct: number;
+  page?: number;
+  label?: string;
+  text?: string;
+  active?: boolean;
+  value?: number;
+  color?: SheetOverlayColor;
+  now?: number;
+}
+
+export function createSheetOverlay(input: CreateSheetOverlayInput): SheetOverlayRecord {
+  const safePage =
+    input.page !== undefined && Number.isFinite(input.page)
+      ? Math.max(1, Math.round(input.page))
+      : undefined;
+  const color: SheetOverlayColor =
+    input.color && SHEET_OVERLAY_COLORS.includes(input.color) ? input.color : 'accent';
+
+  const base: SheetOverlayRecord = {
+    id: input.id?.trim() || createSheetOverlayId(input.now),
+    kind: input.kind,
+    xPct: clampOverlayPct(input.xPct),
+    yPct: clampOverlayPct(input.yPct),
+    ...(safePage !== undefined ? { page: safePage } : {}),
+    ...(input.label !== undefined ? { label: input.label.trim() } : {}),
+    color,
+  };
+
+  if (input.kind === 'text') {
+    return {
+      ...base,
+      text: input.text ?? '',
+    };
+  }
+  if (input.kind === 'dot') {
+    return {
+      ...base,
+      active: input.active ?? true,
+    };
+  }
+  return {
+    ...base,
+    value: Number.isFinite(input.value) ? Math.round(input.value!) : 0,
+  };
+}
+
+export function addSheetOverlay(
+  overlays: readonly SheetOverlayRecord[] | undefined,
+  input: CreateSheetOverlayInput
+): SheetOverlayRecord[] {
+  return [...(overlays ?? []), createSheetOverlay(input)];
+}
+
+export function updateSheetOverlay(
+  overlays: readonly SheetOverlayRecord[] | undefined,
+  overlayId: string,
+  patch: Partial<
+    Pick<
+      SheetOverlayRecord,
+      'xPct' | 'yPct' | 'page' | 'label' | 'text' | 'active' | 'value' | 'color'
+    >
+  >
+): SheetOverlayRecord[] {
+  return (overlays ?? []).map((overlay) => {
+    if (overlay.id !== overlayId) return overlay;
+    const next: SheetOverlayRecord = { ...overlay };
+    if (patch.xPct !== undefined) next.xPct = clampOverlayPct(patch.xPct);
+    if (patch.yPct !== undefined) next.yPct = clampOverlayPct(patch.yPct);
+    if (patch.page !== undefined && Number.isFinite(patch.page)) {
+      next.page = Math.max(1, Math.round(patch.page));
+    }
+    if (patch.label !== undefined) next.label = patch.label;
+    if (patch.text !== undefined) next.text = patch.text;
+    if (patch.active !== undefined) next.active = Boolean(patch.active);
+    if (patch.value !== undefined && Number.isFinite(patch.value)) {
+      next.value = Math.round(patch.value);
+    }
+    if (patch.color !== undefined && SHEET_OVERLAY_COLORS.includes(patch.color)) {
+      next.color = patch.color;
+    }
+    return next;
+  });
+}
+
+export function adjustSheetOverlayCounter(
+  overlays: readonly SheetOverlayRecord[] | undefined,
+  overlayId: string,
+  delta: number
+): SheetOverlayRecord[] {
+  if (!Number.isFinite(delta)) return [...(overlays ?? [])];
+  return (overlays ?? []).map((overlay) => {
+    if (overlay.id !== overlayId || overlay.kind !== 'counter') return overlay;
+    const current = Number.isFinite(overlay.value) ? overlay.value! : 0;
+    return {
+      ...overlay,
+      value: Math.round(current + delta),
+    };
+  });
+}
+
+export function toggleSheetOverlayDot(
+  overlays: readonly SheetOverlayRecord[] | undefined,
+  overlayId: string
+): SheetOverlayRecord[] {
+  return (overlays ?? []).map((overlay) => {
+    if (overlay.id !== overlayId || overlay.kind !== 'dot') return overlay;
+    return {
+      ...overlay,
+      active: !(overlay.active ?? false),
+    };
+  });
+}
+
+export function removeSheetOverlay(
+  overlays: readonly SheetOverlayRecord[] | undefined,
+  overlayId: string
+): SheetOverlayRecord[] {
+  return (overlays ?? []).filter((o) => o.id !== overlayId);
+}
+
+export function getSheetOverlaysForPage(
+  overlays: readonly SheetOverlayRecord[] | undefined,
+  page: number,
+  kind: PlayerSheetKind
+): SheetOverlayRecord[] {
+  const list = overlays ?? [];
+  if (kind !== 'pdf') return [...list];
+  const safePage = Number.isFinite(page) ? Math.max(1, Math.round(page)) : 1;
+  return list.filter((overlay) => (overlay.page ?? 1) === safePage);
 }
